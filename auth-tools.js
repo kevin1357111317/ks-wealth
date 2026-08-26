@@ -1,0 +1,71 @@
+import{createClient}from'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.95.0/+esm';
+
+const sbAuth=createClient('https://gbxsnwqbjmgfikpblyot.supabase.co','sb_publishable_VtGM8w7CqxDB_3NaROR8OA_H0txX-_I',{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+
+const validEmail=v=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+
+function helperMessage(text,error=false){
+  let box=document.querySelector('#authhelpermsg');
+  if(!box)return;
+  box.className=error?'message error':'message';
+  box.textContent=text;
+}
+
+function injectAuthTools(){
+  const card=document.querySelector('.authCard');
+  const form=card?.querySelector('#authform');
+  const email=card?.querySelector('#em');
+  if(!card||!form||!email||card.dataset.authTools==='1')return;
+  card.dataset.authTools='1';
+  const tools=document.createElement('div');
+  tools.innerHTML=`<div style="display:flex;justify-content:center;gap:18px;margin-top:2px"><button type="button" id="forgotPassword" class="link" style="margin-top:0">忘記密碼</button><button type="button" id="resendConfirm" class="link" style="margin-top:0">重新寄驗證信</button></div><div id="authhelpermsg"></div>`;
+  form.insertAdjacentElement('afterend',tools);
+
+  document.querySelector('#forgotPassword').onclick=async()=>{
+    const address=email.value.trim();
+    if(!validEmail(address))return helperMessage('請先輸入完整 Email，例如 name@gmail.com。',true);
+    const btn=document.querySelector('#forgotPassword');btn.disabled=true;btn.textContent='寄送中…';
+    const{error}=await sbAuth.auth.resetPasswordForEmail(address,{redirectTo:location.origin});
+    btn.disabled=false;btn.textContent='忘記密碼';
+    helperMessage(error?error.message:'重設密碼信已寄出。請到信箱點「Reset password」，回到 KS財富管理後設定新密碼。',!!error);
+  };
+
+  document.querySelector('#resendConfirm').onclick=async()=>{
+    const address=email.value.trim();
+    if(!validEmail(address))return helperMessage('請先輸入完整 Email，例如 name@gmail.com。',true);
+    const btn=document.querySelector('#resendConfirm');btn.disabled=true;btn.textContent='寄送中…';
+    const{error}=await sbAuth.auth.resend({type:'signup',email:address,options:{emailRedirectTo:location.origin}});
+    btn.disabled=false;btn.textContent='重新寄驗證信';
+    helperMessage(error?error.message:'驗證信已重新寄出，請到信箱完成 Email 驗證。',!!error);
+  };
+}
+
+function showRecovery(){
+  if(document.querySelector('#recoveryOverlay'))return;
+  const overlay=document.createElement('div');
+  overlay.id='recoveryOverlay';
+  overlay.style.cssText='position:fixed;z-index:9999;inset:0;display:grid;place-items:center;padding:24px 18px;background:#0b0f18f7;backdrop-filter:blur(10px)';
+  overlay.innerHTML=`<section class="authCard"><div class="logo big">KS</div><span class="eyebrow">PASSWORD RECOVERY</span><h1>設定新密碼</h1><p>請輸入新的登入密碼。完成後即可用新密碼登入 KS財富管理。</p><form id="recoveryForm" class="form"><label>新密碼<input id="newpw" type="password" minlength="8" required autocomplete="new-password"></label><label>再次輸入<input id="newpw2" type="password" minlength="8" required autocomplete="new-password"></label><button class="primary">更新密碼</button></form><div id="recoveryMsg"></div></section>`;
+  document.body.append(overlay);
+  document.querySelector('#recoveryForm').onsubmit=async e=>{
+    e.preventDefault();
+    const p1=document.querySelector('#newpw').value,p2=document.querySelector('#newpw2').value,msg=document.querySelector('#recoveryMsg'),btn=e.currentTarget.querySelector('button');
+    if(p1.length<8){msg.className='message error';msg.textContent='密碼至少需要 8 個字元。';return}
+    if(p1!==p2){msg.className='message error';msg.textContent='兩次輸入的密碼不同。';return}
+    btn.disabled=true;btn.textContent='更新中…';
+    const{error}=await sbAuth.auth.updateUser({password:p1});
+    if(error){btn.disabled=false;btn.textContent='更新密碼';msg.className='message error';msg.textContent=error.message;return}
+    msg.className='message';msg.textContent='密碼已更新成功，正在回到 KS財富管理…';
+    history.replaceState({},document.title,location.pathname);
+    setTimeout(()=>location.replace(location.origin),900);
+  };
+}
+
+new MutationObserver(injectAuthTools).observe(document.documentElement,{childList:true,subtree:true});
+injectAuthTools();
+
+sbAuth.auth.onAuthStateChange((event)=>{
+  if(event==='PASSWORD_RECOVERY')showRecovery();
+});
+
+if(location.hash.includes('type=recovery')||location.search.includes('type=recovery'))setTimeout(showRecovery,250);
