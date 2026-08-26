@@ -16,3 +16,5 @@
 
 ## 部署
 Vercel static deployment。將三個檔案放在 repository 根目錄即可。
+
+GitHub `main` 已連接 Vercel Production，自此 push 到 `main` 會觸發自動部署。
