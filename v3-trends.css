@@ -9,3 +9,31 @@
 .scopeTrend{overflow:hidden}
 .personSeg{margin:0 0 14px}
 .personSeg button{min-height:48px;font-weight:800}
+@media(max-width:600px){
+  body{font-size:16px}
+  .app{padding-right:14px;padding-left:14px;padding-bottom:calc(122px + env(safe-area-inset-bottom))}
+  .topbar{padding-top:15px;padding-bottom:19px}
+  .brand small{font-size:11px}.brand h1{font-size:24px}
+  .iconBtn{width:46px;height:46px}
+  .status,.status button{font-size:13px}
+  .content{gap:16px}
+  .portfolioHero{padding:24px 20px}.panel{padding:20px 17px}
+  .heroLabel{font-size:14px}.heroLabel button{font-size:13px}
+  .bigMoney{font-size:clamp(34px,10vw,44px)}
+  .miniStats span{font-size:12px}.miniStats b{font-size:15px}
+  .eyebrow{font-size:12px}.panelTitle h2{font-size:20px}.panelTitle span:last-child{font-size:13px}
+  .ownerTile span{font-size:13px}.ownerTile b{font-size:18px}.ownerTile small{font-size:12px}
+  .legendRow{font-size:12px}.legendRow b{font-size:13px}
+  .itemList{gap:13px}.itemCard{padding:19px 16px}
+  .ticker{width:46px;height:46px;font-size:12px}
+  .itemName b,.itemAmount b{font-size:16px}
+  .itemName span,.itemAmount span{font-size:12px}
+  .itemMeta span{font-size:11px}.itemMeta b{font-size:13px}
+  .source{font-size:11px}
+  .sectionHead span{font-size:13px}.sectionHead b{font-size:15px}
+  .trendFooter{font-size:12px}.trendChange b{font-size:15px}.trendChange span{font-size:12px}
+  .bottomNav{grid-template-columns:repeat(3,1fr)}
+  .bottomNav button{min-height:62px;font-size:12px}.bottomNav button span{font-size:21px}
+  .form label{font-size:14px}.authCard>p{font-size:15px}
+  .message,.link{font-size:14px}.secure{font-size:12px}
+}
