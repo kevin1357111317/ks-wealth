@@ -7,3 +7,5 @@
 .trendChange.down{color:var(--red)}
 .trendChange.flat{color:#8c95a5}
 .scopeTrend{overflow:hidden}
+.personSeg{margin:0 0 14px}
+.personSeg button{min-height:48px;font-weight:800}
