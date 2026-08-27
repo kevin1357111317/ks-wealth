@@ -1,0 +1,9 @@
+.trendFooter{gap:12px}
+.trendFooter span:last-child{text-align:right}
+.trendChange{display:grid;gap:3px;text-align:right}
+.trendChange b{font-size:12px}
+.trendChange span{font-size:9px}
+.trendChange.up{color:var(--green)}
+.trendChange.down{color:var(--red)}
+.trendChange.flat{color:#8c95a5}
+.scopeTrend{overflow:hidden}
