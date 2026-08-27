@@ -9,6 +9,7 @@
 .scopeTrend{overflow:hidden}
 .personSeg{margin:0 0 14px}
 .personSeg button{min-height:48px;font-weight:800}
+.itemMeta.single{grid-template-columns:1fr}
 @media(max-width:600px){
   body{font-size:16px}
   .app{padding-right:14px;padding-left:14px;padding-bottom:calc(122px + env(safe-area-inset-bottom))}
@@ -29,6 +30,7 @@
   .itemName b,.itemAmount b{font-size:16px}
   .itemName span,.itemAmount span{font-size:12px}
   .itemMeta span{font-size:11px}.itemMeta b{font-size:13px}
+  .itemMeta div:last-child{display:grid}
   .source{font-size:11px}
   .sectionHead span{font-size:13px}.sectionHead b{font-size:15px}
   .trendFooter{font-size:12px}.trendChange b{font-size:15px}.trendChange span{font-size:12px}
