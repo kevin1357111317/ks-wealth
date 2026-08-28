@@ -84,3 +84,119 @@
   .form label{font-size:14px}.authCard>p{font-size:15px}
   .message,.link{font-size:14px}.secure{font-size:12px}
 }
+
+/* Bubu & Yier family theme — inspired by the app icon */
+:root{
+  --bg:#e9f8f4;
+  --panel:#fffdf7;
+  --panel2:#f8f2e6;
+  --line:#cfe4dd;
+  --text:#4c3028;
+  --muted:#766e68;
+  --blue:#55bfb7;
+  --blue2:#3ba9a3;
+  --green:#31966d;
+  --red:#d95f68;
+  --orange:#e5ae4f;
+  --cyan:#72cfc8;
+}
+html{background:#dff5f1;color-scheme:light}
+body{
+  background:
+    radial-gradient(circle at 92% 4%,#fffdf6 0 8%,transparent 8.2%),
+    linear-gradient(180deg,#d9f5f1 0,#eef9f5 34%,#fff8e8 100%);
+  color:var(--text);
+}
+.center,.auth{background:linear-gradient(180deg,#9fe4df 0,#dff6f1 48%,#f8dc91 100%)}
+.logo{
+  border-color:#b7dcd5;
+  background:#fff url('/icons/app-icon-source.png') center/cover no-repeat;
+  box-shadow:0 5px 14px #6caea53d;
+  color:transparent;
+  font-size:0;
+}
+.spinner{border-color:#ffffffa8;border-top-color:#a96f5d}
+.authCard{
+  border-color:#c6dfd8;
+  background:#fffdf7f2;
+  box-shadow:0 22px 60px #467f7533;
+}
+.eyebrow{color:#a46f5f}
+.authCard>p,.secure{color:#756c65}
+.form label{color:#695f59}
+.form input,.form select,.form textarea{
+  border-color:#c9ddd7;
+  background:#fff;
+  color:var(--text);
+}
+.form input:focus,.form select:focus,.form textarea:focus{border-color:#55bfb7;box-shadow:0 0 0 3px #55bfb72a}
+.seg{border-color:#c9ddd7;background:#f4efe5}
+.seg button{color:#776d65}
+.seg button.on{background:#f2cf78;color:#54372d;box-shadow:0 2px 7px #b48a3c30}
+.primary{background:linear-gradient(135deg,#61c9c1,#3eaaa5);box-shadow:0 8px 20px #3eaaa53b;color:#fff}
+.message{background:#31966d16;color:#277a5a}.message.error{background:#d95f6816;color:#b94751}
+.link,.status button,.heroLabel button{color:#318d88}
+.brand small{color:#8b756b}.brand h1{color:#4b3028}
+.iconBtn{border-color:#c9dfd8;background:#fffaf0;color:#6e4a3e;box-shadow:0 3px 10px #6b918929}
+.avatar{background:#f8d88f;color:#684334}
+.status,.status button{color:#6f6a63}.status i{background:#55bfb7;box-shadow:0 0 9px #55bfb777}
+.portfolioHero,.panel,.itemCard,.empty{
+  border-color:#cfe3dc;
+  background:linear-gradient(145deg,#fffef9,#fff9ed);
+  box-shadow:0 10px 26px #527b7321;
+}
+.portfolioHero{
+  position:relative;
+  overflow:hidden;
+  border-color:#9fd7cf;
+  background:linear-gradient(135deg,#9fe4df 0,#dff6ef 56%,#fae3a1 115%);
+}
+.portfolioHero:after{
+  position:absolute;
+  right:-34px;
+  bottom:-52px;
+  width:142px;
+  height:142px;
+  border-radius:50%;
+  background:#fff9e672;
+  content:'';
+  pointer-events:none;
+}
+.portfolioHero>*{position:relative;z-index:1}
+.heroLabel,.bigMoney small{color:#725c52}
+.bigMoney{color:#4a2e27}
+.miniStats>div,.ownerTile{border-color:#c6ddd6;background:#fffaf0cc}
+.miniStats span,.ownerTile span,.ownerTile small,.sectionHead span,.itemName span,.itemAmount span,.itemMeta span,.source,.categoryHead small{color:#776f68}
+.miniStats b,.ownerTile b,.itemName b,.itemAmount b,.sectionHead b,.categoryTotal b{color:#4b3028}
+.donut{box-shadow:inset 0 0 0 1px #c1d9d2}.donut:after{background:#fffaf0;color:#5b4036}
+.legendRow{color:#746c65}.legendRow b{color:#4b3028}
+.trendToggle{border-color:#b7d7d0;background:#edf8f4;color:#47736c}
+.trend svg line{stroke:#d4e5df!important}
+.trend svg text{fill:#756d67!important}
+.trendChange.flat{color:#4b9e98}
+.categoryGroup{border-color:#cfe3dc;background:linear-gradient(145deg,#fffef9,#fff8eb);box-shadow:0 8px 22px #527b731b}
+.categoryHead{color:#4b3028}
+.categoryTotal i{color:#b77b66}
+.categoryItems .itemCard,.compactCard{border-color:#d6e5df;background:#fffdf8}
+.ticker{background:#dff4ef;color:#47786f}
+.allocationRing{--ring:#55bfb7;background:conic-gradient(var(--ring) var(--pct),#dcebe6 0)}
+.allocationRing.liability{--ring:#d95f68}
+.allocationRing:after{background:#fffdf8}
+.allocationRing span,.compactIdentity b,.compactAmount{color:#4b3028}
+.compactIdentity>span,.compactAmount span,.compactMeta{color:#776f68}
+.compactMeta{border-top-color:#d8e6e1}.compactMeta>span+span{border-left-color:#d5e4df}
+.quoteLive i{background:#55bfb7;box-shadow:0 0 9px #55bfb755}
+.quoteLive b.up{color:#d95f68}.quoteLive b.down{color:#31966d}.quoteLive b.flat,.quotePending{color:#776f68}
+.fab{background:linear-gradient(145deg,#f7d780,#e5ae4f);box-shadow:0 12px 28px #9e78384a;color:#624034}
+.bottomNav{border-color:#c7ddd6;background:#fffdf7ef;box-shadow:0 15px 38px #44665f38}
+.bottomNav button{color:#796f68}
+.bottomNav button.on{background:#f4d584;color:#57392f;box-shadow:inset 0 0 0 1px #e1b95c,0 3px 9px #ad7f3430}
+.backdrop{background:#41655e75}
+.sheet{border-color:#bfd8d1;background:#fffaf0;box-shadow:0 -14px 45px #35574f45}
+.handle{background:#b7cbc5}
+.trash{border-color:#e4a6aa;background:#fff0f1;color:#bd4751}
+.quoteHint{border-color:#c7ddd6;background:#eef7f3;color:#706962}
+.empty b{color:#5b4036}
+@media(max-width:600px){
+  .portfolioHero,.panel,.categoryGroup{box-shadow:0 7px 18px #527b731d}
+}
