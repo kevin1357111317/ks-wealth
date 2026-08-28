@@ -110,7 +110,7 @@ body{
 .center,.auth{background:linear-gradient(180deg,#9fe4df 0,#dff6f1 48%,#f8dc91 100%)}
 .logo{
   border-color:#b7dcd5;
-  background:#fff url('/icons/app-icon-source.png') center/cover no-repeat;
+  background:#fff url('/icons/app-icon-192.png') center/cover no-repeat;
   box-shadow:0 5px 14px #6caea53d;
   color:transparent;
   font-size:0;
@@ -121,6 +121,8 @@ body{
   background:#fffdf7f2;
   box-shadow:0 22px 60px #467f7533;
 }
+.authCard h1{font-size:0}
+.authCard h1:after{content:'布布一二的家';font-size:30px}
 .eyebrow{color:#a46f5f}
 .authCard>p,.secure{color:#756c65}
 .form label{color:#695f59}
