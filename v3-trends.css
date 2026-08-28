@@ -42,7 +42,9 @@
 .compactIdentity{min-width:0}
 .compactIdentity b{display:block;overflow:hidden;color:#f6f7fa;font-size:17px;text-overflow:ellipsis;white-space:nowrap}
 .compactIdentity>span{display:block;margin-top:4px;color:#9ba5b5;font-size:12px}
-.compactAmount{color:#f6f7fa;font-size:16px;font-weight:900;text-align:right;white-space:nowrap}
+.compactAmount{display:grid;gap:4px;color:#f6f7fa;text-align:right;white-space:nowrap}
+.compactAmount b{font-size:16px;font-weight:900}
+.compactAmount span{color:#aeb6c4;font-size:12px;font-weight:700}
 .compactMeta{display:flex;align-items:center;gap:12px;margin:13px 0 0 71px;padding-top:11px;border-top:1px solid #242c38;color:#aab2bf;font-size:12px}
 .compactMeta>span+span{padding-left:12px;border-left:1px solid #2a323e}
 .quoteLive{display:flex;align-items:center;gap:6px}
