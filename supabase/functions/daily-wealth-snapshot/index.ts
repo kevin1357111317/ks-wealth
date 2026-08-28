@@ -31,12 +31,15 @@ Deno.serve(async (req: Request) => {
   });
   const { data: items, error: itemError } = await client
     .from("financial_items")
-    .select("id,household_id,owner_scope,kind,name,symbol,market,quantity,amount_twd")
+    .select("id,household_id,owner_scope,kind,name,symbol,market,quantity,amount_twd,native_currency,native_amount")
     .order("created_at");
   if (itemError) return json({ error: "items_unavailable", detail: itemError.message }, 500);
 
   const marketItems = (items ?? []).filter((item) =>
     item.kind === "asset" && ["TW", "US"].includes(item.market) && item.symbol
+  );
+  const usdCashItems = (items ?? []).filter((item) =>
+    item.kind === "asset" && item.market === "MANUAL" && item.native_currency === "USD" && Number(item.native_amount) >= 0
   );
   const validSymbol = (symbol: string) => /^[0-9A-Z.-]{1,16}$/.test(symbol);
   const twSymbols = [...new Set(marketItems.filter((item) => item.market === "TW").map((item) => String(item.symbol).toUpperCase()))].filter(validSymbol);
@@ -58,7 +61,7 @@ Deno.serve(async (req: Request) => {
   }));
 
   let fxRate: number | null = null;
-  if (usSymbols.length && twelveKey) {
+  if ((usSymbols.length || usdCashItems.length) && twelveKey) {
     try {
       const response = await fetch(`https://api.twelvedata.com/exchange_rate?symbol=USD%2FTWD&apikey=${encodeURIComponent(twelveKey)}`);
       const data = await response.json();
@@ -97,6 +100,23 @@ Deno.serve(async (req: Request) => {
       amount_twd: amountTwd,
       fx_rate_twd: item.market === "US" ? conversion : 1,
       quote_source: quote.provider,
+      updated_at: new Date().toISOString(),
+    }).eq("id", item.id);
+    if (error) failed += 1;
+    else updated += 1;
+  }
+
+  for (const item of usdCashItems) {
+    if (!fxRate) {
+      failed += 1;
+      continue;
+    }
+    const amountTwd = Math.round(Number(item.native_amount) * fxRate);
+    const { error } = await client.from("financial_items").update({
+      amount_twd: amountTwd,
+      fx_rate_twd: fxRate,
+      quote_currency: "USD",
+      quote_source: "twelve_data",
       updated_at: new Date().toISOString(),
     }).eq("id", item.id);
     if (error) failed += 1;
