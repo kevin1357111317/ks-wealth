@@ -33,6 +33,22 @@
 .status,.status button,.heroLabel,.miniStats span,.ownerTile span,.ownerTile small,.sectionHead span,.itemName span,.itemAmount span,.itemMeta span,.source,.categoryHead small{color:#9ba5b5}
 .itemName b,.itemAmount b,.miniStats b,.sectionHead b,.categoryTotal b{color:#f4f6fa}
 .source.ready{color:#a8e4ca}
+.compactCard{display:block;padding:16px 15px;border-color:#293242;background:#090c12}
+.compactMain{display:grid;grid-template-columns:58px minmax(0,1fr) auto;align-items:center;gap:13px}
+.allocationRing{--ring:#8b94ff;position:relative;display:grid;width:56px;height:56px;place-items:center;border-radius:50%;background:conic-gradient(var(--ring) var(--pct),#26303e 0)}
+.allocationRing.liability{--ring:#ff7f91}
+.allocationRing:after{position:absolute;inset:6px;border-radius:50%;background:#0d1118;content:''}
+.allocationRing span{position:relative;z-index:1;color:#f4f6fa;font-size:12px;font-weight:900}
+.compactIdentity{min-width:0}
+.compactIdentity b{display:block;overflow:hidden;color:#f6f7fa;font-size:17px;text-overflow:ellipsis;white-space:nowrap}
+.compactIdentity>span{display:block;margin-top:4px;color:#9ba5b5;font-size:12px}
+.compactAmount{color:#f6f7fa;font-size:16px;font-weight:900;text-align:right;white-space:nowrap}
+.compactMeta{display:flex;align-items:center;gap:12px;margin:13px 0 0 71px;padding-top:11px;border-top:1px solid #242c38;color:#aab2bf;font-size:12px}
+.compactMeta>span+span{padding-left:12px;border-left:1px solid #2a323e}
+.quoteLive{display:flex;align-items:center;gap:6px}
+.quoteLive i{width:7px;height:7px;border-radius:50%;background:#72d7a7;box-shadow:0 0 9px #72d7a755}
+.quoteLive b{font-size:12px}.quoteLive b.up{color:#ff7f91}.quoteLive b.down{color:#72d7a7}.quoteLive b.flat{color:#aab2bf}
+.quotePending{color:#7f8999}
 @media(max-width:600px){
   body{font-size:16px}
   .app{padding-right:14px;padding-left:14px;padding-bottom:calc(134px + env(safe-area-inset-bottom))}
@@ -62,6 +78,7 @@
   .trendFooter{font-size:12px}.trendChange b{font-size:15px}.trendChange span{font-size:12px}
   .bottomNav{grid-template-columns:repeat(3,1fr)}
   .bottomNav button{min-height:72px;font-size:13px}.bottomNav button span{font-size:29px}
+  .compactCard{padding:17px 15px}.compactIdentity b{font-size:17px}.compactAmount{font-size:16px}
   .form label{font-size:14px}.authCard>p{font-size:15px}
   .message,.link{font-size:14px}.secure{font-size:12px}
 }
