@@ -37,16 +37,16 @@ Deno.serve(async (req: Request) => {
 
   const { data: items, error: itemError } = await client
     .from("financial_items")
-    .select("id,name,symbol,market,quantity,amount_twd")
-    .eq("kind", "asset")
-    .in("market", ["TW", "US"])
-    .not("symbol", "is", null);
+    .select("id,name,symbol,market,quantity,amount_twd,native_currency,native_amount")
+    .eq("kind", "asset");
 
   if (itemError) return json({ error: "items_unavailable", detail: itemError.message }, 500);
 
+  const marketItems = (items ?? []).filter((item) => ["TW", "US"].includes(item.market) && item.symbol);
+  const usdCashItems = (items ?? []).filter((item) => item.market === "MANUAL" && item.native_currency === "USD" && Number(item.native_amount) >= 0);
   const validSymbol = (symbol: string) => /^[0-9A-Z.-]{1,16}$/.test(symbol);
-  const twSymbols = [...new Set((items ?? []).filter((x) => x.market === "TW").map((x) => String(x.symbol).toUpperCase()))].filter(validSymbol);
-  const usSymbols = [...new Set((items ?? []).filter((x) => x.market === "US").map((x) => String(x.symbol).toUpperCase()))].filter(validSymbol);
+  const twSymbols = [...new Set(marketItems.filter((x) => x.market === "TW").map((x) => String(x.symbol).toUpperCase()))].filter(validSymbol);
+  const usSymbols = [...new Set(marketItems.filter((x) => x.market === "US").map((x) => String(x.symbol).toUpperCase()))].filter(validSymbol);
 
   const twEntries = await Promise.all(twSymbols.map(async (symbol) => {
     if (!fugleKey) return [`TW:${symbol}`, { error: "fugle_key_missing" }] as const;
@@ -75,7 +75,8 @@ Deno.serve(async (req: Request) => {
 
   let fxRate: number | null = null;
   let fxError: string | null = null;
-  if (usSymbols.length && twelveKey) {
+  const needsUsdFx = usSymbols.length > 0 || usdCashItems.length > 0;
+  if (needsUsdFx && twelveKey) {
     try {
       const response = await fetch(
         `https://api.twelvedata.com/exchange_rate?symbol=USD%2FTWD&apikey=${encodeURIComponent(twelveKey)}`,
@@ -88,7 +89,7 @@ Deno.serve(async (req: Request) => {
     } catch {
       fxError = "twelve_unreachable";
     }
-  } else if (usSymbols.length) {
+  } else if (needsUsdFx) {
     fxError = "twelve_key_missing";
   }
 
@@ -121,7 +122,7 @@ Deno.serve(async (req: Request) => {
   const quotes = new Map([...twEntries, ...usEntries]);
   const results = [];
 
-  for (const item of items ?? []) {
+  for (const item of marketItems) {
     const symbol = String(item.symbol).toUpperCase();
     const quote = quotes.get(`${item.market}:${symbol}`);
     if (!quote || "error" in quote) {
@@ -149,6 +150,7 @@ Deno.serve(async (req: Request) => {
       .from("financial_items")
       .update({
         amount_twd: amountTwd,
+        fx_rate_twd: item.market === "US" ? conversion : 1,
         quote_source: item.market === "US" ? "twelve_data" : "fugle",
         updated_by: userData.user.id,
         updated_at: new Date().toISOString(),
@@ -158,6 +160,29 @@ Deno.serve(async (req: Request) => {
     results.push(updateError
       ? { id: item.id, name: item.name, symbol, market: item.market, status: "error", error: updateError.message, ...quote }
       : { id: item.id, name: item.name, symbol, market: item.market, status: "updated", quantity, amountTwd, ...quote });
+  }
+
+  for (const item of usdCashItems) {
+    if (!fxRate) {
+      results.push({ id: item.id, name: item.name, market: "MANUAL", status: "error", error: fxError ?? "fx_unavailable" });
+      continue;
+    }
+    const nativeAmount = Number(item.native_amount);
+    const amountTwd = Math.round(nativeAmount * fxRate);
+    const { error: updateError } = await client
+      .from("financial_items")
+      .update({
+        amount_twd: amountTwd,
+        fx_rate_twd: fxRate,
+        quote_currency: "USD",
+        quote_source: "twelve_data",
+        updated_by: userData.user.id,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", item.id);
+    results.push(updateError
+      ? { id: item.id, name: item.name, market: "MANUAL", status: "error", error: updateError.message }
+      : { id: item.id, name: item.name, market: "MANUAL", status: "updated", currency: "USD", nativeAmount, amountTwd, fxRate });
   }
 
   return json({
