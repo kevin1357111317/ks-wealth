@@ -1,6 +1,6 @@
 import{createClient}from'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.95.0/+esm';
 
-const APP_URL='https://ks-wealth-kevin1357111317-9818.vercel.app';
+const APP_URL='https://ks-wealth-three.vercel.app';
 const sbAuth=createClient('https://gbxsnwqbjmgfikpblyot.supabase.co','sb_publishable_VtGM8w7CqxDB_3NaROR8OA_H0txX-_I',{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
 
 const validEmail=v=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
