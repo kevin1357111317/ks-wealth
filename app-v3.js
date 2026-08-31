@@ -3,13 +3,14 @@ import {
   ITEM_KINDS,
   NATIVE_CURRENCIES,
   OWNER_SCOPES,
+  calculateAllocation,
   calculateSummary,
   calculateTwdAmount,
   isValidSymbol,
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=flow-1';
+} from './financial-core.js?v=gold-1';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -26,12 +27,12 @@ const tabs = [
   ['wife', '◐', '老婆'],
 ];
 const categories = {
-  asset: ['台股', '美股', '現金及存款', '不動產', '保險', '黃金與收藏', '其他資產'],
+  asset: ['台股', '美股', '現金及存款', '不動產', '保險', '黃金', '收藏', '其他資產'],
   liability: ['房貸', '增貸', '信貸', '信用卡', '其他負債'],
 };
 const colors = {
   台股: '#72d7a7', 美股: '#8b94ff', 現金及存款: '#67c8db', 不動產: '#f0b467',
-  保險: '#bb8cff', 黃金與收藏: '#ee8f73', 房貸: '#ff7f91', 增貸: '#f0a76b', 信貸: '#df788a',
+  保險: '#bb8cff', 黃金: '#e5ae4f', 收藏: '#ee8f73', 房貸: '#ff7f91', 增貸: '#f0a76b', 信貸: '#df788a',
 };
 
 let lifecycle = 'booting';
@@ -380,7 +381,7 @@ function quoteStatusCopy() {
   const lastUpdate = formatClock(quoteLastUpdatedAt);
   const suffix = lastUpdate ? ` · 更新於 ${lastUpdate}` : '';
   if (quoteStatus === 'updating') return '正在更新市場行情…';
-  if (quoteStatus === 'success') return `台股、美股與匯率已更新${suffix}`;
+  if (quoteStatus === 'success') return `台股、美股、黃金與匯率已更新${suffix}`;
   if (quoteStatus === 'partial') return `部分行情更新失敗，沿用上一筆價格${suffix}`;
   if (quoteStatus === 'error') return `行情更新失敗，沿用上一筆價格${suffix}`;
   return `家庭資料已同步${suffix}`;
@@ -469,21 +470,21 @@ function dashboard() {
   const family = summary();
   const husband = summary('husband');
   const wife = summary('wife');
-  const groups = Object.entries(family.assets.reduce((map, item) => {
-    map[item.category] = (map[item.category] || 0) + item.amount_twd;
-    return map;
-  }, {})).sort((a, b) => b[1] - a[1]);
-  let cursor = 0;
-  const segments = groups.map(([group, value]) => {
-    const percent = family.totalAssets ? value / family.totalAssets * 100 : 0;
-    const start = cursor;
-    cursor += percent;
-    return `${colors[group] || '#7e8798'} ${start}% ${cursor}%`;
-  }).join(',') || '#252c39 0 100%';
   const husbandShare = family.totalAssets ? husband.totalAssets / family.totalAssets * 100 : 0;
   const wifeShare = family.totalAssets ? wife.totalAssets / family.totalAssets * 100 : 0;
 
-  shell(`<section class="portfolioHero"><div class="heroLabel"><span>家庭淨資產</span><span>老公＋老婆</span></div><div class="bigMoney">${formatMoney(family.netWorth)}</div><div class="miniStats"><div><span>家庭總資產</span><b>NT$ ${formatNumber(family.totalAssets)}</b></div><div><span>家庭總負債</span><b>NT$ ${formatNumber(family.totalLiabilities)}</b></div></div></section><section class="panel"><div class="panelTitle"><div><h2>夫妻資產分布</h2></div></div><div class="ownerGrid"><div class="ownerTile"><span>老公資產</span><b>NT$ ${formatNumber(husband.totalAssets)}</b><small>占家庭資產 ${husbandShare.toFixed(1)}%</small></div><div class="ownerTile"><span>老婆資產</span><b>NT$ ${formatNumber(wife.totalAssets)}</b><small>占家庭資產 ${wifeShare.toFixed(1)}%</small></div></div></section><section class="panel"><div class="panelTitle"><div><h2>家庭資產配置</h2></div><span>${groups.length} 類</span></div><div class="allocation"><div class="donut" style="--segments:${segments}"></div><div class="legend">${groups.slice(0, 7).map(([group, value]) => `<div class="legendRow"><i style="background:${colors[group] || '#7e8798'}"></i><span>${escapeHtml(group)}</span><b>${family.totalAssets ? (value / family.totalAssets * 100).toFixed(1) : 0}%</b></div>`).join('')}</div></div></section>${trendChart(familyTrendRows(family.netWorth))}`, '家庭');
+  shell(`<section class="portfolioHero"><div class="heroLabel"><span>家庭淨資產</span><span>老公＋老婆</span></div><div class="bigMoney">${formatMoney(family.netWorth)}</div><div class="miniStats"><div><span>家庭總資產</span><b>NT$ ${formatNumber(family.totalAssets)}</b></div><div><span>家庭總負債</span><b>NT$ ${formatNumber(family.totalLiabilities)}</b></div></div></section><section class="panel"><div class="panelTitle"><div><h2>夫妻資產分布</h2></div></div><div class="ownerGrid"><div class="ownerTile"><span>老公資產</span><b>NT$ ${formatNumber(husband.totalAssets)}</b><small>占家庭資產 ${husbandShare.toFixed(1)}%</small></div><div class="ownerTile"><span>老婆資產</span><b>NT$ ${formatNumber(wife.totalAssets)}</b><small>占家庭資產 ${wifeShare.toFixed(1)}%</small></div></div></section>${assetAllocationPanel(family.assets, family.totalAssets, '家庭資產配置')}${trendChart(familyTrendRows(family.netWorth))}`, '家庭');
+}
+
+function assetAllocationPanel(assets, totalAssets, title) {
+  const groups = calculateAllocation(assets, totalAssets);
+  let cursor = 0;
+  const segments = groups.map(({ category, percent }) => {
+    const start = cursor;
+    cursor += percent;
+    return `${colors[category] || '#7e8798'} ${start}% ${cursor}%`;
+  }).join(',') || '#dcebe6 0 100%';
+  return `<section class="panel"><div class="panelTitle"><div><h2>${title}</h2></div><span>${groups.length} 類</span></div><div class="allocation"><div class="donut" style="--segments:${segments}"></div><div class="legend">${groups.map(({ category, percent }) => `<div class="legendRow"><i style="background:${colors[category] || '#7e8798'}"></i><span>${escapeHtml(category)}</span><b>${percent.toFixed(1)}%</b></div>`).join('')}</div></div></section>`;
 }
 
 function groupedCards(list, ownerScope, kind) {
@@ -508,7 +509,7 @@ function personPage(ownerScope) {
   const list = kind === 'asset' ? totals.assets : totals.liabilities;
   const total = kind === 'asset' ? totals.totalAssets : totals.totalLiabilities;
   const name = ownerScope === 'husband' ? '老公' : '老婆';
-  shell(`<section class="portfolioHero"><div class="heroLabel"><span>${name}淨資產</span><span>${totals.assets.length + totals.liabilities.length} 筆</span></div><div class="bigMoney">${formatMoney(totals.netWorth)}</div><div class="miniStats"><div><span>資產總額</span><b>NT$ ${formatNumber(totals.totalAssets)}</b></div><div><span>負債總額</span><b>NT$ ${formatNumber(totals.totalLiabilities)}</b></div></div></section>${trendChart(personalTrendRows(ownerScope, totals.netWorth))}<div class="seg personSeg" id="personSeg"><button data-kind="asset" class="${kind === 'asset' ? 'on' : ''}">資產</button><button data-kind="liability" class="${kind === 'liability' ? 'on' : ''}">負債</button></div><div class="sectionHead"><span>${kind === 'asset' ? '投資與資產' : '貸款與負債'}</span><b>NT$ ${formatNumber(total)}</b></div><div class="categoryList">${list.length ? groupedCards(list, ownerScope, kind) : `<div class="empty"><div><b>目前沒有${kind === 'asset' ? '資產' : '負債'}資料</b><span>按右下角 ＋ 新增財務項目。</span></div></div>`}</div>`, name, true);
+  shell(`<section class="portfolioHero"><div class="heroLabel"><span>${name}淨資產</span><span>${totals.assets.length + totals.liabilities.length} 筆</span></div><div class="bigMoney">${formatMoney(totals.netWorth)}</div><div class="miniStats"><div><span>資產總額</span><b>NT$ ${formatNumber(totals.totalAssets)}</b></div><div><span>負債總額</span><b>NT$ ${formatNumber(totals.totalLiabilities)}</b></div></div></section>${assetAllocationPanel(totals.assets, totals.totalAssets, `${name}資產配置`)}${trendChart(personalTrendRows(ownerScope, totals.netWorth))}<div class="seg personSeg" id="personSeg"><button data-kind="asset" class="${kind === 'asset' ? 'on' : ''}">資產</button><button data-kind="liability" class="${kind === 'liability' ? 'on' : ''}">負債</button></div><div class="sectionHead"><span>${kind === 'asset' ? '投資與資產' : '貸款與負債'}</span><b>NT$ ${formatNumber(total)}</b></div><div class="categoryList">${list.length ? groupedCards(list, ownerScope, kind) : `<div class="empty"><div><b>目前沒有${kind === 'asset' ? '資產' : '負債'}資料</b><span>按右下角 ＋ 新增財務項目。</span></div></div>`}</div>`, name, true);
 
   root.querySelector('#personSeg').onclick = event => {
     const button = event.target.closest('[data-kind]');
@@ -546,7 +547,7 @@ function itemCard(item, total) {
     ? `<span class="quoteLive"><i></i>${price}<b class="${tone}">${change > 0 ? '+' : ''}${change.toFixed(2)}%</b></span>`
     : item.symbol ? '<span class="quotePending">沿用最近市值</span>' : '';
   const meta = item.kind === 'asset'
-    ? (item.symbol ? `<span>持有 ${quantity} 股</span>${quoteLine}` : '')
+    ? (item.market === 'GOLD' ? `<span>重量 ${quantity} g</span>${quoteLine}` : item.symbol ? `<span>持有 ${quantity} 股</span>${quoteLine}` : '')
     : `<span>利率 ${item.interest_rate !== null ? item.interest_rate.toFixed(2) + '%' : '待設定'}</span><span>月付 ${item.monthly_payment_twd !== null ? 'NT$ ' + formatNumber(item.monthly_payment_twd) : '待設定'}</span>`;
   const original = isNativeUsd
     ? `<span>US$ ${masked ? '••••••' : new Intl.NumberFormat('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(item.native_amount)}</span>`
@@ -572,6 +573,7 @@ function modeForItem(item, kind) {
   if (kind === 'liability') return 'liability';
   if (item?.market === 'TW') return 'stock-tw';
   if (item?.market === 'US') return 'stock-us';
+  if (item?.market === 'GOLD') return 'gold';
   const currency = item?.native_currency ?? item?.original_currency ?? 'TWD';
   return currency === 'USD' ? 'manual-usd' : 'manual-twd';
 }
@@ -584,7 +586,7 @@ function editItem(item, defaultOwner, defaultKind) {
   const initialNativeAmount = item?.native_amount ?? item?.original_amount ?? item?.amount_twd ?? '';
   const backdrop = document.createElement('div');
   backdrop.className = 'backdrop';
-  backdrop.innerHTML = `<section class="sheet"><div class="handle"></div><div class="sheetHead"><div><h2>${item ? '編輯' : '新增'}財務項目</h2></div>${item ? '<button id="del" class="trash">刪除</button>' : ''}</div><form id="editform" class="form" novalidate><label>歸屬<select id="owner"><option value="husband">老公</option><option value="wife">老婆</option></select></label><div class="seg"><button type="button" data-kind="asset">資產</button><button type="button" data-kind="liability">負債</button></div><label>名稱<input id="nm" required value="${escapeHtml(item?.name || '')}"></label><label>分類<select id="cat"></select></label><label id="modeBox">資料型態<select id="mode"><option value="manual-twd">手動台幣資產</option><option value="manual-usd">手動美元資產</option><option value="stock-tw">台股</option><option value="stock-us">美股</option></select></label><div id="manualFields"><label id="amountLabel">台幣金額<input id="amt" inputmode="decimal" value="${initialNativeAmount}"></label><div id="usdFields" class="two hide"><label>USD/TWD 匯率<input id="fx" inputmode="decimal" readonly></label><label>自動換算台幣<input id="converted" readonly></label></div></div><div id="stockFields" class="hide"><div class="two"><label>股票代號<input id="symbol" value="${escapeHtml(item?.symbol || '')}" placeholder="例如 2330 / VOO" autocapitalize="characters"></label><label>持有股數<input id="qty" inputmode="decimal" value="${item?.quantity ?? ''}"></label></div><div class="quoteHint" id="stockHint"></div></div><div id="loanFields" class="hide"><label>剩餘本金（TWD）<input id="principal" inputmode="decimal" value="${item?.amount_twd ?? ''}"></label><div class="two"><label>年利率 %<input id="rate" inputmode="decimal" value="${item?.interest_rate ?? ''}"></label><label>每月月付（TWD）<input id="pay" inputmode="decimal" value="${item?.monthly_payment_twd ?? ''}"></label></div></div><label>備註（選填）<textarea id="note" rows="3">${escapeHtml(item?.notes || '')}</textarea></label><div id="emsg"></div><button id="save" class="primary">儲存並同步</button></form></section>`;
+  backdrop.innerHTML = `<section class="sheet"><div class="handle"></div><div class="sheetHead"><div><h2>${item ? '編輯' : '新增'}財務項目</h2></div>${item ? '<button id="del" class="trash">刪除</button>' : ''}</div><form id="editform" class="form" novalidate><label>歸屬<select id="owner"><option value="husband">老公</option><option value="wife">老婆</option></select></label><div class="seg"><button type="button" data-kind="asset">資產</button><button type="button" data-kind="liability">負債</button></div><label>名稱<input id="nm" required value="${escapeHtml(item?.name || '')}"></label><label>分類<select id="cat"></select></label><label id="modeBox">資料型態<select id="mode"><option value="manual-twd">手動台幣資產</option><option value="manual-usd">手動美元資產</option><option value="stock-tw">台股</option><option value="stock-us">美股</option><option value="gold">黃金（自動行情）</option></select></label><div id="manualFields"><label id="amountLabel">台幣金額<input id="amt" inputmode="decimal" value="${initialNativeAmount}"></label><div id="usdFields" class="two hide"><label>USD/TWD 匯率<input id="fx" inputmode="decimal" readonly></label><label>自動換算台幣<input id="converted" readonly></label></div></div><div id="stockFields" class="hide"><div class="two"><label>股票代號<input id="symbol" value="${escapeHtml(item?.symbol || '')}" placeholder="例如 2330 / VOO" autocapitalize="characters"></label><label>持有股數<input id="qty" inputmode="decimal" value="${item?.quantity ?? ''}"></label></div><div class="quoteHint" id="stockHint"></div></div><div id="goldFields" class="hide"><div class="two"><label>持有重量<input id="goldWeight" inputmode="decimal" value="${item?.market === 'GOLD' ? item.quantity ?? '' : ''}"></label><label>單位<select disabled><option>g 公克</option></select></label></div><div class="quoteHint">依 XAU/USD × USD/TWD 自動換算台幣市值。1 troy oz = 31.1034768 g。</div></div><div id="loanFields" class="hide"><label>剩餘本金（TWD）<input id="principal" inputmode="decimal" value="${item?.amount_twd ?? ''}"></label><div class="two"><label>年利率 %<input id="rate" inputmode="decimal" value="${item?.interest_rate ?? ''}"></label><label>每月月付（TWD）<input id="pay" inputmode="decimal" value="${item?.monthly_payment_twd ?? ''}"></label></div></div><label>備註（選填）<textarea id="note" rows="3">${escapeHtml(item?.notes || '')}</textarea></label><div id="emsg"></div><button id="save" class="primary">儲存並同步</button></form></section>`;
   document.body.append(backdrop);
 
   const form = backdrop.querySelector('#editform');
@@ -603,6 +605,8 @@ function editItem(item, defaultOwner, defaultKind) {
   const symbolInput = backdrop.querySelector('#symbol');
   const quantityInput = backdrop.querySelector('#qty');
   const stockHint = backdrop.querySelector('#stockHint');
+  const goldFields = backdrop.querySelector('#goldFields');
+  const goldWeightInput = backdrop.querySelector('#goldWeight');
   const loanFields = backdrop.querySelector('#loanFields');
   const principalInput = backdrop.querySelector('#principal');
   const rateInput = backdrop.querySelector('#rate');
@@ -634,9 +638,13 @@ function editItem(item, defaultOwner, defaultKind) {
     modeInput.value = mode;
     const manual = kind === 'asset' && mode.startsWith('manual-');
     const stock = kind === 'asset' && mode.startsWith('stock-');
+    const gold = kind === 'asset' && mode === 'gold';
+    if (gold) categoryInput.value = '黃金';
+    categoryInput.disabled = gold;
     modeBox.classList.toggle('hide', kind === 'liability');
     manualFields.classList.toggle('hide', !manual);
     stockFields.classList.toggle('hide', !stock);
+    goldFields.classList.toggle('hide', !gold);
     loanFields.classList.toggle('hide', kind !== 'liability');
     usdFields.classList.toggle('hide', mode !== 'manual-usd');
     amountLabel.firstChild.textContent = mode === 'manual-usd' ? '美元金額（USD）' : '台幣金額（TWD）';
@@ -650,6 +658,11 @@ function editItem(item, defaultOwner, defaultKind) {
   fillCategories();
   updateFields();
   modeInput.onchange = () => { mode = modeInput.value; updateFields(); };
+  categoryInput.onchange = () => {
+    if (kind === 'asset' && categoryInput.value === '黃金' && !item) mode = 'gold';
+    else if (mode === 'gold' && categoryInput.value !== '黃金') mode = 'manual-twd';
+    updateFields();
+  };
   amountInput.oninput = updateConversion;
   backdrop.onclick = event => {
     if (event.target === backdrop && !saving) backdrop.remove();
@@ -707,6 +720,16 @@ function editItem(item, defaultOwner, defaultKind) {
         quoteCurrency = market === 'US' ? 'USD' : 'TWD';
         quoteSource = market === 'US' ? 'twelve_data' : 'fugle';
         exchangeRate = market === 'US' ? (toFiniteNumber(item?.fx_rate_twd || fxRate) || null) : 1;
+      } else if (mode === 'gold') {
+        market = 'GOLD';
+        symbol = 'XAU/USD';
+        quantity = parseNonNegative(goldWeightInput.value, '黃金重量', { positive: true });
+        amountTwd = toFiniteNumber(item?.amount_twd);
+        nativeCurrency = null;
+        nativeAmount = null;
+        quoteCurrency = 'USD';
+        quoteSource = 'twelve_data';
+        exchangeRate = toFiniteNumber(item?.fx_rate_twd || fxRate) || null;
       } else {
         throw new Error('資料型態設定不正確。');
       }
@@ -745,7 +768,7 @@ function editItem(item, defaultOwner, defaultKind) {
       tab = owner;
       pageKind[owner] = kind;
       await loadData({ blocking: false });
-      if (kind === 'asset' && (mode.startsWith('stock-') || mode === 'manual-usd')) {
+      if (kind === 'asset' && (mode.startsWith('stock-') || mode === 'manual-usd' || mode === 'gold')) {
         void refreshQuotes({ force: true });
       }
     } catch (error) {
