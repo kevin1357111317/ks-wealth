@@ -12,6 +12,8 @@
 .trendHead h2{margin:3px 0 0;font-size:18px}
 .trendToggle{min-width:38px;min-height:26px;padding:0 8px;border:1px solid #3a4251;border-radius:10px;background:#1b202b;color:#eef0f5;font-size:11px;font-weight:850}
 .trend svg{overflow:visible}
+.distributionActions{display:flex;align-items:center;gap:8px}
+.distributionToggle{min-width:44px;min-height:28px;padding:0 9px;border:1px solid #3a4251;border-radius:10px;background:#1b202b;color:#eef0f5;font-size:11px;font-weight:850}
 .personSeg{margin:0 0 14px}
 .personSeg button{min-height:48px;font-weight:800}
 .itemMeta.single{grid-template-columns:1fr}
@@ -179,7 +181,7 @@ body{
 .miniStats b,.ownerTile b,.itemName b,.itemAmount b,.sectionHead b,.categoryTotal b{color:#4b3028}
 .donut{box-shadow:inset 0 0 0 1px #c1d9d2}.donut:after{background:#fffaf0;color:#5b4036}
 .legendRow{color:#746c65}.legendRow b{color:#4b3028}
-.trendToggle{border-color:#b7d7d0;background:#edf8f4;color:#47736c}
+.trendToggle,.distributionToggle{border-color:#b7d7d0;background:#edf8f4;color:#47736c}
 .trend svg line{stroke:#d4e5df!important}
 .trend svg text{fill:#756d67!important}
 .trendChange.flat{color:#4b9e98}
