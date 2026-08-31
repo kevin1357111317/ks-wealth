@@ -131,7 +131,7 @@ function trendChart(rows) {
     return `<line x1="${tickX}" y1="22" x2="${tickX}" y2="190" stroke="#252c39" stroke-width="1" stroke-dasharray="5 7"/><text x="${tickX}" y="222" text-anchor="middle" fill="#8d96a6" font-size="18">${chartDate(series[index].recorded_on)}</text>`;
   }).join('');
 
-  return `<section class="panel trend scopeTrend"><div class="trendHead"><div class="trendTitle"><h2>淨資產趨勢</h2><button class="trendToggle" data-trend-toggle>${trendMode === 'value' ? '%' : 'NT<b>${delta > 0 ? '+' : ''}${formatNumber(delta)}</b><span>${delta > 0 ? '+' : ''}${percent.toFixed(2)}%</span></div></div><svg viewBox="0 0 680 236" aria-label="淨資產趨勢">${axis}${dateTicks}<path d="${points}" fill="none" stroke="${color}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg></section>`;
+  return \`<section class="panel trend scopeTrend"><div class="trendHead"><div class="trendTitle"><h2>淨資產趨勢</h2><button class="trendToggle" data-trend-toggle>\${trendMode === 'value' ? '%' : 'NT$'}</button></div><div class="trendChange \${tone}"><b>\${delta > 0 ? '+' : ''}\${formatNumber(delta)}</b><span>\${delta > 0 ? '+' : ''}\${percent.toFixed(2)}%</span></div></div><svg viewBox="0 0 680 236" aria-label="淨資產趨勢">\${axis}\${dateTicks}<path d="\${points}" fill="none" stroke="\${color}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg></section>\`;
 }
 
 function familyTrendRows(currentNetWorth) {
