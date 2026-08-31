@@ -151,7 +151,11 @@ function personalTrendRows(ownerScope, currentNetWorth) {
 
   let latestAsset = null;
   let latestLiability = null;
-  const byDate = new Map();
+  const byDate = new Map(
+    ownerScope === 'husband'
+      ? history.map(row => [row.recorded_on, row.net_worth_twd])
+      : [],
+  );
   for (const row of grouped.values()) {
     if (row.asset !== null) latestAsset = row.asset;
     if (row.liability !== null) latestLiability = row.liability;
