@@ -61,6 +61,7 @@ let fxRate = null;
 let openGroups = new Set();
 let trendMode = 'value';
 const pageKind = { husband: 'asset', wife: 'asset' };
+const distributionMode = { dashboard: 'asset', husband: 'asset', wife: 'asset' };
 
 // Formatting / calculations --------------------------------------------------
 
@@ -482,18 +483,25 @@ function dashboard() {
   const wifeShare = family.totalAssets ? wife.totalAssets / family.totalAssets * 100 : 0;
   const ownerDistribution = `<section class="panel"><div class="panelTitle"><div><h2>夫妻資產分布</h2></div></div><div class="ownerGrid"><div class="ownerTile"><span>老公資產</span><b>NT$ ${formatNumber(husband.totalAssets)}</b><small>占家庭資產 ${husbandShare.toFixed(1)}%</small></div><div class="ownerTile"><span>老婆資產</span><b>NT$ ${formatNumber(wife.totalAssets)}</b><small>占家庭資產 ${wifeShare.toFixed(1)}%</small></div></div></section>`;
 
-  shell(`<section class="portfolioHero"><div class="heroLabel"><span>家庭淨資產</span><span>老公＋老婆</span></div><div class="bigMoney">${formatMoney(family.netWorth)}</div><div class="miniStats"><div><span>家庭總資產</span><b>NT$ ${formatNumber(family.totalAssets)}</b></div><div><span>家庭總負債</span><b>NT$ ${formatNumber(family.totalLiabilities)}</b></div></div></section>${assetAllocationPanel(family.assets, family.totalAssets, '家庭資產配置')}${trendChart(familyTrendRows(family.netWorth))}${ownerDistribution}`, '家庭');
+  const distributionKind = distributionMode.dashboard;
+  const distributionRows = distributionKind === 'asset' ? family.assets : family.liabilities;
+  const distributionTotal = distributionKind === 'asset' ? family.totalAssets : family.totalLiabilities;
+  const distributionTitle = distributionKind === 'asset' ? '家庭資產分布' : '家庭負債分布';
+
+  shell(`<section class="portfolioHero"><div class="heroLabel"><span>家庭淨資產</span><span>老公＋老婆</span></div><div class="bigMoney">${formatMoney(family.netWorth)}</div><div class="miniStats"><div><span>家庭總資產</span><b>NT$ ${formatNumber(family.totalAssets)}</b></div><div><span>家庭總負債</span><b>NT$ ${formatNumber(family.totalLiabilities)}</b></div></div></section>${trendChart(familyTrendRows(family.netWorth))}${distributionPanel(distributionRows, distributionTotal, distributionTitle, distributionKind)}${ownerDistribution}`, '家庭');
 }
 
-function assetAllocationPanel(assets, totalAssets, title) {
-  const groups = calculateAllocation(assets, totalAssets);
+function distributionPanel(rows, total, title, kind) {
+  const groups = calculateAllocation(rows, total);
   let cursor = 0;
   const segments = groups.map(({ category, percent }) => {
     const start = cursor;
     cursor += percent;
     return `${colors[category] || '#7e8798'} ${start}% ${cursor}%`;
   }).join(',') || '#dcebe6 0 100%';
-  return `<section class="panel"><div class="panelTitle"><div><h2>${title}</h2></div><span>${groups.length} 類</span></div><div class="allocation"><div class="donut" style="--segments:${segments}"></div><div class="legend">${groups.map(({ category, percent }) => `<div class="legendRow"><i style="background:${colors[category] || '#7e8798'}"></i><span>${escapeHtml(category)}</span><b>${percent.toFixed(1)}%</b></div>`).join('')}</div></div></section>`;
+  const centerLabel = kind === 'asset' ? '資產分布' : '負債分布';
+  const targetLabel = kind === 'asset' ? '負債' : '資產';
+  return `<section class="panel distributionPanel"><div class="panelTitle"><div><h2>${title}</h2></div><div class="distributionActions"><span>${groups.length} 類</span><button class="distributionToggle" data-distribution-toggle>${targetLabel}</button></div></div><div class="allocation"><div class="donut" data-label="${centerLabel}" style="--segments:${segments}"></div><div class="legend">${groups.map(({ category, percent }) => `<div class="legendRow"><i style="background:${colors[category] || '#7e8798'}"></i><span>${escapeHtml(category)}</span><b>${percent.toFixed(1)}%</b></div>`).join('')}</div></div></section>`;
 }
 
 function groupedCards(list, ownerScope, kind) {
@@ -524,7 +532,11 @@ function personPage(ownerScope) {
   const list = kind === 'asset' ? totals.assets : totals.liabilities;
   const total = kind === 'asset' ? totals.totalAssets : totals.totalLiabilities;
   const name = ownerScope === 'husband' ? '老公' : '老婆';
-  shell(`<section class="portfolioHero"><div class="heroLabel"><span>${name}淨資產</span><span>${totals.assets.length + totals.liabilities.length} 筆</span></div><div class="bigMoney">${formatMoney(totals.netWorth)}</div><div class="miniStats"><div><span>資產總額</span><b>NT$ ${formatNumber(totals.totalAssets)}</b></div><div><span>負債總額</span><b>NT$ ${formatNumber(totals.totalLiabilities)}</b></div></div></section>${assetAllocationPanel(totals.assets, totals.totalAssets, `${name}資產配置`)}${trendChart(personalTrendRows(ownerScope, totals.netWorth))}<div class="seg personSeg" id="personSeg"><button data-kind="asset" class="${kind === 'asset' ? 'on' : ''}">資產</button><button data-kind="liability" class="${kind === 'liability' ? 'on' : ''}">負債</button></div><div class="sectionHead"><span>${kind === 'asset' ? '投資與資產' : '貸款與負債'}</span><b>NT$ ${formatNumber(total)}</b></div><div class="categoryList">${list.length ? groupedCards(list, ownerScope, kind) : `<div class="empty"><div><b>目前沒有${kind === 'asset' ? '資產' : '負債'}資料</b><span>按右下角 ＋ 新增財務項目。</span></div></div>`}</div>`, name, true);
+  const distributionKind = distributionMode[ownerScope];
+  const distributionRows = distributionKind === 'asset' ? totals.assets : totals.liabilities;
+  const distributionTotal = distributionKind === 'asset' ? totals.totalAssets : totals.totalLiabilities;
+  const distributionTitle = `${name}${distributionKind === 'asset' ? '資產' : '負債'}分布`;
+  shell(`<section class="portfolioHero"><div class="heroLabel"><span>${name}淨資產</span><span>${totals.assets.length + totals.liabilities.length} 筆</span></div><div class="bigMoney">${formatMoney(totals.netWorth)}</div><div class="miniStats"><div><span>資產總額</span><b>NT$ ${formatNumber(totals.totalAssets)}</b></div><div><span>負債總額</span><b>NT$ ${formatNumber(totals.totalLiabilities)}</b></div></div></section>${trendChart(personalTrendRows(ownerScope, totals.netWorth))}${distributionPanel(distributionRows, distributionTotal, distributionTitle, distributionKind)}<div class="seg personSeg" id="personSeg"><button data-kind="asset" class="${kind === 'asset' ? 'on' : ''}">資產</button><button data-kind="liability" class="${kind === 'liability' ? 'on' : ''}">負債</button></div><div class="sectionHead"><span>${kind === 'asset' ? '投資與資產' : '貸款與負債'}</span><b>NT$ ${formatNumber(total)}</b></div><div class="categoryList">${list.length ? groupedCards(list, ownerScope, kind) : `<div class="empty"><div><b>目前沒有${kind === 'asset' ? '資產' : '負債'}資料</b><span>按右下角 ＋ 新增財務項目。</span></div></div>`}</div>`, name, true);
 
   root.querySelector('#personSeg').onclick = event => {
     const button = event.target.closest('[data-kind]');
@@ -577,9 +589,16 @@ function render() {
 }
 
 root.addEventListener('click', event => {
-  if (!event.target.closest('[data-trend-toggle]')) return;
-  trendMode = trendMode === 'value' ? 'percent' : 'value';
-  render();
+  if (event.target.closest('[data-trend-toggle]')) {
+    trendMode = trendMode === 'value' ? 'percent' : 'value';
+    render();
+    return;
+  }
+  if (event.target.closest('[data-distribution-toggle]')) {
+    const scope = tab === 'dashboard' ? 'dashboard' : tab;
+    distributionMode[scope] = distributionMode[scope] === 'asset' ? 'liability' : 'asset';
+    render();
+  }
 });
 
 // Financial item CRUD --------------------------------------------------------
