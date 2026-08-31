@@ -624,11 +624,12 @@ function editItem(item, defaultOwner, defaultKind) {
   const initialNativeAmount = item?.native_amount ?? item?.original_amount ?? item?.amount_twd ?? '';
   const backdrop = document.createElement('div');
   backdrop.className = 'backdrop';
-  backdrop.innerHTML = `<section class="sheet"><div class="handle"></div><div class="sheetHead"><div><h2>${item ? '編輯' : '新增'}財務項目</h2></div>${item ? '<button id="del" class="trash">刪除</button>' : ''}</div><form id="editform" class="form" novalidate><label>歸屬<select id="owner"><option value="husband">老公</option><option value="wife">老婆</option></select></label><div class="seg"><button type="button" data-kind="asset">資產</button><button type="button" data-kind="liability">負債</button></div><label>名稱<input id="nm" required value="${escapeHtml(item?.name || '')}"></label><label><span id="categoryLabel">資產屬性</span><select id="cat"></select></label><label id="modeBox">資料型態<select id="mode"><option value="manual-twd">手動台幣資產</option><option value="manual-usd">手動美元資產</option><option value="stock-tw">台股</option><option value="stock-us">美股</option><option value="gold">黃金（自動行情）</option></select><small id="modeHint" class="quoteHint"></small></label><div id="manualFields"><label id="amountLabel">台幣金額<input id="amt" inputmode="decimal" value="${initialNativeAmount}"></label><div id="usdFields" class="two hide"><label>USD/TWD 匯率<input id="fx" inputmode="decimal" readonly></label><label>自動換算台幣<input id="converted" readonly></label></div></div><div id="stockFields" class="hide"><div class="two"><label>股票代號<input id="symbol" value="${escapeHtml(item?.symbol || '')}" placeholder="例如 2330 / VOO" autocapitalize="characters"></label><label>持有股數<input id="qty" inputmode="decimal" value="${item?.quantity ?? ''}"></label></div><div class="quoteHint" id="stockHint"></div></div><div id="goldFields" class="hide"><div class="two"><label>持有重量<input id="goldWeight" inputmode="decimal" value="${item?.market === 'GOLD' ? item.quantity ?? '' : ''}"></label><label>單位<select disabled><option>g 公克</option></select></label></div><div class="quoteHint">依 XAU/USD × USD/TWD 自動換算台幣市值。1 troy oz = 31.1034768 g。</div></div><div id="loanFields" class="hide"><label>剩餘本金（TWD）<input id="principal" inputmode="decimal" value="${item?.amount_twd ?? ''}"></label><div class="two"><label>年利率 %<input id="rate" inputmode="decimal" value="${item?.interest_rate ?? ''}"></label><label>每月月付（TWD）<input id="pay" inputmode="decimal" value="${item?.monthly_payment_twd ?? ''}"></label></div></div><label>備註（選填）<textarea id="note" rows="3">${escapeHtml(item?.notes || '')}</textarea></label><div id="emsg"></div><button id="save" class="primary">儲存並同步</button></form></section>`;
+  backdrop.innerHTML = `<section class="sheet"><div class="handle"></div><div class="sheetHead"><div><h2>${item ? '編輯' : '新增'}財務項目</h2></div>${item ? '<button id="del" class="trash">刪除</button>' : ''}</div><form id="editform" class="form" novalidate><label>歸屬<select id="owner"><option value="husband">老公</option><option value="wife">老婆</option></select></label><div class="seg"><button type="button" data-kind="asset">資產</button><button type="button" data-kind="liability">負債</button></div><label><span id="categoryLabel">資產屬性</span><select id="cat"></select></label><label id="nameBox">名稱<input id="nm" required value="${escapeHtml(item?.name || '')}"></label><label id="modeBox">資料型態<select id="mode"><option value="manual-twd">手動台幣資產</option><option value="manual-usd">手動美元資產</option><option value="stock-tw">台股</option><option value="stock-us">美股</option><option value="gold">黃金（自動行情）</option></select><small id="modeHint" class="quoteHint"></small></label><div id="manualFields"><label id="amountLabel">台幣金額<input id="amt" inputmode="decimal" value="${initialNativeAmount}"></label><div id="usdFields" class="two hide"><label>USD/TWD 匯率<input id="fx" inputmode="decimal" readonly></label><label>自動換算台幣<input id="converted" readonly></label></div></div><div id="stockFields" class="hide"><div class="two"><label>股票代號<input id="symbol" value="${escapeHtml(item?.symbol || '')}" placeholder="例如 2330 / VOO" autocapitalize="characters"></label><label>持有股數<input id="qty" inputmode="decimal" value="${item?.quantity ?? ''}"></label></div><div class="quoteHint" id="stockHint"></div></div><div id="goldFields" class="hide"><div class="two"><label>持有重量<input id="goldWeight" inputmode="decimal" value="${item?.market === 'GOLD' ? item.quantity ?? '' : ''}"></label><label>單位<select disabled><option>g 公克</option></select></label></div><div class="quoteHint">依 XAU/USD × USD/TWD 自動換算台幣市值。1 troy oz = 31.1034768 g。</div></div><div id="loanFields" class="hide"><label>剩餘本金（TWD）<input id="principal" inputmode="decimal" value="${item?.amount_twd ?? ''}"></label><div class="two"><label>年利率 %<input id="rate" inputmode="decimal" value="${item?.interest_rate ?? ''}"></label><label>每月月付（TWD）<input id="pay" inputmode="decimal" value="${item?.monthly_payment_twd ?? ''}"></label></div></div><label>備註（選填）<textarea id="note" rows="3">${escapeHtml(item?.notes || '')}</textarea></label><div id="emsg"></div><button id="save" class="primary">儲存並同步</button></form></section>`;
   document.body.append(backdrop);
 
   const form = backdrop.querySelector('#editform');
   const ownerInput = backdrop.querySelector('#owner');
+  const nameBox = backdrop.querySelector('#nameBox');
   const nameInput = backdrop.querySelector('#nm');
   const categoryInput = backdrop.querySelector('#cat');
   const categoryLabel = backdrop.querySelector('#categoryLabel');
@@ -692,6 +693,8 @@ function editItem(item, defaultOwner, defaultKind) {
     const manual = kind === 'asset' && mode.startsWith('manual-');
     const stock = kind === 'asset' && mode.startsWith('stock-');
     const gold = kind === 'asset' && mode === 'gold';
+    nameBox.classList.toggle('hide', stock);
+    nameInput.required = !stock;
     categoryInput.disabled = false;
     modeHint.textContent = '';
     modeBox.classList.add('hide');
@@ -731,10 +734,11 @@ function editItem(item, defaultOwner, defaultKind) {
     message.textContent = '';
     try {
       owner = ownerInput.value;
-      const name = nameInput.value.trim();
+      const stockMode = kind === 'asset' && (mode === 'stock-tw' || mode === 'stock-us');
+      let name = nameInput.value.trim();
       if (!OWNER_SCOPES.includes(owner)) throw new Error('歸屬設定不正確。');
       if (!ITEM_KINDS.includes(kind)) throw new Error('資產／負債設定不正確。');
-      if (!name) throw new Error('請輸入名稱。');
+      if (!stockMode && !name) throw new Error('請輸入名稱。');
       const category = selectedCategory();
       if (!categories[kind].includes(category)) throw new Error('資產屬性／分類設定不正確。');
 
@@ -766,6 +770,8 @@ function editItem(item, defaultOwner, defaultKind) {
         market = mode === 'stock-us' ? 'US' : 'TW';
         symbol = symbolInput.value.trim().toUpperCase();
         if (!isValidSymbol(symbol)) throw new Error('股票代號格式不正確。');
+        const wasAlreadyStock = item?.market === 'TW' || item?.market === 'US';
+        name = wasAlreadyStock && item?.name ? item.name : symbol;
         quantity = parseNonNegative(quantityInput.value, '持有股數', { positive: true });
         amountTwd = toFiniteNumber(item?.amount_twd);
         nativeCurrency = null;
