@@ -26,7 +26,7 @@
 .categoryGroup.open .categoryTotal i{transform:rotate(180deg)}
 .categoryItems{display:grid;gap:9px;padding:0 10px 10px}
 .categoryItems .itemCard{border-radius:18px;background:#0a0d13}
-.bottomNav{padding:7px;border-color:#343c4b;background:#11151df8}
+.bottomNav{grid-template-columns:repeat(3,1fr);padding:7px;border-color:#343c4b;background:#11151df8}
 .bottomNav button{min-height:68px;color:#9aa4b5;font-size:12px;font-weight:750}
 .bottomNav button span{font-size:27px;font-weight:900;line-height:1}
 .bottomNav button.on{background:#252c40;color:#e1e5ff;box-shadow:inset 0 0 0 1px #39425b}
@@ -51,6 +51,12 @@
 .quoteLive i{width:7px;height:7px;border-radius:50%;background:#72d7a7;box-shadow:0 0 9px #72d7a755}
 .quoteLive b{font-size:12px}.quoteLive b.up{color:#ff7f91}.quoteLive b.down{color:#72d7a7}.quoteLive b.flat{color:#aab2bf}
 .quotePending{color:#7f8999}
+.status.updating i{background:var(--orange);box-shadow:0 0 9px #e5ae4f77;animation:pulse 1s ease-in-out infinite alternate}
+.status.partial i{background:var(--orange);box-shadow:0 0 9px #e5ae4f77}
+.status.error i{background:var(--red);box-shadow:0 0 9px #d95f6877}
+button:disabled{cursor:wait;opacity:.62}
+.form input[readonly]{background:#f3f0e8;color:#6f6a63}
+@keyframes pulse{to{opacity:.35}}
 @media(max-width:600px){
   body{font-size:16px}
   .app{padding-right:14px;padding-left:14px;padding-bottom:calc(134px + env(safe-area-inset-bottom))}
