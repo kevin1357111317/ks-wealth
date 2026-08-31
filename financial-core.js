@@ -77,6 +77,21 @@ export function calculateSummary(items, ownerScope = null) {
   };
 }
 
+export function calculateAllocation(assets, totalAssets) {
+  const grouped = assets.reduce((map, item) => {
+    map[item.category] = (map[item.category] || 0) + toFiniteNumber(item.amount_twd);
+    return map;
+  }, {});
+  return Object.entries(grouped)
+    .filter(([, value]) => value > 0)
+    .sort((a, b) => b[1] - a[1])
+    .map(([category, value]) => ({
+      category,
+      value,
+      percent: totalAssets > 0 ? value / totalAssets * 100 : 0,
+    }));
+}
+
 export function isValidSymbol(value) {
   return /^[0-9A-Z.-]{1,16}$/.test(String(value ?? '').trim().toUpperCase());
 }
