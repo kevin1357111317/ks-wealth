@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  calculateAllocation,
   calculateSummary,
   calculateTwdAmount,
   isValidSymbol,
@@ -53,4 +54,16 @@ test('stock symbols are normalized by a strict safe format', () => {
   assert.equal(isValidSymbol('00631L'), true);
   assert.equal(isValidSymbol('BRK.B'), true);
   assert.equal(isValidSymbol('<script>'), false);
+});
+
+test('asset allocation uses each scope total and hides zero categories', () => {
+  const husbandAssets = [
+    { category: '台股', amount_twd: 60 },
+    { category: '黃金', amount_twd: 40 },
+    { category: '收藏', amount_twd: 0 },
+  ];
+  assert.deepEqual(calculateAllocation(husbandAssets, 100), [
+    { category: '台股', value: 60, percent: 60 },
+    { category: '黃金', value: 40, percent: 40 },
+  ]);
 });
