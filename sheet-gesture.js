@@ -6,50 +6,81 @@ function enableSheetGesture(backdrop) {
   if (!(backdrop instanceof HTMLElement) || !backdrop.classList.contains('backdrop')) return;
   const sheet = backdrop.querySelector('.sheet');
   const handle = sheet?.querySelector('.handle');
-  if (!sheet || !handle || handle.dataset.gestureReady) return;
+  if (!sheet || !handle || sheet.dataset.gestureReady) return;
 
-  handle.dataset.gestureReady = 'true';
+  sheet.dataset.gestureReady = 'true';
   handle.setAttribute('role', 'button');
-  handle.setAttribute('aria-label', '向下滑動或點一下以關閉');
+  handle.setAttribute('aria-label', '向下滑動面板或點一下以關閉');
   handle.tabIndex = 0;
-  handle.style.touchAction = 'none';
 
+  let startX = 0;
   let startY = 0;
   let distance = 0;
+  let tracking = false;
   let dragging = false;
 
-  handle.addEventListener('pointerdown', event => {
-    startY = event.clientY;
-    distance = 0;
-    dragging = true;
-    handle.setPointerCapture?.(event.pointerId);
-    sheet.style.transition = 'none';
-  });
-
-  handle.addEventListener('pointermove', event => {
-    if (!dragging) return;
-    distance = Math.max(0, event.clientY - startY);
-    sheet.style.transform = `translateY(${distance}px)`;
-  });
-
-  const finish = () => {
-    if (!dragging) return;
+  const reset = () => {
+    tracking = false;
     dragging = false;
-    sheet.style.transition = 'transform .2s ease';
-    if (distance >= 72) {
-      sheet.style.transform = 'translateY(110%)';
-      window.setTimeout(() => dismiss(backdrop), 180);
-    } else {
-      sheet.style.transform = '';
-      window.setTimeout(() => { sheet.style.transition = ''; }, 220);
-    }
+    distance = 0;
   };
 
-  handle.addEventListener('pointerup', finish);
-  handle.addEventListener('pointercancel', finish);
-  handle.addEventListener('click', () => {
-    if (distance < 8) dismiss(backdrop);
-  });
+  const finish = () => {
+    if (!tracking) return;
+    const shouldDismiss = dragging && distance >= 84;
+    tracking = false;
+    dragging = false;
+    sheet.style.transition = 'transform .2s ease';
+    if (shouldDismiss) {
+      sheet.style.transform = 'translateY(110%)';
+      window.setTimeout(() => dismiss(backdrop), 180);
+      return;
+    }
+    sheet.style.transform = '';
+    window.setTimeout(() => {
+      sheet.style.transition = '';
+      distance = 0;
+    }, 220);
+  };
+
+  sheet.addEventListener('touchstart', event => {
+    if (event.touches.length !== 1 || sheet.scrollTop > 0) return;
+    if (event.target.closest('input, select, textarea, button')) return;
+    const touch = event.touches[0];
+    startX = touch.clientX;
+    startY = touch.clientY;
+    distance = 0;
+    tracking = true;
+    dragging = false;
+  }, { passive: true });
+
+  sheet.addEventListener('touchmove', event => {
+    if (!tracking || event.touches.length !== 1) return;
+    const touch = event.touches[0];
+    const deltaX = touch.clientX - startX;
+    const deltaY = touch.clientY - startY;
+    if (!dragging) {
+      if (deltaY <= 8) return;
+      if (Math.abs(deltaX) > deltaY) {
+        reset();
+        return;
+      }
+      if (sheet.scrollTop > 0) {
+        reset();
+        return;
+      }
+      dragging = true;
+      sheet.style.transition = 'none';
+    }
+    distance = Math.max(0, deltaY);
+    event.preventDefault();
+    sheet.style.transform = `translateY(${distance}px)`;
+  }, { passive: false });
+
+  sheet.addEventListener('touchend', finish);
+  sheet.addEventListener('touchcancel', finish);
+
+  handle.addEventListener('click', () => dismiss(backdrop));
   handle.addEventListener('keydown', event => {
     if (event.key === 'Enter' || event.key === ' ') dismiss(backdrop);
   });
@@ -68,4 +99,3 @@ new MutationObserver(records => {
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape') dismiss(document.querySelector('.backdrop'));
 });
-
