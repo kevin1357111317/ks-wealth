@@ -27,12 +27,12 @@ const tabs = [
   ['wife', '◐', '老婆'],
 ];
 const categories = {
-  asset: ['台股', '美股', '現金及存款', '不動產', '保險', '黃金', '收藏', '其他資產'],
+  asset: ['現金及存款', '台股', '美股', '不動產', '黃金', '保險', '其他'],
   liability: ['房貸', '增貸', '信貸', '信用卡', '其他負債'],
 };
 const colors = {
   台股: '#72d7a7', 美股: '#8b94ff', 現金及存款: '#67c8db', 不動產: '#f0b467',
-  保險: '#bb8cff', 黃金: '#e5ae4f', 收藏: '#ee8f73', 房貸: '#ff7f91', 增貸: '#f0a76b', 信貸: '#df788a',
+  保險: '#bb8cff', 黃金: '#e5ae4f', 其他: '#ee8f73', 房貸: '#ff7f91', 增貸: '#f0a76b', 信貸: '#df788a',
 };
 
 let lifecycle = 'booting';
@@ -498,7 +498,13 @@ function groupedCards(list, ownerScope, kind) {
     rows.push(item);
     groups.set(item.category, rows);
   });
-  return [...groups].map(([category, rows]) => {
+  const categoryIndex = category => {
+    const index = categories[kind].indexOf(category);
+    return index === -1 ? Number.MAX_SAFE_INTEGER : index;
+  };
+  return [...groups]
+    .sort(([categoryA], [categoryB]) => categoryIndex(categoryA) - categoryIndex(categoryB))
+    .map(([category, rows]) => {
     const key = encodeURIComponent(`${ownerScope}|${kind}|${category}`);
     const groupTotal = rows.reduce((sum, item) => sum + item.amount_twd, 0);
     const open = openGroups.has(key);
