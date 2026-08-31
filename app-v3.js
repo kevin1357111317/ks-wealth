@@ -134,8 +134,7 @@ function familyTrendRows(currentNetWorth) {
   byDate.set(taipeiDate(), currentNetWorth);
   const rows = [...byDate].map(([recorded_on, total_twd]) => ({ recorded_on, total_twd }))
     .sort((a, b) => a.recorded_on.localeCompare(b.recorded_on));
-  const latestYear = (rows.at(-1)?.recorded_on ?? taipeiDate()).slice(0, 4);
-  return rows.filter(row => row.recorded_on.startsWith(latestYear));
+  return rows;
 }
 
 function personalTrendRows(ownerScope, currentNetWorth) {
@@ -304,9 +303,9 @@ async function loadData({ blocking = false } = {}) {
   loadFlight = (async () => {
     const [itemResult, familyHistoryResult, householdResult, scopeHistoryResult] = await Promise.all([
       sb.from('financial_items').select('*').eq('household_id', householdId).order('sort_order'),
-      sb.from('net_worth_history').select('*').eq('household_id', householdId).order('recorded_on'),
+      sb.from('net_worth_history').select('*').eq('household_id', householdId).order('recorded_on').range(0, 9999),
       sb.from('households').select('name').eq('id', householdId).single(),
-      sb.from('financial_scope_history').select('*').eq('household_id', householdId).order('recorded_on'),
+      sb.from('financial_scope_history').select('*').eq('household_id', householdId).order('recorded_on').range(0, 9999),
     ]);
     const failure = [itemResult.error, familyHistoryResult.error, householdResult.error, scopeHistoryResult.error].find(Boolean);
     if (failure) throw failure;
