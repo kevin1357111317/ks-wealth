@@ -1,16 +1,15 @@
 .trendFooter{gap:12px}
 .trendFooter span:last-child{text-align:right}
-.trendChange{display:grid;gap:3px;text-align:right}
+.trendChange{display:flex;align-items:baseline;gap:8px;margin:7px 0 5px;text-align:left}
 .trendChange b{font-size:12px}
 .trendChange span{font-size:9px}
 .trendChange.up{color:var(--red)}
 .trendChange.down{color:var(--green)}
 .trendChange.flat{color:#8c95a5}
 .scopeTrend{overflow:hidden}
-.trendHead{display:grid;grid-template-columns:1fr auto;align-items:start;gap:10px;margin-bottom:8px}
-.trendTitle{display:grid;justify-items:start;gap:6px}
+.trendHead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:0}
 .trendHead h2{margin:3px 0 0;font-size:18px}
-.trendToggle{min-width:38px;min-height:26px;padding:0 8px;border:1px solid #3a4251;border-radius:10px;background:#1b202b;color:#eef0f5;font-size:11px;font-weight:850}
+.trendToggle{min-width:44px;min-height:28px;padding:0 9px;border:1px solid #3a4251;border-radius:10px;background:#1b202b;color:#eef0f5;font-size:11px;font-weight:850}
 .trend svg{overflow:visible}
 .distributionActions{display:flex;align-items:center;gap:8px}
 .distributionToggle{min-width:44px;min-height:28px;padding:0 9px;border:1px solid #3a4251;border-radius:10px;background:#1b202b;color:#eef0f5;font-size:11px;font-weight:850}
@@ -83,9 +82,10 @@ button:disabled{cursor:wait;opacity:.62}
   .itemMeta div:last-child{display:grid}
   .source{font-size:11px}
   .sectionHead span{font-size:13px}.sectionHead b{font-size:15px}
-  .trendHead{grid-template-columns:1fr auto;align-items:start;gap:9px}
-  .trendHead .trendChange{grid-column:auto;display:grid;justify-content:end;gap:3px}
-  .trendToggle{min-width:38px;min-height:26px;font-size:11px}
+  .trendHead{display:flex;align-items:center;justify-content:space-between;gap:9px}
+  .trendHead h2{font-size:20px}
+  .trendChange{justify-content:flex-start}
+  .trendToggle{min-width:44px;min-height:28px;font-size:11px}
   .trendFooter{font-size:12px}.trendChange b{font-size:15px}.trendChange span{font-size:12px}
   .bottomNav{grid-template-columns:repeat(3,1fr)}
   .bottomNav button{min-height:72px;font-size:13px}.bottomNav button span{font-size:29px}
