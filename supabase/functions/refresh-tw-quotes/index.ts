@@ -12,6 +12,10 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
   headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" },
 });
 
+const TROY_OUNCE_GRAMS = 31.1034768;
+const goldAmountTwd = (grams: number, xauUsd: number, usdTwd: number) =>
+  Math.round((grams / TROY_OUNCE_GRAMS) * xauUsd * usdTwd);
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
@@ -43,6 +47,7 @@ Deno.serve(async (req: Request) => {
   if (itemError) return json({ error: "items_unavailable", detail: itemError.message }, 500);
 
   const marketItems = (items ?? []).filter((item) => ["TW", "US"].includes(item.market) && item.symbol);
+  const goldItems = (items ?? []).filter((item) => item.market === "GOLD");
   const usdCashItems = (items ?? []).filter((item) => item.market === "MANUAL" && item.native_currency === "USD" && Number(item.native_amount) >= 0);
   const validSymbol = (symbol: string) => /^[0-9A-Z.-]{1,16}$/.test(symbol);
   const twSymbols = [...new Set(marketItems.filter((x) => x.market === "TW").map((x) => String(x.symbol).toUpperCase()))].filter(validSymbol);
@@ -75,7 +80,7 @@ Deno.serve(async (req: Request) => {
 
   let fxRate: number | null = null;
   let fxError: string | null = null;
-  const needsUsdFx = usSymbols.length > 0 || usdCashItems.length > 0;
+  const needsUsdFx = usSymbols.length > 0 || usdCashItems.length > 0 || goldItems.length > 0;
   if (needsUsdFx && twelveKey) {
     try {
       const response = await fetch(
@@ -118,6 +123,26 @@ Deno.serve(async (req: Request) => {
       return [`US:${symbol}`, { error: "twelve_unreachable" }] as const;
     }
   }));
+
+  let xauUsd: number | null = null;
+  let goldError: string | null = null;
+  if (goldItems.length > 0 && twelveKey) {
+    try {
+      const response = await fetch(
+        `https://api.twelvedata.com/quote?symbol=XAU%2FUSD&apikey=${encodeURIComponent(twelveKey)}`,
+        { headers: { "Accept": "application/json" } },
+      );
+      const quote = await response.json();
+      const price = Number(quote.close);
+      if (!response.ok || quote.status === "error" || !Number.isFinite(price) || price <= 0) {
+        goldError = quote.code ? `twelve_${quote.code}` : "gold_unavailable";
+      } else xauUsd = price;
+    } catch {
+      goldError = "twelve_unreachable";
+    }
+  } else if (goldItems.length > 0) {
+    goldError = "twelve_key_missing";
+  }
 
   const quotes = new Map([...twEntries, ...usEntries]);
   const results = [];
@@ -185,10 +210,38 @@ Deno.serve(async (req: Request) => {
       : { id: item.id, name: item.name, market: "MANUAL", status: "updated", currency: "USD", nativeAmount, amountTwd, fxRate });
   }
 
+  for (const item of goldItems) {
+    const grams = Number(item.quantity);
+    if (!Number.isFinite(grams) || grams <= 0) {
+      results.push({ id: item.id, name: item.name, market: "GOLD", status: "price_only", warning: "weight_missing", currency: "USD", price: xauUsd });
+      continue;
+    }
+    if (!xauUsd || !fxRate) {
+      results.push({ id: item.id, name: item.name, market: "GOLD", status: "error", error: goldError ?? fxError ?? "gold_unavailable" });
+      continue;
+    }
+    const amountTwd = goldAmountTwd(grams, xauUsd, fxRate);
+    const { error: updateError } = await client
+      .from("financial_items")
+      .update({
+        amount_twd: amountTwd,
+        fx_rate_twd: fxRate,
+        quote_currency: "USD",
+        quote_source: "twelve_data",
+        updated_by: userData.user.id,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", item.id);
+    results.push(updateError
+      ? { id: item.id, name: item.name, market: "GOLD", status: "error", error: updateError.message, currency: "USD", price: xauUsd }
+      : { id: item.id, name: item.name, market: "GOLD", status: "updated", grams, amountTwd, currency: "USD", price: xauUsd, fxRate });
+  }
+
   return json({
     source: "fugle+twelve_data",
     requestedAt: new Date().toISOString(),
     fx: { symbol: "USD/TWD", rate: fxRate, error: fxError },
+    gold: { symbol: "XAU/USD", price: xauUsd, error: goldError },
     updated: results.filter((x) => x.status === "updated").length,
     priceOnly: results.filter((x) => x.status === "price_only").length,
     failed: results.filter((x) => x.status === "error").length,
