@@ -1,48 +1,792 @@
-import{createClient}from'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.95.0/+esm';
-const sb=createClient('https://gbxsnwqbjmgfikpblyot.supabase.co','sb_publishable_VtGM8w7CqxDB_3NaROR8OA_H0txX-_I',{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
-const root=document.querySelector('#root');let session=null,member=null,items=[],history=[],scopeHistory=[],house='KS 家庭',tab='dashboard',masked=false,channel=null,quoteState='idle',quoteAutoDone=false,quoteLastAt=0,quoteData={},fxRate=null,openGroups=new Set,trendMode='value';const pageKind={husband:'asset',wife:'asset'};
-const tabs=[['husband','◒','老公'],['dashboard','◉','家庭'],['wife','◐','老婆']];
-const cats={asset:['台股','美股','現金及存款','不動產','保險','黃金與收藏','其他資產'],liability:['房貸','增貸','信貸','信用卡','其他負債']};
-const colors={'台股':'#72d7a7','美股':'#8b94ff','現金及存款':'#67c8db','不動產':'#f0b467','保險':'#bb8cff','黃金與收藏':'#ee8f73','房貸':'#ff7f91','增貸':'#f0a76b','信貸':'#df788a'};
-const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const N=v=>Number.isFinite(Number(v))?Number(v):0;
-const fmt=v=>masked?'••••••':new Intl.NumberFormat('zh-TW',{maximumFractionDigits:0}).format(Math.round(N(v)));
-const money=v=>`<small>NT$</small> ${fmt(v)}`;
-const axisFmt=v=>masked?'••••':`${new Intl.NumberFormat('zh-TW',{maximumFractionDigits:0}).format(Math.round(N(v)/10000))}萬`;
-const taipeiDate=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Taipei',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
-function yAxis(lo,hi){return[[hi,24],[(hi+lo)/2,105],[lo,186]].map(([v,y])=>`<line x1="100" y1="${y}" x2="666" y2="${y}" stroke="#293143" stroke-width="1"/><text x="4" y="${y+5}" fill="#7f8ba3" font-size="22">${axisFmt(v)}</text>`).join('')}
-function chartAxisFmt(value){if(masked)return'••••';if(trendMode==='percent')return`${value>0?'+':''}${value.toFixed(1)}%`;return`${(value/1000000).toFixed(1)}M`}
-function chartDate(date){const[,month,day]=String(date).split('-');return`${Number(month)}/${Number(day)}`}
-function trendChart(rows,label){if(!rows.length)return'';const firstValue=N(rows[0].total_twd),lastValue=N(rows.at(-1).total_twd),delta=lastValue-firstValue,pct=firstValue?delta/firstValue*100:0,tone=delta>0?'up':delta<0?'down':'flat',color=delta>0?'#ff7f91':delta<0?'#72d7a7':'#8c95a5',series=rows.map(row=>({...row,plotValue:trendMode==='percent'?(firstValue?(N(row.total_twd)-firstValue)/firstValue*100:0):N(row.total_twd)})),rawValues=series.map(row=>row.plotValue),rawLo=Math.min(...rawValues),rawHi=Math.max(...rawValues),padding=Math.max((rawHi-rawLo)*.08,trendMode==='percent'?.2:100000),lo=rawLo-padding,hi=rawHi+padding,x=rowIndex=>112+rowIndex/Math.max(1,series.length-1)*552,y=value=>22+(hi-value)/Math.max(1,hi-lo)*164,points=series.map((row,index)=>`${index?'L':'M'}${x(index)},${y(row.plotValue)}`).join(' '),axis=[0,.25,.5,.75,1].map(step=>{const value=hi-(hi-lo)*step,axisY=22+164*step;return`<line x1="106" y1="${axisY}" x2="664" y2="${axisY}" stroke="#293143" stroke-width="1"/><text x="4" y="${axisY+6}" fill="#8d96a6" font-size="19">${chartAxisFmt(value)}</text>`}).join(''),tickIndexes=[0,.25,.5,.75,1].map(step=>Math.round((series.length-1)*step)).filter((value,index,array)=>array.indexOf(value)===index),dateTicks=tickIndexes.map(index=>{const tickX=x(index);return`<line x1="${tickX}" y1="22" x2="${tickX}" y2="190" stroke="#252c39" stroke-width="1" stroke-dasharray="5 7"/><text x="${tickX}" y="222" text-anchor="middle" fill="#8d96a6" font-size="18">${chartDate(series[index].recorded_on)}</text>`}).join('');return`<section class="panel trend scopeTrend"><div class="trendHead"><div><h2>淨資產趨勢</h2></div><button class="trendToggle" data-trend-toggle>${trendMode==='value'?'↔ %':'NT$'}</button><div class="trendChange ${tone}"><b>${delta>0?'+':''}${fmt(delta)}</b><span>${delta>0?'+':''}${pct.toFixed(2)}%</span></div></div><svg viewBox="0 0 680 236" aria-label="淨資產趨勢">${axis}${dateTicks}<path d="${points}" fill="none" stroke="${color}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg></section>`}
-root.addEventListener('click',event=>{if(event.target.closest('[data-trend-toggle]')){trendMode=trendMode==='value'?'percent':'value';render()}})
-function auth(){root.className='auth';root.innerHTML=`<section class="authCard"><div class="logo big">KS</div><h1>KS財富管理</h1><p>夫妻共同使用的私人家庭帳本。登入後才能讀取財務資料。</p><div class="seg" id="authseg"><button class="on" data-mode="login">登入</button><button data-mode="signup">建立帳號</button></div><form id="authform" class="form"><label id="namebox" class="hide">顯示名稱<input id="dn" placeholder="例如：鎧麟 / 佳軒"></label><label>Email<input id="em" type="email" required autocomplete="email"></label><label>密碼<input id="pw" type="password" minlength="8" required autocomplete="current-password"></label><button class="primary">登入</button></form><div id="msg"></div><small class="secure">🔒 Supabase Auth + Row Level Security</small></section>`;let mode='login';authseg.onclick=e=>{if(!e.target.dataset.mode)return;mode=e.target.dataset.mode;authseg.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.mode===mode));namebox.classList.toggle('hide',mode==='login');authform.querySelector('button').textContent=mode==='login'?'登入':'建立帳號';pw.autocomplete=mode==='login'?'current-password':'new-password'};authform.onsubmit=async e=>{e.preventDefault();let error,data;if(mode==='login')({error}=await sb.auth.signInWithPassword({email:em.value.trim(),password:pw.value}));else({error,data}=await sb.auth.signUp({email:em.value.trim(),password:pw.value,options:{data:{display_name:dn.value.trim()||em.value.split('@')[0]},emailRedirectTo:location.origin}}));msg.className=error?'message error':'message';msg.textContent=error?error.message:(data&&!data.session?'註冊完成，請到信箱點驗證連結後登入。':'處理完成。')}}
-function join(){root.className='auth';root.innerHTML=`<section class="authCard"><div class="logo big">KS</div><h1>加入 KS 家庭</h1><p>帳號已登入。輸入家庭邀請碼後，這支手機就會與另一位家庭成員看到同一份財務資料。</p><form id="joinform" class="form"><label>家庭邀請碼<input id="code" required placeholder="KS-…" autocapitalize="none"></label><button class="primary">加入家庭帳本</button></form><div id="msg"></div><button id="signout" class="link">改用其他帳號</button></section>`;joinform.onsubmit=async e=>{e.preventDefault();const{error}=await sb.rpc('join_household_by_code',{raw_code:code.value.trim()});if(error){msg.className='message error';msg.textContent=error.message}else await membership()};signout.onclick=()=>sb.auth.signOut()}
-async function membership(){const{data,error}=await sb.from('household_members').select('household_id,role').eq('user_id',session.user.id).limit(1);if(error)return fail(error.message);member=data?.[0]||null;if(!member)return join();await load();if(!quoteAutoDone){quoteAutoDone=true;await refreshQuotes()}subscribe()}
-async function load(){const h=member.household_id,[a,b,c,d]=await Promise.all([sb.from('financial_items').select('*').eq('household_id',h).order('sort_order'),sb.from('net_worth_history').select('*').eq('household_id',h).order('recorded_on'),sb.from('households').select('name').eq('id',h).single(),sb.from('financial_scope_history').select('*').eq('household_id',h).order('recorded_on')]);const er=[a.error,b.error,c.error,d.error].find(Boolean);if(er)return fail(er.message);items=(a.data||[]).map(x=>({...x,amount_twd:N(x.amount_twd),native_amount:x.native_amount==null?null:N(x.native_amount),fx_rate_twd:x.fx_rate_twd==null?null:N(x.fx_rate_twd),quantity:x.quantity==null?null:N(x.quantity),average_cost:x.average_cost==null?null:N(x.average_cost),interest_rate:x.interest_rate==null?null:N(x.interest_rate),monthly_payment_twd:x.monthly_payment_twd==null?null:N(x.monthly_payment_twd)}));fxRate=items.find(x=>x.fx_rate_twd>1&&x.quote_currency==='USD')?.fx_rate_twd||fxRate;history=(b.data||[]).map(x=>({...x,net_worth_twd:N(x.net_worth_twd)}));scopeHistory=(d.data||[]).map(x=>({...x,total_twd:N(x.total_twd)}));house=c.data?.name||'KS 家庭';render()}
-function fail(t){root.className='center';root.innerHTML=`<div class="logo big">KS</div><p>${esc(t)}</p><button class="primary" style="padding:0 18px" onclick="location.reload()">重新載入</button>`}
-function summary(owner){const list=items.filter(x=>!owner||x.owner_scope===owner),a=list.filter(x=>x.kind==='asset'),l=list.filter(x=>x.kind==='liability'),at=a.reduce((s,x)=>s+x.amount_twd,0),lt=l.reduce((s,x)=>s+x.amount_twd,0);return{a,l,at,lt,net:at-lt}}
-function shell(body,title,showAdd=false){const statusText=quoteState==='updating'?'正在更新市場行情…':quoteState==='success'?'台股、美股與匯率已更新':quoteState==='error'?'部分行情更新失敗，沿用舊金額':'家庭資料已同步';root.className='app';root.innerHTML=`<header class="topbar"><div class="brand"><div class="logo">KS</div><div><h1>${title}</h1></div></div><div class="headActions"><button class="iconBtn" id="mask" title="隱藏金額">${masked?'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a21.86 21.86 0 0 1 5.06-6.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a21.86 21.86 0 0 1-2.16 3.19M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>':'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>'}</button><button class="iconBtn avatar" id="logout" title="登出">${esc(String(session.user.user_metadata?.display_name||session.user.email||'KS').slice(0,2))}</button></div></header><div class="status ${quoteState}"><i></i><span>${statusText}</span><button id="reload" ${quoteState==='updating'?'disabled':''}>${quoteState==='updating'?'更新中':'更新行情'}</button></div><main class="content">${body}</main>${showAdd?'<button class="fab" id="add" aria-label="新增財務項目">＋</button>':''}<nav class="bottomNav">${tabs.map(x=>`<button data-tab="${x[0]}" class="${tab===x[0]?'on':''}"><span>${x[1]}</span>${x[2]}</button>`).join('')}</nav>`;logout.onclick=()=>sb.auth.signOut();reload.onclick=refreshQuotes;mask.onclick=()=>{masked=!masked;render()};document.querySelector('.bottomNav').onclick=e=>{const b=e.target.closest('[data-tab]');if(b){tab=b.dataset.tab;render()}}}
-function dashboard(){const all=summary(),husband=summary('husband'),wife=summary('wife'),groups=Object.entries(all.a.reduce((m,x)=>(m[x.category]=(m[x.category]||0)+x.amount_twd,m),{})).sort((a,b)=>b[1]-a[1]);let cursor=0;const segments=groups.map(([g,v])=>{const p=all.at?v/all.at*100:0,start=cursor;cursor+=p;return`${colors[g]||'#7e8798'} ${start}% ${cursor}%`}).join(',')||'#252c39 0 100%';const chartByDate=new Map(history.map(x=>[x.recorded_on,x.net_worth_twd]));chartByDate.set(taipeiDate(),all.net);const chartHistory=[...chartByDate].map(([recorded_on,net_worth_twd])=>({recorded_on,net_worth_twd})).sort((a,b)=>a.recorded_on.localeCompare(b.recorded_on)),latestYear=(chartHistory.at(-1)?.recorded_on||taipeiDate()).slice(0,4),hs=chartHistory.filter(x=>x.recorded_on.startsWith(latestYear));shell(`<section class="portfolioHero"><div class="heroLabel"><span>家庭淨資產</span><span>老公＋老婆</span></div><div class="bigMoney">${money(all.net)}</div><div class="miniStats"><div><span>家庭總資產</span><b>NT$ ${fmt(all.at)}</b></div><div><span>家庭總負債</span><b>NT$ ${fmt(all.lt)}</b></div></div></section><section class="panel"><div class="panelTitle"><div><h2>夫妻財務概況</h2></div></div><div class="ownerGrid"><div class="ownerTile"><span>老公淨資產</span><b>NT$ ${fmt(husband.net)}</b><small>${husband.a.length} 筆資產 · ${husband.l.length} 筆負債</small></div><div class="ownerTile"><span>老婆淨資產</span><b>NT$ ${fmt(wife.net)}</b><small>${wife.a.length} 筆資產 · ${wife.l.length} 筆負債</small></div></div></section><section class="panel"><div class="panelTitle"><div><h2>家庭資產配置</h2></div><span>${groups.length} 類</span></div><div class="allocation"><div class="donut" style="--segments:${segments}"></div><div class="legend">${groups.slice(0,7).map(([g,v])=>`<div class="legendRow"><i style="background:${colors[g]||'#7e8798'}"></i><span>${esc(g)}</span><b>${all.at?(v/all.at*100).toFixed(1):0}%</b></div>`).join('')}</div></div></section>${trendChart(hs.map(x=>({recorded_on:x.recorded_on,total_twd:x.net_worth_twd})),'HOUSEHOLD')}`,'家庭儀表板')}
-function netTrend(owner,current){const grouped=new Map;scopeHistory.filter(x=>x.owner_scope===owner).sort((a,b)=>a.recorded_on.localeCompare(b.recorded_on)).forEach(x=>{const row=grouped.get(x.recorded_on)||{recorded_on:x.recorded_on,asset:null,liability:null};row[x.kind]=x.total_twd;grouped.set(x.recorded_on,row)});let asset=null,liability=null;const scopeRows=[...grouped.values()].map(x=>{if(x.asset!=null)asset=x.asset;if(x.liability!=null)liability=x.liability;return asset==null||liability==null?null:{recorded_on:x.recorded_on,total_twd:asset-liability}}).filter(Boolean),netByDate=new Map(owner==='husband'?history.map(x=>[x.recorded_on,x.net_worth_twd]):[]);scopeRows.forEach(x=>netByDate.set(x.recorded_on,x.total_twd));netByDate.set(taipeiDate(),current);const rows=[...netByDate].map(([recorded_on,total_twd])=>({recorded_on,total_twd})).sort((a,b)=>a.recorded_on.localeCompare(b.recorded_on));return trendChart(rows,owner==='husband'?'HUSBAND':'WIFE')}
-function groupedCards(list,owner,kind){const groups=new Map,total=list.reduce((sum,item)=>sum+item.amount_twd,0);list.forEach(x=>{const rows=groups.get(x.category)||[];rows.push(x);groups.set(x.category,rows)});return[...groups].map(([category,rows])=>{const key=encodeURIComponent(`${owner}|${kind}|${category}`),groupTotal=rows.reduce((sum,item)=>sum+item.amount_twd,0),open=openGroups.has(key);return`<section class="categoryGroup ${open?'open':''}"><button class="categoryHead" data-group="${key}"><div><span>${esc(category)}</span><small>${rows.length} 筆</small></div><div class="categoryTotal"><b>NT$ ${fmt(groupTotal)}</b><i>⌄</i></div></button>${open?`<div class="categoryItems">${rows.map(item=>itemCard(item,total)).join('')}</div>`:''}</section>`}).join('')}
-function personPage(owner){const t=summary(owner),kind=pageKind[owner],list=kind==='asset'?t.a:t.l,total=kind==='asset'?t.at:t.lt,name=owner==='husband'?'老公':'老婆';shell(`<section class="portfolioHero"><div class="heroLabel"><span>${name}淨資產</span><span>${t.a.length+t.l.length} 筆</span></div><div class="bigMoney">${money(t.net)}</div><div class="miniStats"><div><span>資產總額</span><b>NT$ ${fmt(t.at)}</b></div><div><span>負債總額</span><b>NT$ ${fmt(t.lt)}</b></div></div></section>${netTrend(owner,t.net)}<div class="seg personSeg" id="personSeg"><button data-kind="asset" class="${kind==='asset'?'on':''}">資產</button><button data-kind="liability" class="${kind==='liability'?'on':''}">負債</button></div><div class="sectionHead"><span>${kind==='asset'?'投資與資產':'貸款與負債'}</span><b>NT$ ${fmt(total)}</b></div><div class="categoryList">${list.length?groupedCards(list,owner,kind):`<div class="empty"><div><b>目前沒有${kind==='asset'?'資產':'負債'}資料</b><span>按右下角 ＋ 新增財務項目。</span></div></div>`}</div>`,name,true);personSeg.onclick=e=>{const b=e.target.closest('[data-kind]');if(b&&pageKind[owner]!==b.dataset.kind){pageKind[owner]=b.dataset.kind;render()}};add.onclick=()=>editItem(null,owner,kind);document.querySelector('.categoryList').onclick=e=>{const g=e.target.closest('[data-group]');if(g){const key=g.dataset.group;openGroups.has(key)?openGroups.delete(key):openGroups.add(key);render();return}const b=e.target.closest('[data-id]');if(b)editItem(items.find(x=>x.id===b.dataset.id),owner,kind)}}
-function itemCard(x,total){const q=quoteData[x.id],pct=total?x.amount_twd/total*100:0,pctLabel=pct>0&&pct<1?'&lt;1':Math.round(pct),isNativeUsd=x.native_currency==='USD'&&x.native_amount!=null,subtitle=x.symbol?esc(x.symbol):esc(x.native_currency||''),qty=x.quantity==null?'待設定':fmt(x.quantity),price=q?.currency==='USD'?`US$ ${new Intl.NumberFormat('zh-TW',{maximumFractionDigits:2}).format(N(q.price))}`:`NT$ ${fmt(q?.price)}`,change=N(q?.changePercent),tone=change>0?'up':change<0?'down':'flat',quoteLine=q?`<span class="quoteLive"><i></i>${price}<b class="${tone}">${change>0?'+':''}${change.toFixed(2)}%</b></span>`:x.symbol?'<span class="quotePending">等待行情</span>':'',meta=x.kind==='asset'?(x.symbol?`<span>持有 ${qty}</span>${quoteLine}`:''):`<span>利率 ${x.interest_rate!=null?x.interest_rate.toFixed(2)+'%':'待設定'}</span><span>月付 ${x.monthly_payment_twd!=null?'NT$ '+fmt(x.monthly_payment_twd):'待設定'}</span>`,original=isNativeUsd?`<span>US$ ${masked?'••••••':new Intl.NumberFormat('zh-TW',{minimumFractionDigits:2,maximumFractionDigits:2}).format(x.native_amount)}</span>`:'';return`<button class="itemCard compactCard" data-id="${x.id}"><div class="compactMain"><div class="allocationRing ${x.kind}" style="--pct:${Math.max(0,Math.min(100,pct))}%"><span>${pctLabel}%</span></div><div class="compactIdentity"><b>${esc(x.name)}</b>${subtitle?`<span>${subtitle}</span>`:''}</div><div class="compactAmount"><b>NT$ ${fmt(x.amount_twd)}</b>${original}</div></div>${meta?`<div class="compactMeta ${x.kind}">${meta}</div>`:''}</button>`}
-async function refreshQuotes(){if(quoteState==='updating'||!session||!member)return;if(Date.now()-quoteLastAt<60000){quoteState='success';render();return}quoteLastAt=Date.now();quoteState='updating';render();const{data,error}=await sb.functions.invoke('refresh-tw-quotes',{body:{}});if(error){quoteState='error';render();return}quoteData=Object.fromEntries((data?.results||[]).filter(x=>x.price).map(x=>[x.id,x]));if(data?.fx?.rate)fxRate=N(data.fx.rate);quoteState=(data?.failed||data?.fx?.error)?'error':'success';if(data?.updated)await load();else render()}
-function render(){if(tab==='dashboard')return dashboard();personPage(tab)}
-function editItem(x,defaultOwner,defaultKind){
-  let owner=x?.owner_scope||defaultOwner||'husband',kind=x?.kind||defaultKind||'asset';
-  const initialCurrency=x?.native_currency||'TWD',initialAmount=x?.native_amount??x?.amount_twd??'';
-  const box=document.createElement('div');box.className='backdrop';
-  box.innerHTML=`<section class="sheet"><div class="handle"></div><div class="sheetHead"><div><h2>${x?'編輯':'新增'}財務項目</h2></div>${x?'<button id="del" class="trash">刪除</button>':''}</div><form id="editform" class="form"><label>歸屬<select id="owner"><option value="husband">老公</option><option value="wife">老婆</option></select></label><div class="seg"><button type="button" data-kind="asset">資產</button><button type="button" data-kind="liability">負債</button></div><label>名稱<input id="nm" required value="${esc(x?.name||'')}"></label><label>分類<select id="cat"></select></label><div class="two"><label id="currencyBox">幣別<select id="currency"><option value="TWD">台幣 TWD</option><option value="USD">美元 USD</option></select></label><label id="amountLabel">目前金額（${initialCurrency}）<input id="amt" required inputmode="decimal" value="${initialAmount}"></label></div><div id="conversionHint" class="quoteHint hide"></div><div id="holding"><div class="two"><label>股票代號（選填）<input id="symbol" value="${esc(x?.symbol||'')}" placeholder="例如 2330 / VOO"></label><label>市場<select id="market"><option value="MANUAL">手動</option><option value="TW">台股</option><option value="US">美股</option></select></label></div><label>持有數量（選填）<input id="qty" inputmode="decimal" value="${x?.quantity??''}"></label><div class="quoteHint">股票會以「即時價格 × 持有數量」計算；美股再依 USD/TWD 匯率換算台幣市值。</div></div><div id="loan" class="two"><label>年利率 %<input id="rate" inputmode="decimal" value="${x?.interest_rate??''}"></label><label>每月月付（TWD）<input id="pay" inputmode="numeric" value="${x?.monthly_payment_twd??''}"></label></div><label>備註<textarea id="note" rows="3">${esc(x?.notes||'')}</textarea></label><div id="emsg"></div><button class="primary">儲存並同步</button></form></section>`;
-  document.body.append(box);
-  const ownerEl=box.querySelector('#owner'),marketEl=box.querySelector('#market'),currencyEl=box.querySelector('#currency'),amountEl=box.querySelector('#amt'),conversionHint=box.querySelector('#conversionHint');
-  ownerEl.value=owner;marketEl.value=x?.market||'MANUAL';currencyEl.value=initialCurrency;
-  const updateCurrency=()=>{const manual=kind==='liability'||marketEl.value==='MANUAL';currencyBox.classList.toggle('hide',!manual);amountLabel.firstChild.textContent=manual?`目前金額（${currencyEl.value}）`:'目前台幣市值（行情自動更新）';conversionHint.classList.toggle('hide',!(manual&&currencyEl.value==='USD'));if(manual&&currencyEl.value==='USD'){const rate=N(x?.fx_rate_twd||fxRate);conversionHint.textContent=rate>0?`顯示時以 USD/TWD ${rate.toFixed(4)} 換算，約為 NT$ ${fmt(N(amountEl.value.replace(/,/g,''))*rate)}。`:'請先按「更新行情」取得 USD/TWD 匯率。'}};
-  const fill=()=>{cat.innerHTML=cats[kind].map(c=>`<option ${c===(x?.category||'')?'selected':''}>${c}</option>`).join('');holding.classList.toggle('hide',kind==='liability');loan.classList.toggle('hide',kind==='asset');box.querySelectorAll('[data-kind]').forEach(b=>b.classList.toggle('on',b.dataset.kind===kind));updateCurrency()};
-  fill();marketEl.onchange=updateCurrency;currencyEl.onchange=updateCurrency;amountEl.oninput=updateCurrency;
-  box.onclick=e=>{if(e.target===box)box.remove();const b=e.target.closest('[data-kind]');if(b){kind=b.dataset.kind;fill()}};
-  editform.onsubmit=async e=>{e.preventDefault();owner=ownerEl.value;const market=kind==='asset'?marketEl.value:'MANUAL',sym=symbol.value.trim().toUpperCase(),manual=market==='MANUAL',nativeCurrency=manual?currencyEl.value:null,nativeAmount=manual?N(amountEl.value.replace(/,/g,'')):null,exchangeRate=N(x?.fx_rate_twd||fxRate);if(nativeCurrency==='USD'&&!exchangeRate){emsg.className='message error';emsg.textContent='請先關閉視窗並按「更新行情」，取得美元匯率後再儲存。';return}const source=sym&&market==='TW'?'fugle':sym&&market==='US'?'twelve_data':'manual',amountTwd=manual?Math.round(nativeAmount*(nativeCurrency==='USD'?exchangeRate:1)):N(amountEl.value.replace(/,/g,'')),payload={household_id:member.household_id,owner_scope:owner,kind,name:nm.value.trim(),category:cat.value,amount_twd:amountTwd,native_currency:nativeCurrency,native_amount:nativeAmount,symbol:kind==='asset'&&sym?sym:null,market,quantity:kind==='asset'&&qty.value?N(qty.value.replace(/,/g,'')):null,average_cost:x?.average_cost??null,quote_currency:manual?nativeCurrency:(market==='US'?'USD':'TWD'),fx_rate_twd:nativeCurrency==='USD'?exchangeRate:(market==='US'?x?.fx_rate_twd??null:1),quote_source:kind==='asset'?source:'manual',interest_rate:kind==='liability'&&rate.value?N(rate.value):null,monthly_payment_twd:kind==='liability'&&pay.value?N(pay.value.replace(/,/g,'')):null,notes:note.value.trim()||null,updated_by:session.user.id,updated_at:new Date().toISOString()};const r=x?await sb.from('financial_items').update(payload).eq('id',x.id):await sb.from('financial_items').insert({...payload,created_by:session.user.id});if(r.error){emsg.className='message error';emsg.textContent=r.error.message}else{box.remove();tab=owner;pageKind[owner]=kind;await load()}};
-  if(x)del.onclick=async()=>{if(confirm('確定刪除「'+x.name+'」？')){const{error}=await sb.from('financial_items').delete().eq('id',x.id);if(error){emsg.className='message error';emsg.textContent=error.message}else{box.remove();await load()}}};
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.95.0/+esm';
+import {
+  ITEM_KINDS,
+  NATIVE_CURRENCIES,
+  OWNER_SCOPES,
+  calculateSummary,
+  calculateTwdAmount,
+  isValidSymbol,
+  normalizeFinancialItem,
+  parseNonNegative,
+  toFiniteNumber,
+} from './financial-core.js?v=flow-1';
+
+// App / Supabase -------------------------------------------------------------
+
+const SUPABASE_URL = 'https://gbxsnwqbjmgfikpblyot.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_VtGM8w7CqxDB_3NaROR8OA_H0txX-_I';
+const sb = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+});
+
+const root = document.querySelector('#root');
+const tabs = [
+  ['husband', '◒', '老公'],
+  ['dashboard', '◉', '家庭'],
+  ['wife', '◐', '老婆'],
+];
+const categories = {
+  asset: ['台股', '美股', '現金及存款', '不動產', '保險', '黃金與收藏', '其他資產'],
+  liability: ['房貸', '增貸', '信貸', '信用卡', '其他負債'],
+};
+const colors = {
+  台股: '#72d7a7', 美股: '#8b94ff', 現金及存款: '#67c8db', 不動產: '#f0b467',
+  保險: '#bb8cff', 黃金與收藏: '#ee8f73', 房貸: '#ff7f91', 增貸: '#f0a76b', 信貸: '#df788a',
+};
+
+let lifecycle = 'booting';
+let session = null;
+let member = null;
+let items = [];
+let history = [];
+let scopeHistory = [];
+let householdName = '布布一二的家';
+let tab = 'dashboard';
+let masked = false;
+let channel = null;
+let realtimeReloadTimer = null;
+let loadFlight = null;
+let quoteFlight = null;
+let quoteStatus = 'idle';
+let quoteLastAt = 0;
+let quoteLastUpdatedAt = null;
+let quoteData = {};
+let fxRate = null;
+let openGroups = new Set();
+let trendMode = 'value';
+const pageKind = { husband: 'asset', wife: 'asset' };
+
+// Formatting / calculations --------------------------------------------------
+
+const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+}[character]));
+const formatNumber = value => masked
+  ? '••••••'
+  : new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 }).format(Math.round(toFiniteNumber(value)));
+const formatMoney = value => `<small>NT$</small> ${formatNumber(value)}`;
+const taipeiDate = () => new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit',
+}).format(new Date());
+const formatClock = value => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return '';
+  return new Intl.DateTimeFormat('zh-TW', {
+    timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(date);
+};
+const summary = ownerScope => calculateSummary(items, ownerScope ?? null);
+
+function chartAxisFormat(value) {
+  if (masked) return '••••';
+  if (trendMode === 'percent') return `${value > 0 ? '+' : ''}${value.toFixed(1)}%`;
+  return `${(value / 1_000_000).toFixed(1)}M`;
 }
-function subscribe(){if(channel)return;channel=sb.channel('ks-v3:'+member.household_id).on('postgres_changes',{event:'*',schema:'public',table:'financial_items',filter:'household_id=eq.'+member.household_id},load).on('postgres_changes',{event:'*',schema:'public',table:'net_worth_history',filter:'household_id=eq.'+member.household_id},load).subscribe()}
-const{data:{session:s}}=await sb.auth.getSession();session=s;sb.auth.onAuthStateChange((_e,s2)=>{session=s2;if(!s2){member=null;channel=null;quoteAutoDone=false;quoteLastAt=0;quoteData={};quoteState='idle';auth()}else membership()});if(!session)auth();else membership();
+
+function chartDate(value) {
+  const [, month, day] = String(value).split('-');
+  return `${Number(month)}/${Number(day)}`;
+}
+
+function trendChart(rows) {
+  if (!rows.length) return '';
+  const firstValue = toFiniteNumber(rows[0].total_twd);
+  const lastValue = toFiniteNumber(rows.at(-1).total_twd);
+  const delta = lastValue - firstValue;
+  const percent = firstValue ? delta / firstValue * 100 : 0;
+  const tone = delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat';
+  const color = delta > 0 ? '#ff7f91' : delta < 0 ? '#72d7a7' : '#8c95a5';
+  const series = rows.map(row => ({
+    ...row,
+    plotValue: trendMode === 'percent'
+      ? (firstValue ? (toFiniteNumber(row.total_twd) - firstValue) / firstValue * 100 : 0)
+      : toFiniteNumber(row.total_twd),
+  }));
+  const values = series.map(row => row.plotValue);
+  const rawLow = Math.min(...values);
+  const rawHigh = Math.max(...values);
+  const padding = Math.max((rawHigh - rawLow) * 0.08, trendMode === 'percent' ? 0.2 : 100_000);
+  const low = rawLow - padding;
+  const high = rawHigh + padding;
+  const x = index => 112 + index / Math.max(1, series.length - 1) * 552;
+  const y = value => 22 + (high - value) / Math.max(1, high - low) * 164;
+  const points = series.map((row, index) => `${index ? 'L' : 'M'}${x(index)},${y(row.plotValue)}`).join(' ');
+  const axis = [0, 0.25, 0.5, 0.75, 1].map(step => {
+    const value = high - (high - low) * step;
+    const axisY = 22 + 164 * step;
+    return `<line x1="106" y1="${axisY}" x2="664" y2="${axisY}" stroke="#293143" stroke-width="1"/><text x="4" y="${axisY + 6}" fill="#8d96a6" font-size="19">${chartAxisFormat(value)}</text>`;
+  }).join('');
+  const tickIndexes = [0, 0.25, 0.5, 0.75, 1]
+    .map(step => Math.round((series.length - 1) * step))
+    .filter((value, index, array) => array.indexOf(value) === index);
+  const dateTicks = tickIndexes.map(index => {
+    const tickX = x(index);
+    return `<line x1="${tickX}" y1="22" x2="${tickX}" y2="190" stroke="#252c39" stroke-width="1" stroke-dasharray="5 7"/><text x="${tickX}" y="222" text-anchor="middle" fill="#8d96a6" font-size="18">${chartDate(series[index].recorded_on)}</text>`;
+  }).join('');
+
+  return `<section class="panel trend scopeTrend"><div class="trendHead"><div><h2>淨資產趨勢</h2></div><button class="trendToggle" data-trend-toggle>${trendMode === 'value' ? '↔ %' : 'NT$'}</button><div class="trendChange ${tone}"><b>${delta > 0 ? '+' : ''}${formatNumber(delta)}</b><span>${delta > 0 ? '+' : ''}${percent.toFixed(2)}%</span></div></div><svg viewBox="0 0 680 236" aria-label="淨資產趨勢">${axis}${dateTicks}<path d="${points}" fill="none" stroke="${color}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg></section>`;
+}
+
+function familyTrendRows(currentNetWorth) {
+  const byDate = new Map(history.map(row => [row.recorded_on, row.net_worth_twd]));
+  byDate.set(taipeiDate(), currentNetWorth);
+  const rows = [...byDate].map(([recorded_on, total_twd]) => ({ recorded_on, total_twd }))
+    .sort((a, b) => a.recorded_on.localeCompare(b.recorded_on));
+  const latestYear = (rows.at(-1)?.recorded_on ?? taipeiDate()).slice(0, 4);
+  return rows.filter(row => row.recorded_on.startsWith(latestYear));
+}
+
+function personalTrendRows(ownerScope, currentNetWorth) {
+  const grouped = new Map();
+  scopeHistory
+    .filter(row => row.owner_scope === ownerScope)
+    .sort((a, b) => a.recorded_on.localeCompare(b.recorded_on))
+    .forEach(row => {
+      const day = grouped.get(row.recorded_on) ?? { recorded_on: row.recorded_on, asset: null, liability: null };
+      day[row.kind] = row.total_twd;
+      grouped.set(row.recorded_on, day);
+    });
+
+  let latestAsset = null;
+  let latestLiability = null;
+  const byDate = new Map();
+  for (const row of grouped.values()) {
+    if (row.asset !== null) latestAsset = row.asset;
+    if (row.liability !== null) latestLiability = row.liability;
+    if (latestAsset !== null && latestLiability !== null) {
+      byDate.set(row.recorded_on, latestAsset - latestLiability);
+    }
+  }
+  byDate.set(taipeiDate(), currentNetWorth);
+  return [...byDate].map(([recorded_on, total_twd]) => ({ recorded_on, total_twd }))
+    .sort((a, b) => a.recorded_on.localeCompare(b.recorded_on));
+}
+
+// Auth / startup -------------------------------------------------------------
+
+function showBlockingError(message) {
+  lifecycle = 'error';
+  root.className = 'center';
+  root.innerHTML = `<div class="logo big">KS</div><p>${escapeHtml(message)}</p><button class="primary" style="padding:0 18px" data-retry>重新載入</button>`;
+  root.querySelector('[data-retry]').onclick = () => location.reload();
+}
+
+function authScreen() {
+  lifecycle = 'auth';
+  root.className = 'auth';
+  root.innerHTML = `<section class="authCard"><div class="logo big">KS</div><h1>KS財富管理</h1><p>夫妻共同使用的私人家庭帳本。登入後才能讀取財務資料。</p><div class="seg" id="authseg"><button class="on" data-mode="login">登入</button><button data-mode="signup">建立帳號</button></div><form id="authform" class="form"><label id="namebox" class="hide">顯示名稱<input id="dn" placeholder="例如：鎧麟 / 佳軒"></label><label>Email<input id="em" type="email" required autocomplete="email"></label><label>密碼<input id="pw" type="password" minlength="8" required autocomplete="current-password"></label><button class="primary">登入</button></form><div id="msg"></div><small class="secure">🔒 Supabase Auth + Row Level Security</small></section>`;
+  const segment = root.querySelector('#authseg');
+  const form = root.querySelector('#authform');
+  const nameBox = root.querySelector('#namebox');
+  const email = root.querySelector('#em');
+  const password = root.querySelector('#pw');
+  const displayName = root.querySelector('#dn');
+  const message = root.querySelector('#msg');
+  const submit = form.querySelector('button.primary');
+  let mode = 'login';
+
+  segment.onclick = event => {
+    const button = event.target.closest('[data-mode]');
+    if (!button) return;
+    mode = button.dataset.mode;
+    segment.querySelectorAll('button').forEach(item => item.classList.toggle('on', item.dataset.mode === mode));
+    nameBox.classList.toggle('hide', mode === 'login');
+    submit.textContent = mode === 'login' ? '登入' : '建立帳號';
+    password.autocomplete = mode === 'login' ? 'current-password' : 'new-password';
+  };
+
+  form.onsubmit = async event => {
+    event.preventDefault();
+    if (submit.disabled) return;
+    submit.disabled = true;
+    const originalLabel = submit.textContent;
+    submit.textContent = mode === 'login' ? '登入中…' : '建立中…';
+    try {
+      let result;
+      if (mode === 'login') {
+        result = await sb.auth.signInWithPassword({ email: email.value.trim(), password: password.value });
+      } else {
+        result = await sb.auth.signUp({
+          email: email.value.trim(),
+          password: password.value,
+          options: {
+            data: { display_name: displayName.value.trim() || email.value.split('@')[0] },
+            emailRedirectTo: location.origin,
+          },
+        });
+      }
+      message.className = result.error ? 'message error' : 'message';
+      message.textContent = result.error
+        ? result.error.message
+        : (result.data && !result.data.session ? '註冊完成，請到信箱點驗證連結後登入。' : '處理完成。');
+    } finally {
+      submit.disabled = false;
+      submit.textContent = originalLabel;
+    }
+  };
+}
+
+function joinScreen() {
+  lifecycle = 'join-household';
+  root.className = 'auth';
+  root.innerHTML = `<section class="authCard"><div class="logo big">KS</div><h1>加入 KS 家庭</h1><p>帳號已登入。輸入家庭邀請碼後，這支手機就會與另一位家庭成員看到同一份財務資料。</p><form id="joinform" class="form"><label>家庭邀請碼<input id="code" required placeholder="KS-…" autocapitalize="none"></label><button class="primary">加入家庭帳本</button></form><div id="msg"></div><button id="signout" class="link">改用其他帳號</button></section>`;
+  const form = root.querySelector('#joinform');
+  const code = root.querySelector('#code');
+  const message = root.querySelector('#msg');
+  const submit = form.querySelector('button.primary');
+  form.onsubmit = async event => {
+    event.preventDefault();
+    if (submit.disabled) return;
+    submit.disabled = true;
+    submit.textContent = '加入中…';
+    const { error } = await sb.rpc('join_household_by_code', { raw_code: code.value.trim() });
+    if (error) {
+      message.className = 'message error';
+      message.textContent = error.message;
+      submit.disabled = false;
+      submit.textContent = '加入家庭帳本';
+      return;
+    }
+    await resolveMembership();
+  };
+  root.querySelector('#signout').onclick = () => sb.auth.signOut();
+}
+
+async function resolveMembership() {
+  lifecycle = 'checking-household';
+  const { data, error } = await sb.from('household_members')
+    .select('household_id,role')
+    .eq('user_id', session.user.id)
+    .limit(1);
+  if (error) return showBlockingError(error.message);
+  member = data?.[0] ?? null;
+  if (!member) return joinScreen();
+
+  lifecycle = 'loading-data';
+  restoreQuoteTimestamp();
+  const loaded = await loadData({ blocking: true });
+  if (!loaded) return;
+  lifecycle = 'ready';
+  subscribeRealtime();
+  void refreshQuotes({ reason: 'startup' });
+}
+
+async function applySession(nextSession) {
+  const previousUserId = session?.user?.id ?? null;
+  const nextUserId = nextSession?.user?.id ?? null;
+  if (previousUserId === nextUserId && member && lifecycle === 'ready') return;
+
+  clearRealtime();
+  session = nextSession;
+  member = null;
+  items = [];
+  history = [];
+  scopeHistory = [];
+  quoteData = {};
+  quoteStatus = 'idle';
+  quoteFlight = null;
+  if (!session) return authScreen();
+  await resolveMembership();
+}
+
+// Data loading / Realtime ----------------------------------------------------
+
+async function loadData({ blocking = false } = {}) {
+  if (!member) return false;
+  if (loadFlight) return loadFlight;
+  const householdId = member.household_id;
+  loadFlight = (async () => {
+    const [itemResult, familyHistoryResult, householdResult, scopeHistoryResult] = await Promise.all([
+      sb.from('financial_items').select('*').eq('household_id', householdId).order('sort_order'),
+      sb.from('net_worth_history').select('*').eq('household_id', householdId).order('recorded_on'),
+      sb.from('households').select('name').eq('id', householdId).single(),
+      sb.from('financial_scope_history').select('*').eq('household_id', householdId).order('recorded_on'),
+    ]);
+    const failure = [itemResult.error, familyHistoryResult.error, householdResult.error, scopeHistoryResult.error].find(Boolean);
+    if (failure) throw failure;
+    if (!member || member.household_id !== householdId) return false;
+
+    items = (itemResult.data ?? []).map(normalizeFinancialItem);
+    history = (familyHistoryResult.data ?? []).map(row => ({ ...row, net_worth_twd: toFiniteNumber(row.net_worth_twd) }));
+    scopeHistory = (scopeHistoryResult.data ?? []).map(row => ({ ...row, total_twd: toFiniteNumber(row.total_twd) }));
+    householdName = householdResult.data?.name || '布布一二的家';
+    fxRate = items.find(item => item.fx_rate_twd > 1 && item.quote_currency === 'USD')?.fx_rate_twd ?? fxRate;
+    render();
+    return true;
+  })().catch(error => {
+    if (blocking) showBlockingError(error.message || '無法載入家庭資料。');
+    else setNonBlockingStatus('同步失敗，將於下次變更時重試。', 'error');
+    return false;
+  }).finally(() => {
+    loadFlight = null;
+  });
+  return loadFlight;
+}
+
+function scheduleRealtimeReload() {
+  if (!member) return;
+  clearTimeout(realtimeReloadTimer);
+  realtimeReloadTimer = setTimeout(() => {
+    realtimeReloadTimer = null;
+    void loadData({ blocking: false });
+  }, 300);
+}
+
+function subscribeRealtime() {
+  if (!member || channel) return;
+  const householdId = member.household_id;
+  channel = sb.channel(`ks-v3:${householdId}`)
+    .on('postgres_changes', {
+      event: '*', schema: 'public', table: 'financial_items', filter: `household_id=eq.${householdId}`,
+    }, scheduleRealtimeReload)
+    .on('postgres_changes', {
+      event: '*', schema: 'public', table: 'net_worth_history', filter: `household_id=eq.${householdId}`,
+    }, scheduleRealtimeReload)
+    .subscribe(status => {
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        setNonBlockingStatus('即時同步暫時中斷，資料仍可使用。', 'error');
+      }
+    });
+}
+
+function clearRealtime() {
+  clearTimeout(realtimeReloadTimer);
+  realtimeReloadTimer = null;
+  if (channel) void sb.removeChannel(channel);
+  channel = null;
+}
+
+// Quotes ---------------------------------------------------------------------
+
+function quoteStorageKey() {
+  return member ? `ks:last-quote:${member.household_id}` : null;
+}
+
+function restoreQuoteTimestamp() {
+  const key = quoteStorageKey();
+  if (!key) return;
+  const stored = localStorage.getItem(key);
+  if (stored && Number.isFinite(new Date(stored).getTime())) quoteLastUpdatedAt = stored;
+}
+
+function saveQuoteTimestamp(value) {
+  quoteLastUpdatedAt = value;
+  const key = quoteStorageKey();
+  if (key) localStorage.setItem(key, value);
+}
+
+function quoteStatusCopy() {
+  const lastUpdate = formatClock(quoteLastUpdatedAt);
+  const suffix = lastUpdate ? ` · 更新於 ${lastUpdate}` : '';
+  if (quoteStatus === 'updating') return '正在更新市場行情…';
+  if (quoteStatus === 'success') return `台股、美股與匯率已更新${suffix}`;
+  if (quoteStatus === 'partial') return `部分行情更新失敗，沿用上一筆價格${suffix}`;
+  if (quoteStatus === 'error') return `行情更新失敗，沿用上一筆價格${suffix}`;
+  return `家庭資料已同步${suffix}`;
+}
+
+function updateQuoteStatusUi() {
+  const status = root.querySelector('.status');
+  if (!status) return;
+  status.className = `status ${quoteStatus}`;
+  const text = status.querySelector('[data-status-text]');
+  const button = status.querySelector('#reload');
+  if (text) text.textContent = quoteStatusCopy();
+  if (button) {
+    button.disabled = quoteStatus === 'updating';
+    button.textContent = quoteStatus === 'updating' ? '更新中' : '更新行情';
+  }
+}
+
+async function refreshQuotes({ force = false } = {}) {
+  if (!session || !member) return null;
+  if (quoteFlight) return quoteFlight;
+  if (!force && Date.now() - quoteLastAt < 60_000) return null;
+  quoteLastAt = Date.now();
+  quoteStatus = 'updating';
+  updateQuoteStatusUi();
+
+  quoteFlight = (async () => {
+    const { data, error } = await sb.functions.invoke('refresh-tw-quotes', { body: {} });
+    if (error) {
+      quoteStatus = 'error';
+      updateQuoteStatusUi();
+      return null;
+    }
+
+    const successfulQuotes = (data?.results ?? []).filter(result => result.price);
+    quoteData = {
+      ...quoteData,
+      ...Object.fromEntries(successfulQuotes.map(result => [result.id, result])),
+    };
+    if (data?.fx?.rate) fxRate = toFiniteNumber(data.fx.rate, fxRate);
+    const failed = toFiniteNumber(data?.failed);
+    const succeeded = toFiniteNumber(data?.updated) + toFiniteNumber(data?.priceOnly);
+    quoteStatus = failed > 0 ? (succeeded > 0 ? 'partial' : 'error') : 'success';
+    saveQuoteTimestamp(data?.requestedAt || new Date().toISOString());
+
+    if (toFiniteNumber(data?.updated) > 0) await loadData({ blocking: false });
+    else render();
+    return data;
+  })().catch(() => {
+    quoteStatus = 'error';
+    updateQuoteStatusUi();
+    return null;
+  }).finally(() => {
+    quoteFlight = null;
+    updateQuoteStatusUi();
+  });
+  return quoteFlight;
+}
+
+function setNonBlockingStatus(message, tone = 'error') {
+  const status = root.querySelector('.status');
+  if (!status) return;
+  status.className = `status ${tone}`;
+  const text = status.querySelector('[data-status-text]');
+  if (text) text.textContent = message;
+}
+
+// Rendering ------------------------------------------------------------------
+
+function shell(body, title, showAdd = false) {
+  root.className = 'app';
+  root.innerHTML = `<header class="topbar"><div class="brand"><div class="logo">KS</div><div><h1>${title}</h1></div></div><div class="headActions"><button class="iconBtn" id="mask" title="隱藏金額">${masked ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a21.86 21.86 0 0 1 5.06-6.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a21.86 21.86 0 0 1-2.16 3.19M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>' : '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>'}</button><button class="iconBtn avatar" id="logout" title="登出">${escapeHtml(String(session.user.user_metadata?.display_name || session.user.email || 'KS').slice(0, 2))}</button></div></header><div class="status ${quoteStatus}"><i></i><span data-status-text>${quoteStatusCopy()}</span><button id="reload" ${quoteStatus === 'updating' ? 'disabled' : ''}>${quoteStatus === 'updating' ? '更新中' : '更新行情'}</button></div><main class="content">${body}</main>${showAdd ? '<button class="fab" id="add" aria-label="新增財務項目">＋</button>' : ''}<nav class="bottomNav">${tabs.map(item => `<button data-tab="${item[0]}" class="${tab === item[0] ? 'on' : ''}"><span>${item[1]}</span>${item[2]}</button>`).join('')}</nav>`;
+
+  root.querySelector('#logout').onclick = () => sb.auth.signOut();
+  root.querySelector('#reload').onclick = () => refreshQuotes({ force: true });
+  root.querySelector('#mask').onclick = () => { masked = !masked; render(); };
+  root.querySelector('.bottomNav').onclick = event => {
+    const button = event.target.closest('[data-tab]');
+    if (!button) return;
+    tab = button.dataset.tab;
+    render();
+  };
+}
+
+function dashboard() {
+  const family = summary();
+  const husband = summary('husband');
+  const wife = summary('wife');
+  const groups = Object.entries(family.assets.reduce((map, item) => {
+    map[item.category] = (map[item.category] || 0) + item.amount_twd;
+    return map;
+  }, {})).sort((a, b) => b[1] - a[1]);
+  let cursor = 0;
+  const segments = groups.map(([group, value]) => {
+    const percent = family.totalAssets ? value / family.totalAssets * 100 : 0;
+    const start = cursor;
+    cursor += percent;
+    return `${colors[group] || '#7e8798'} ${start}% ${cursor}%`;
+  }).join(',') || '#252c39 0 100%';
+  const husbandShare = family.totalAssets ? husband.totalAssets / family.totalAssets * 100 : 0;
+  const wifeShare = family.totalAssets ? wife.totalAssets / family.totalAssets * 100 : 0;
+
+  shell(`<section class="portfolioHero"><div class="heroLabel"><span>家庭淨資產</span><span>老公＋老婆</span></div><div class="bigMoney">${formatMoney(family.netWorth)}</div><div class="miniStats"><div><span>家庭總資產</span><b>NT$ ${formatNumber(family.totalAssets)}</b></div><div><span>家庭總負債</span><b>NT$ ${formatNumber(family.totalLiabilities)}</b></div></div></section><section class="panel"><div class="panelTitle"><div><h2>夫妻資產分布</h2></div></div><div class="ownerGrid"><div class="ownerTile"><span>老公資產</span><b>NT$ ${formatNumber(husband.totalAssets)}</b><small>占家庭資產 ${husbandShare.toFixed(1)}%</small></div><div class="ownerTile"><span>老婆資產</span><b>NT$ ${formatNumber(wife.totalAssets)}</b><small>占家庭資產 ${wifeShare.toFixed(1)}%</small></div></div></section><section class="panel"><div class="panelTitle"><div><h2>家庭資產配置</h2></div><span>${groups.length} 類</span></div><div class="allocation"><div class="donut" style="--segments:${segments}"></div><div class="legend">${groups.slice(0, 7).map(([group, value]) => `<div class="legendRow"><i style="background:${colors[group] || '#7e8798'}"></i><span>${escapeHtml(group)}</span><b>${family.totalAssets ? (value / family.totalAssets * 100).toFixed(1) : 0}%</b></div>`).join('')}</div></div></section>${trendChart(familyTrendRows(family.netWorth))}`, '家庭');
+}
+
+function groupedCards(list, ownerScope, kind) {
+  const groups = new Map();
+  const total = list.reduce((sum, item) => sum + item.amount_twd, 0);
+  list.forEach(item => {
+    const rows = groups.get(item.category) || [];
+    rows.push(item);
+    groups.set(item.category, rows);
+  });
+  return [...groups].map(([category, rows]) => {
+    const key = encodeURIComponent(`${ownerScope}|${kind}|${category}`);
+    const groupTotal = rows.reduce((sum, item) => sum + item.amount_twd, 0);
+    const open = openGroups.has(key);
+    return `<section class="categoryGroup ${open ? 'open' : ''}"><button class="categoryHead" data-group="${key}"><div><span>${escapeHtml(category)}</span><small>${rows.length} 筆</small></div><div class="categoryTotal"><b>NT$ ${formatNumber(groupTotal)}</b><i>⌄</i></div></button>${open ? `<div class="categoryItems">${rows.map(item => itemCard(item, total)).join('')}</div>` : ''}</section>`;
+  }).join('');
+}
+
+function personPage(ownerScope) {
+  const totals = summary(ownerScope);
+  const kind = pageKind[ownerScope];
+  const list = kind === 'asset' ? totals.assets : totals.liabilities;
+  const total = kind === 'asset' ? totals.totalAssets : totals.totalLiabilities;
+  const name = ownerScope === 'husband' ? '老公' : '老婆';
+  shell(`<section class="portfolioHero"><div class="heroLabel"><span>${name}淨資產</span><span>${totals.assets.length + totals.liabilities.length} 筆</span></div><div class="bigMoney">${formatMoney(totals.netWorth)}</div><div class="miniStats"><div><span>資產總額</span><b>NT$ ${formatNumber(totals.totalAssets)}</b></div><div><span>負債總額</span><b>NT$ ${formatNumber(totals.totalLiabilities)}</b></div></div></section>${trendChart(personalTrendRows(ownerScope, totals.netWorth))}<div class="seg personSeg" id="personSeg"><button data-kind="asset" class="${kind === 'asset' ? 'on' : ''}">資產</button><button data-kind="liability" class="${kind === 'liability' ? 'on' : ''}">負債</button></div><div class="sectionHead"><span>${kind === 'asset' ? '投資與資產' : '貸款與負債'}</span><b>NT$ ${formatNumber(total)}</b></div><div class="categoryList">${list.length ? groupedCards(list, ownerScope, kind) : `<div class="empty"><div><b>目前沒有${kind === 'asset' ? '資產' : '負債'}資料</b><span>按右下角 ＋ 新增財務項目。</span></div></div>`}</div>`, name, true);
+
+  root.querySelector('#personSeg').onclick = event => {
+    const button = event.target.closest('[data-kind]');
+    if (!button || pageKind[ownerScope] === button.dataset.kind) return;
+    pageKind[ownerScope] = button.dataset.kind;
+    render();
+  };
+  root.querySelector('#add').onclick = () => editItem(null, ownerScope, kind);
+  root.querySelector('.categoryList').onclick = event => {
+    const group = event.target.closest('[data-group]');
+    if (group) {
+      const key = group.dataset.group;
+      openGroups.has(key) ? openGroups.delete(key) : openGroups.add(key);
+      render();
+      return;
+    }
+    const item = event.target.closest('[data-id]');
+    if (item) editItem(items.find(row => row.id === item.dataset.id), ownerScope, kind);
+  };
+}
+
+function itemCard(item, total) {
+  const quote = quoteData[item.id];
+  const percent = total ? item.amount_twd / total * 100 : 0;
+  const percentLabel = percent > 0 && percent < 1 ? '&lt;1' : Math.round(percent);
+  const isNativeUsd = item.native_currency === 'USD' && item.native_amount !== null;
+  const subtitle = item.symbol ? escapeHtml(item.symbol) : escapeHtml(item.native_currency || '');
+  const quantity = item.quantity === null ? '待設定' : formatNumber(item.quantity);
+  const price = quote?.currency === 'USD'
+    ? `US$ ${new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 2 }).format(toFiniteNumber(quote.price))}`
+    : `NT$ ${formatNumber(quote?.price)}`;
+  const change = toFiniteNumber(quote?.changePercent);
+  const tone = change > 0 ? 'up' : change < 0 ? 'down' : 'flat';
+  const quoteLine = quote
+    ? `<span class="quoteLive"><i></i>${price}<b class="${tone}">${change > 0 ? '+' : ''}${change.toFixed(2)}%</b></span>`
+    : item.symbol ? '<span class="quotePending">沿用最近市值</span>' : '';
+  const meta = item.kind === 'asset'
+    ? (item.symbol ? `<span>持有 ${quantity} 股</span>${quoteLine}` : '')
+    : `<span>利率 ${item.interest_rate !== null ? item.interest_rate.toFixed(2) + '%' : '待設定'}</span><span>月付 ${item.monthly_payment_twd !== null ? 'NT$ ' + formatNumber(item.monthly_payment_twd) : '待設定'}</span>`;
+  const original = isNativeUsd
+    ? `<span>US$ ${masked ? '••••••' : new Intl.NumberFormat('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(item.native_amount)}</span>`
+    : '';
+  return `<button class="itemCard compactCard" data-id="${item.id}"><div class="compactMain"><div class="allocationRing ${item.kind}" style="--pct:${Math.max(0, Math.min(100, percent))}%"><span>${percentLabel}%</span></div><div class="compactIdentity"><b>${escapeHtml(item.name)}</b>${subtitle ? `<span>${subtitle}</span>` : ''}</div><div class="compactAmount"><b>NT$ ${formatNumber(item.amount_twd)}</b>${original}</div></div>${meta ? `<div class="compactMeta ${item.kind}">${meta}</div>` : ''}</button>`;
+}
+
+function render() {
+  if (!session || !member) return;
+  if (tab === 'dashboard') dashboard();
+  else personPage(tab);
+}
+
+root.addEventListener('click', event => {
+  if (!event.target.closest('[data-trend-toggle]')) return;
+  trendMode = trendMode === 'value' ? 'percent' : 'value';
+  render();
+});
+
+// Financial item CRUD --------------------------------------------------------
+
+function modeForItem(item, kind) {
+  if (kind === 'liability') return 'liability';
+  if (item?.market === 'TW') return 'stock-tw';
+  if (item?.market === 'US') return 'stock-us';
+  const currency = item?.native_currency ?? item?.original_currency ?? 'TWD';
+  return currency === 'USD' ? 'manual-usd' : 'manual-twd';
+}
+
+function editItem(item, defaultOwner, defaultKind) {
+  let owner = item?.owner_scope || defaultOwner || 'husband';
+  let kind = item?.kind || defaultKind || 'asset';
+  let mode = modeForItem(item, kind);
+  let saving = false;
+  const initialNativeAmount = item?.native_amount ?? item?.original_amount ?? item?.amount_twd ?? '';
+  const backdrop = document.createElement('div');
+  backdrop.className = 'backdrop';
+  backdrop.innerHTML = `<section class="sheet"><div class="handle"></div><div class="sheetHead"><div><h2>${item ? '編輯' : '新增'}財務項目</h2></div>${item ? '<button id="del" class="trash">刪除</button>' : ''}</div><form id="editform" class="form" novalidate><label>歸屬<select id="owner"><option value="husband">老公</option><option value="wife">老婆</option></select></label><div class="seg"><button type="button" data-kind="asset">資產</button><button type="button" data-kind="liability">負債</button></div><label>名稱<input id="nm" required value="${escapeHtml(item?.name || '')}"></label><label>分類<select id="cat"></select></label><label id="modeBox">資料型態<select id="mode"><option value="manual-twd">手動台幣資產</option><option value="manual-usd">手動美元資產</option><option value="stock-tw">台股</option><option value="stock-us">美股</option></select></label><div id="manualFields"><label id="amountLabel">台幣金額<input id="amt" inputmode="decimal" value="${initialNativeAmount}"></label><div id="usdFields" class="two hide"><label>USD/TWD 匯率<input id="fx" inputmode="decimal" readonly></label><label>自動換算台幣<input id="converted" readonly></label></div></div><div id="stockFields" class="hide"><div class="two"><label>股票代號<input id="symbol" value="${escapeHtml(item?.symbol || '')}" placeholder="例如 2330 / VOO" autocapitalize="characters"></label><label>持有股數<input id="qty" inputmode="decimal" value="${item?.quantity ?? ''}"></label></div><div class="quoteHint" id="stockHint"></div></div><div id="loanFields" class="hide"><label>剩餘本金（TWD）<input id="principal" inputmode="decimal" value="${item?.amount_twd ?? ''}"></label><div class="two"><label>年利率 %<input id="rate" inputmode="decimal" value="${item?.interest_rate ?? ''}"></label><label>每月月付（TWD）<input id="pay" inputmode="decimal" value="${item?.monthly_payment_twd ?? ''}"></label></div></div><label>備註（選填）<textarea id="note" rows="3">${escapeHtml(item?.notes || '')}</textarea></label><div id="emsg"></div><button id="save" class="primary">儲存並同步</button></form></section>`;
+  document.body.append(backdrop);
+
+  const form = backdrop.querySelector('#editform');
+  const ownerInput = backdrop.querySelector('#owner');
+  const nameInput = backdrop.querySelector('#nm');
+  const categoryInput = backdrop.querySelector('#cat');
+  const modeBox = backdrop.querySelector('#modeBox');
+  const modeInput = backdrop.querySelector('#mode');
+  const manualFields = backdrop.querySelector('#manualFields');
+  const amountLabel = backdrop.querySelector('#amountLabel');
+  const amountInput = backdrop.querySelector('#amt');
+  const usdFields = backdrop.querySelector('#usdFields');
+  const fxInput = backdrop.querySelector('#fx');
+  const convertedInput = backdrop.querySelector('#converted');
+  const stockFields = backdrop.querySelector('#stockFields');
+  const symbolInput = backdrop.querySelector('#symbol');
+  const quantityInput = backdrop.querySelector('#qty');
+  const stockHint = backdrop.querySelector('#stockHint');
+  const loanFields = backdrop.querySelector('#loanFields');
+  const principalInput = backdrop.querySelector('#principal');
+  const rateInput = backdrop.querySelector('#rate');
+  const paymentInput = backdrop.querySelector('#pay');
+  const noteInput = backdrop.querySelector('#note');
+  const message = backdrop.querySelector('#emsg');
+  const saveButton = backdrop.querySelector('#save');
+  ownerInput.value = owner;
+  modeInput.value = mode;
+
+  const currentFxRate = () => toFiniteNumber(fxRate || item?.fx_rate_twd);
+  const updateConversion = () => {
+    if (mode !== 'manual-usd') return;
+    const rate = currentFxRate();
+    fxInput.value = rate > 0 ? rate.toFixed(4) : '尚未取得';
+    const amount = Number(String(amountInput.value).replace(/,/g, ''));
+    convertedInput.value = Number.isFinite(amount) && amount >= 0 && rate > 0
+      ? `NT$ ${new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 }).format(Math.round(amount * rate))}`
+      : '等待有效美元金額與匯率';
+  };
+  const fillCategories = () => {
+    const selected = categoryInput.value || item?.category;
+    categoryInput.innerHTML = categories[kind].map(category => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`).join('');
+    if (categories[kind].includes(selected)) categoryInput.value = selected;
+  };
+  const updateFields = () => {
+    if (kind === 'liability') mode = 'liability';
+    else if (mode === 'liability') mode = 'manual-twd';
+    modeInput.value = mode;
+    const manual = kind === 'asset' && mode.startsWith('manual-');
+    const stock = kind === 'asset' && mode.startsWith('stock-');
+    modeBox.classList.toggle('hide', kind === 'liability');
+    manualFields.classList.toggle('hide', !manual);
+    stockFields.classList.toggle('hide', !stock);
+    loanFields.classList.toggle('hide', kind !== 'liability');
+    usdFields.classList.toggle('hide', mode !== 'manual-usd');
+    amountLabel.firstChild.textContent = mode === 'manual-usd' ? '美元金額（USD）' : '台幣金額（TWD）';
+    stockHint.textContent = mode === 'stock-us'
+      ? `目前台幣價值由「股數 × 美股市價 × USD/TWD」自動計算。現值：NT$ ${formatNumber(item?.amount_twd || 0)}`
+      : `目前台幣價值由「股數 × 台股市價」自動計算。現值：NT$ ${formatNumber(item?.amount_twd || 0)}`;
+    backdrop.querySelectorAll('[data-kind]').forEach(button => button.classList.toggle('on', button.dataset.kind === kind));
+    updateConversion();
+  };
+
+  fillCategories();
+  updateFields();
+  modeInput.onchange = () => { mode = modeInput.value; updateFields(); };
+  amountInput.oninput = updateConversion;
+  backdrop.onclick = event => {
+    if (event.target === backdrop && !saving) backdrop.remove();
+    const button = event.target.closest('[data-kind]');
+    if (!button || saving) return;
+    kind = button.dataset.kind;
+    fillCategories();
+    updateFields();
+  };
+
+  form.onsubmit = async event => {
+    event.preventDefault();
+    if (saving) return;
+    message.textContent = '';
+    try {
+      owner = ownerInput.value;
+      const name = nameInput.value.trim();
+      if (!OWNER_SCOPES.includes(owner)) throw new Error('歸屬設定不正確。');
+      if (!ITEM_KINDS.includes(kind)) throw new Error('資產／負債設定不正確。');
+      if (!name) throw new Error('請輸入名稱。');
+      if (!categories[kind].includes(categoryInput.value)) throw new Error('分類設定不正確。');
+
+      let amountTwd = 0;
+      let nativeCurrency = 'TWD';
+      let nativeAmount = null;
+      let market = 'MANUAL';
+      let symbol = null;
+      let quantity = null;
+      let quoteCurrency = 'TWD';
+      let quoteSource = 'manual';
+      let exchangeRate = 1;
+      let interestRate = null;
+      let monthlyPayment = null;
+
+      if (kind === 'liability') {
+        nativeAmount = parseNonNegative(principalInput.value, '剩餘本金');
+        amountTwd = calculateTwdAmount({ nativeCurrency: 'TWD', nativeAmount, fxRateTwd: 1 });
+        interestRate = parseNonNegative(rateInput.value, '年利率', { required: false });
+        monthlyPayment = parseNonNegative(paymentInput.value, '每月月付', { required: false });
+      } else if (mode === 'manual-twd' || mode === 'manual-usd') {
+        nativeCurrency = mode === 'manual-usd' ? 'USD' : 'TWD';
+        nativeAmount = parseNonNegative(amountInput.value, nativeCurrency === 'USD' ? '美元金額' : '台幣金額');
+        exchangeRate = nativeCurrency === 'USD' ? currentFxRate() : 1;
+        amountTwd = calculateTwdAmount({ nativeCurrency, nativeAmount, fxRateTwd: exchangeRate });
+        quoteCurrency = nativeCurrency;
+        quoteSource = nativeCurrency === 'USD' ? 'twelve_data' : 'manual';
+      } else if (mode === 'stock-tw' || mode === 'stock-us') {
+        market = mode === 'stock-us' ? 'US' : 'TW';
+        symbol = symbolInput.value.trim().toUpperCase();
+        if (!isValidSymbol(symbol)) throw new Error('股票代號格式不正確。');
+        quantity = parseNonNegative(quantityInput.value, '持有股數', { positive: true });
+        amountTwd = toFiniteNumber(item?.amount_twd);
+        nativeCurrency = null;
+        nativeAmount = null;
+        quoteCurrency = market === 'US' ? 'USD' : 'TWD';
+        quoteSource = market === 'US' ? 'twelve_data' : 'fugle';
+        exchangeRate = market === 'US' ? (toFiniteNumber(item?.fx_rate_twd || fxRate) || null) : 1;
+      } else {
+        throw new Error('資料型態設定不正確。');
+      }
+
+      const payload = {
+        household_id: member.household_id,
+        owner_scope: owner,
+        kind,
+        name,
+        category: categoryInput.value,
+        amount_twd: amountTwd,
+        native_currency: nativeCurrency,
+        native_amount: nativeAmount,
+        symbol,
+        market,
+        quantity,
+        average_cost: item?.average_cost ?? null,
+        quote_currency: quoteCurrency,
+        fx_rate_twd: exchangeRate,
+        quote_source: quoteSource,
+        interest_rate: interestRate,
+        monthly_payment_twd: monthlyPayment,
+        notes: noteInput.value.trim() || null,
+        updated_by: session.user.id,
+        updated_at: new Date().toISOString(),
+      };
+
+      saving = true;
+      saveButton.disabled = true;
+      saveButton.textContent = '儲存中…';
+      const result = item
+        ? await sb.from('financial_items').update(payload).eq('id', item.id).eq('household_id', member.household_id)
+        : await sb.from('financial_items').insert({ ...payload, created_by: session.user.id });
+      if (result.error) throw result.error;
+      backdrop.remove();
+      tab = owner;
+      pageKind[owner] = kind;
+      await loadData({ blocking: false });
+      if (kind === 'asset' && (mode.startsWith('stock-') || mode === 'manual-usd')) {
+        void refreshQuotes({ force: true });
+      }
+    } catch (error) {
+      saving = false;
+      saveButton.disabled = false;
+      saveButton.textContent = '儲存並同步';
+      message.className = 'message error';
+      message.textContent = error.message || '儲存失敗，請稍後再試。';
+    }
+  };
+
+  const deleteButton = backdrop.querySelector('#del');
+  if (deleteButton) deleteButton.onclick = async () => {
+    if (saving || !confirm(`確定刪除「${item.name}」？`)) return;
+    saving = true;
+    deleteButton.disabled = true;
+    deleteButton.textContent = '刪除中…';
+    const { error } = await sb.from('financial_items')
+      .delete()
+      .eq('id', item.id)
+      .eq('household_id', member.household_id);
+    if (error) {
+      saving = false;
+      deleteButton.disabled = false;
+      deleteButton.textContent = '刪除';
+      message.className = 'message error';
+      message.textContent = error.message;
+      return;
+    }
+    backdrop.remove();
+    await loadData({ blocking: false });
+  };
+}
+
+// Bootstrap ------------------------------------------------------------------
+
+const { data: { session: initialSession }, error: initialSessionError } = await sb.auth.getSession();
+if (initialSessionError) showBlockingError(initialSessionError.message);
+else await applySession(initialSession);
+
+sb.auth.onAuthStateChange((event, nextSession) => {
+  if (event === 'INITIAL_SESSION') return;
+  void applySession(nextSession);
+});
