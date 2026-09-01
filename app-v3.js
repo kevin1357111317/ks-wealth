@@ -21,10 +21,13 @@ const sb = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
 });
 
 const root = document.querySelector('#root');
+const bearFace = variant => variant === 'bubu'
+  ? `<svg class="navBear" viewBox="0 0 48 48" role="img" aria-label="布布"><circle cx="13" cy="13" r="7" fill="#9a6c50" stroke="#5b3a30" stroke-width="2"/><circle cx="35" cy="13" r="7" fill="#9a6c50" stroke="#5b3a30" stroke-width="2"/><circle cx="24" cy="25" r="17" fill="#a97859" stroke="#5b3a30" stroke-width="2"/><circle cx="18" cy="23" r="2" fill="#4b3028"/><circle cx="30" cy="23" r="2" fill="#4b3028"/><ellipse cx="24" cy="30" rx="7" ry="5.5" fill="#c99a77"/><ellipse cx="24" cy="28.5" rx="2.7" ry="2.2" fill="#4b3028"/><path d="M24 31v2.5M20.5 34c1.8 1.8 5.2 1.8 7 0" fill="none" stroke="#4b3028" stroke-width="1.6" stroke-linecap="round"/></svg>`
+  : `<svg class="navBear" viewBox="0 0 48 48" role="img" aria-label="一二"><circle cx="13" cy="13" r="7" fill="#fffdf7" stroke="#5b4036" stroke-width="2"/><circle cx="35" cy="13" r="7" fill="#fffdf7" stroke="#5b4036" stroke-width="2"/><circle cx="24" cy="25" r="17" fill="#fffdf7" stroke="#5b4036" stroke-width="2"/><circle cx="18" cy="23" r="2" fill="#4b3028"/><circle cx="30" cy="23" r="2" fill="#4b3028"/><circle cx="14.5" cy="28" r="3" fill="#f4b6b3" opacity=".85"/><circle cx="33.5" cy="28" r="3" fill="#f4b6b3" opacity=".85"/><ellipse cx="24" cy="29" rx="2.7" ry="2.2" fill="#4b3028"/><path d="M24 31.5v2M20.5 34c1.8 1.8 5.2 1.8 7 0" fill="none" stroke="#4b3028" stroke-width="1.6" stroke-linecap="round"/></svg>`;
 const tabs = [
-  ['husband', '◒', '老公'],
+  ['husband', bearFace('bubu'), '老公'],
   ['dashboard', '◉', '家庭'],
-  ['wife', '◐', '老婆'],
+  ['wife', bearFace('yier'), '老婆'],
 ];
 const categories = {
   asset: ['現金及存款', '台股', '美股', '不動產', '黃金', '保險', '其他'],
