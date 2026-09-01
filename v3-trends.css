@@ -31,6 +31,7 @@
 .bottomNav{grid-template-columns:repeat(3,1fr);padding:7px;border-color:#343c4b;background:#11151df8}
 .bottomNav button{min-height:68px;color:#9aa4b5;font-size:12px;font-weight:750}
 .bottomNav button span{font-size:27px;font-weight:900;line-height:1}
+.bottomNav .navBear{display:block;width:31px;height:31px;overflow:visible}
 .bottomNav button.on{background:#252c40;color:#e1e5ff;box-shadow:inset 0 0 0 1px #39425b}
 .status,.status button,.heroLabel,.miniStats span,.ownerTile span,.ownerTile small,.sectionHead span,.itemName span,.itemAmount span,.itemMeta span,.source,.categoryHead small{color:#9ba5b5}
 .itemName b,.itemAmount b,.miniStats b,.sectionHead b,.categoryTotal b{color:#f4f6fa}
@@ -89,6 +90,7 @@ button:disabled{cursor:wait;opacity:.62}
   .trendFooter{font-size:12px}.trendChange b{font-size:15px}.trendChange span{font-size:12px}
   .bottomNav{grid-template-columns:repeat(3,1fr)}
   .bottomNav button{min-height:72px;font-size:13px}.bottomNav button span{font-size:29px}
+  .bottomNav .navBear{width:33px;height:33px}
   .compactCard{padding:17px 15px}.compactIdentity b{font-size:17px}.compactAmount{font-size:16px}
   .form label{font-size:14px}.authCard>p{font-size:15px}
   .message,.link{font-size:14px}.secure{font-size:12px}
