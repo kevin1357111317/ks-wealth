@@ -22,8 +22,8 @@ test('gold failures do not write amount_twd', () => {
   assert.match(failureGuard, /status: "error"/);
 });
 
-test('gold and collection are separate and personal allocation is rendered', () => {
+test('gold is a dedicated category and personal allocation is rendered', () => {
   assert.doesNotMatch(appSource, /黃金與收藏/);
-  assert.match(appSource, /'黃金', '收藏'/);
-  assert.match(appSource, /assetAllocationPanel\(totals\.assets, totals\.totalAssets/);
+  assert.match(appSource, /'不動產', '黃金', '保險'/);
+  assert.match(appSource, /distributionPanel\(distributionRows, distributionTotal/);
 });

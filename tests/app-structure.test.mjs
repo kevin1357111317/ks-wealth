@@ -22,7 +22,8 @@ test('realtime reloads are household-filtered and debounced', () => {
 });
 
 test('production shell loads the current app and PWA metadata', () => {
-  assert.match(html, /app-v3\.js\?v=gold-1/);
+  assert.match(html, /app-v3\.js\?v=portfolio-1/);
+  assert.match(html, /portfolio\.css\?v=portfolio-1/);
   assert.match(html, /manifest\.webmanifest/);
   assert.match(html, /apple-mobile-web-app-title" content="布布一二的家"/);
   assert.doesNotMatch(html, /src="\/app\.js/);
