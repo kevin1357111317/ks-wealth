@@ -32,6 +32,32 @@
 - 舊資料仍可由 `original_currency` / `original_amount` fallback 讀取，新增與編輯統一寫入 `native_*`。
 - `net_worth_history` 保存家庭歷史，`financial_scope_history` 保存老公／老婆範圍歷史；今日顯示值只在前端即時計算。
 
+## 台股／美股走交易台帳
+
+台股與美股的股數與市值**不是手動輸入的**，是從 `klfan_transactions` 推算出來的：交易一有異動，
+`sync_klfan_financial_item()` 觸發器就會重算股數與市值，upsert 回 `financial_items`
+（靠 `financial_items.portfolio_stock_key` 連結）。所以那一列完全是衍生資料。
+
+因此「新增／編輯財務項目」表單在資產屬性選到台股或美股時：
+
+- 收起「持有股數」，改成一組交易輸入（買進／賣出／股息、日期、總金額、股數、銀行、備註）
+- 新標的的第一筆交易是必填的 —— 觸發器只在股數不為零時才建 `financial_items` 那一列，
+  沒有交易的標的只會出現在「股票投資」、不會出現在資產裡
+- 編輯既有標的時交易區可以整區留白，代表這次只改名稱或代號
+- 只列最近 10 筆交易讓人補漏或刪掉打錯的；完整歷史在「股票投資」那一頁
+- 儲存時只寫 `klfan_stocks` / `klfan_transactions`，**不自己插 `financial_items`** ——
+  自己插一列會跟觸發器建的那列重複，資產被算兩次
+- 刪除要從 `klfan_stocks` 刪（交易 cascade 跟著走）。只刪 `financial_items` 沒有用，
+  下一筆交易或報價更新會讓觸發器把它重建回來
+
+報價代號在台帳裡一律帶交易所前綴（`TPE:2330`、`NASDAQ:QQQ`），`sync_klfan_financial_item()`
+就是靠這個前綴把裸代號切出來寫進 `financial_items.symbol`。表單允許只打 `2330`，會自動補上
+並顯示補完的結果。
+
+`tests/portfolio-ledger.test.mjs` 在真的瀏覽器裡跑這條路徑，supabase client 換成記憶體版
+（`tests/support/fake-supabase.js`，含觸發器與 FK cascade 的行為）。它需要 playwright，沒裝會
+自動跳過；裝在專案外面的話用 `PLAYWRIGHT_PATH` 指到進入點。
+
 ## 行情額度與共用快取
 
 這個 Supabase 專案同時服務兩個 App：本專案與 KLFAN（`KLFAN-stock-tracker`），兩邊共用同一把
