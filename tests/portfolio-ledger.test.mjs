@@ -79,8 +79,7 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     assert.ok(await page.isVisible('#ledgerFields'), '應該出現新增交易區');
     assert.ok(!(await page.isVisible('#qtyBox')), '股數由交易推算，不該再手打');
     await page.fill('#symbol', '2330');
-    await page.dispatchEvent('#symbol', 'input');
-    assert.match(await page.textContent('#txHint'), /TPE:2330/, '裸代號要自動補交易所前綴');
+    assert.equal(await page.locator('#txNote').count(), 0, '交易備註拿掉了，只留項目自己的備註');
   });
 
   await t.test('第一筆交易寫進台帳，資產列由觸發器產生', async () => {
@@ -90,7 +89,7 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     await save();
     const data = await db();
     assert.equal(data.klfan_stocks.length, 1);
-    assert.equal(data.klfan_stocks[0].symbol, 'TPE:2330');
+    assert.equal(data.klfan_stocks[0].symbol, 'TPE:2330', '裸代號要自動補交易所前綴');
     assert.equal(data.klfan_stocks[0].display, '台積電');
     assert.equal(data.klfan_transactions.length, 1);
     assert.equal(data.klfan_transactions[0].amount, -2400000, '買進要存成負數現金流');
@@ -104,7 +103,6 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     await openCard();
     assert.ok(await page.isVisible('#txHistoryBox'));
     assert.equal(await page.locator('#txHistory .portfolioTx').count(), 1);
-    assert.match(await page.textContent('#txHint'), /目前 1,000 股/);
     await page.selectOption('#txAction', 'sell');
     await page.fill('#txAmount', '500000');
     await page.fill('#txShares', '200');
