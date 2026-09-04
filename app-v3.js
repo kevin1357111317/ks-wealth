@@ -867,7 +867,7 @@ function editItem(item, defaultOwner, defaultKind) {
   const initialNativeAmount = item?.native_amount ?? item?.original_amount ?? item?.amount_twd ?? '';
   const backdrop = document.createElement('div');
   backdrop.className = 'backdrop';
-  backdrop.innerHTML = `<section class="sheet"><div class="handle"></div><div class="sheetHead"><div><h2>${item ? '編輯' : '新增'}財務項目</h2></div>${item ? '<button id="del" class="trash">刪除</button>' : ''}</div><form id="editform" class="form" novalidate><label>歸屬<select id="owner"><option value="husband">老公</option><option value="wife">老婆</option></select></label><div class="seg"><button type="button" data-kind="asset">資產</button><button type="button" data-kind="liability">負債</button></div><label><span id="categoryLabel">資產屬性</span><select id="cat"></select></label><label id="nameBox">名稱<input id="nm" required value="${escapeHtml(item?.name || '')}"></label><label id="insuranceCurrencyBox" class="hide">保險幣別<select id="insuranceCurrency"><option value="TWD">台幣（TWD）</option><option value="USD">美金（USD）</option></select></label><label id="modeBox">資料型態<select id="mode"><option value="manual-twd">手動台幣資產</option><option value="manual-usd">手動美元資產</option><option value="stock-tw">台股</option><option value="stock-us">美股</option><option value="gold">黃金（自動行情）</option></select><small id="modeHint" class="quoteHint"></small></label><div id="manualFields"><label id="amountLabel">台幣金額<input id="amt" inputmode="decimal" value="${initialNativeAmount}"></label><div id="usdFields" class="two hide"><label>USD/TWD 匯率<input id="fx" inputmode="decimal" readonly></label><label>自動換算台幣<input id="converted" readonly></label></div></div><div id="stockFields" class="hide"><div class="two"><label>報價代號<input id="symbol" value="${escapeHtml(ledgerStock?.symbol || item?.symbol || '')}" placeholder="2330 或 TPE:2330" autocapitalize="characters"></label><label id="qtyBox">持有股數<input id="qty" inputmode="decimal" value="${item?.quantity ?? ''}"></label></div><div class="quoteHint hide" id="stockHint"></div><div id="ledgerFields" class="hide"><div class="sectionHead"><b>新增交易</b><span id="txHint"></span></div><div class="two"><label>類型<select id="txAction"><option value="buy">買進</option><option value="sell">賣出</option><option value="dividend">股息</option></select></label><label>日期<input id="txDate" type="date" value="${taipeiDate()}"></label></div><div class="two"><label id="txAmountBox">總金額<input id="txAmount" inputmode="decimal"></label><label id="txSharesBox">股數<input id="txShares" inputmode="decimal"></label></div><div class="two"><label>銀行／券商<input id="txBank"></label><label>備註<input id="txNote"></label></div><div id="txHistoryBox" class="hide"><div class="sectionHead"><b>交易紀錄</b><span id="txCount"></span></div><div class="portfolioTxList" id="txHistory"></div></div></div></div><div id="goldFields" class="hide"><div class="two"><label>持有重量<input id="goldWeight" inputmode="decimal" value="${item?.market === 'GOLD' ? item.quantity ?? '' : ''}"></label><label>單位<select disabled><option>g 公克</option></select></label></div></div><div id="loanFields" class="hide"><label>剩餘本金（TWD）<input id="principal" inputmode="decimal" value="${item?.amount_twd ?? ''}"></label><div class="two"><label>年利率 %<input id="rate" inputmode="decimal" value="${item?.interest_rate ?? ''}"></label><label>每月月付（TWD）<input id="pay" inputmode="decimal" value="${item?.monthly_payment_twd ?? ''}"></label></div></div><label>備註（選填）<textarea id="note" rows="3">${escapeHtml(item?.notes || '')}</textarea></label><div id="emsg"></div><button id="save" class="primary">儲存並同步</button></form></section>`;
+  backdrop.innerHTML = `<section class="sheet"><div class="handle"></div><div class="sheetHead"><div><h2>${item ? '編輯' : '新增'}財務項目</h2></div>${item ? '<button id="del" class="trash">刪除</button>' : ''}</div><form id="editform" class="form" novalidate><label>歸屬<select id="owner"><option value="husband">老公</option><option value="wife">老婆</option></select></label><div class="seg"><button type="button" data-kind="asset">資產</button><button type="button" data-kind="liability">負債</button></div><label><span id="categoryLabel">資產屬性</span><select id="cat"></select></label><label id="nameBox">名稱<input id="nm" required value="${escapeHtml(item?.name || '')}"></label><label id="insuranceCurrencyBox" class="hide">保險幣別<select id="insuranceCurrency"><option value="TWD">台幣（TWD）</option><option value="USD">美金（USD）</option></select></label><label id="modeBox">資料型態<select id="mode"><option value="manual-twd">手動台幣資產</option><option value="manual-usd">手動美元資產</option><option value="stock-tw">台股</option><option value="stock-us">美股</option><option value="gold">黃金（自動行情）</option></select><small id="modeHint" class="quoteHint"></small></label><div id="manualFields"><label id="amountLabel">台幣金額<input id="amt" inputmode="decimal" value="${initialNativeAmount}"></label><div id="usdFields" class="two hide"><label>USD/TWD 匯率<input id="fx" inputmode="decimal" readonly></label><label>自動換算台幣<input id="converted" readonly></label></div></div><div id="stockFields" class="hide"><div class="two"><label>報價代號<input id="symbol" value="${escapeHtml(ledgerStock?.symbol || item?.symbol || '')}" placeholder="2330 或 TPE:2330" autocapitalize="characters"></label><label id="qtyBox">持有股數<input id="qty" inputmode="decimal" value="${item?.quantity ?? ''}"></label></div><div class="quoteHint hide" id="stockHint"></div><div id="ledgerFields" class="hide"><div class="two"><label>類型<select id="txAction"><option value="buy">買進</option><option value="sell">賣出</option><option value="dividend">股息</option></select></label><label>日期<input id="txDate" type="date" value="${taipeiDate()}"></label></div><div class="two"><label id="txAmountBox">總金額<input id="txAmount" inputmode="decimal"></label><label id="txSharesBox">股數<input id="txShares" inputmode="decimal"></label></div><label>銀行／券商<input id="txBank"></label><div id="txHistoryBox" class="hide"><div class="sectionHead"><b>交易紀錄</b><span id="txCount"></span></div><div class="portfolioTxList" id="txHistory"></div></div></div></div><div id="goldFields" class="hide"><div class="two"><label>持有重量<input id="goldWeight" inputmode="decimal" value="${item?.market === 'GOLD' ? item.quantity ?? '' : ''}"></label><label>單位<select disabled><option>g 公克</option></select></label></div></div><div id="loanFields" class="hide"><label>剩餘本金（TWD）<input id="principal" inputmode="decimal" value="${item?.amount_twd ?? ''}"></label><div class="two"><label>年利率 %<input id="rate" inputmode="decimal" value="${item?.interest_rate ?? ''}"></label><label>每月月付（TWD）<input id="pay" inputmode="decimal" value="${item?.monthly_payment_twd ?? ''}"></label></div></div><label>備註（選填）<textarea id="note" rows="3">${escapeHtml(item?.notes || '')}</textarea></label><div id="emsg"></div><button id="save" class="primary">儲存並同步</button></form></section>`;
   document.body.append(backdrop);
 
   const form = backdrop.querySelector('#editform');
@@ -893,7 +893,6 @@ function editItem(item, defaultOwner, defaultKind) {
   const quantityInput = backdrop.querySelector('#qty');
   const stockHint = backdrop.querySelector('#stockHint');
   const ledgerFields = backdrop.querySelector('#ledgerFields');
-  const txHint = backdrop.querySelector('#txHint');
   const txAction = backdrop.querySelector('#txAction');
   const txDate = backdrop.querySelector('#txDate');
   const txAmountBox = backdrop.querySelector('#txAmountBox');
@@ -901,7 +900,6 @@ function editItem(item, defaultOwner, defaultKind) {
   const txSharesBox = backdrop.querySelector('#txSharesBox');
   const txShares = backdrop.querySelector('#txShares');
   const txBank = backdrop.querySelector('#txBank');
-  const txNote = backdrop.querySelector('#txNote');
   const txHistoryBox = backdrop.querySelector('#txHistoryBox');
   const txCountLabel = backdrop.querySelector('#txCount');
   const txHistory = backdrop.querySelector('#txHistory');
@@ -945,16 +943,6 @@ function editItem(item, defaultOwner, defaultKind) {
     const dividend = txAction.value === 'dividend';
     txSharesBox.classList.toggle('hide', dividend);
     txAmountBox.firstChild.textContent = `總金額（${mode === 'stock-us' ? 'USD' : 'TWD'}）`;
-    const marketLabel = mode === 'stock-us' ? '美股' : '台股';
-    const normalized = normalizeQuoteSymbol(symbolInput.value, marketLabel);
-    if (item?.portfolio_stock_key) {
-      const shares = ledgerStock
-        ? new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 6 }).format(ledgerStock.shares)
-        : null;
-      txHint.textContent = shares === null ? '留白就不新增' : `目前 ${shares} 股 · 留白就不新增`;
-    } else {
-      txHint.textContent = normalized ? `將建立 ${normalized} · 第一筆交易必填` : '第一筆交易必填';
-    }
     if (!ledgerStock) return;
     const all = ledgerStock.transactions.slice()
       .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
@@ -1046,7 +1034,6 @@ function editItem(item, defaultOwner, defaultKind) {
   };
   amountInput.oninput = updateConversion;
   txAction.onchange = updateLedgerFields;
-  symbolInput.oninput = () => { if (!ledgerFields.classList.contains('hide')) updateLedgerFields(); };
   backdrop.onclick = event => {
     if (event.target === backdrop && !saving) backdrop.remove();
     const button = event.target.closest('[data-kind]');
@@ -1074,7 +1061,7 @@ function editItem(item, defaultOwner, defaultKind) {
       shares: action === 'buy' ? sharesValue : action === 'sell' ? -sharesValue : 0,
       bank: txBank.value.trim(),
       kind: action === 'dividend' ? 'dividend' : 'trade',
-      note: txNote.value.trim() || (action === 'dividend' ? '股息' : '股票'),
+      note: action === 'dividend' ? '股息' : '股票',
     };
   };
 
