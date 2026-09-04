@@ -24,6 +24,7 @@ export function decodePortfolioBootstrap(payload) {
   const stocks = payload.s.map(row => ({
     key: row[0], display: row[1], market: row[2], currency: row[3], symbol: row[4] || '',
     manualPrice: row[5] === null ? null : number(row[5]),
+    ownerScope: row[6] || 'husband',
     quote: quotes.get(String(row[4] ?? '').toUpperCase()) ?? null,
     transactions: [],
   }));

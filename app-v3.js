@@ -11,7 +11,7 @@ import {
   parseNonNegative,
   toFiniteNumber,
 } from './financial-core.js?v=hide-sold-out-1';
-import { calculatePortfolio, decodePortfolioBootstrap } from './portfolio-core.js?v=portfolio-1';
+import { calculatePortfolio, decodePortfolioBootstrap } from './portfolio-core.js?v=owner-scope-1';
 import { calculateUsd } from './usd-core.js?v=usd-1';
 
 // App / Supabase -------------------------------------------------------------
@@ -67,8 +67,8 @@ let portfolioStocks = [];
 let portfolioModel = null;
 // 美金部位自己一本帳，跟 financial_items 沒有連動：買賣只在美金分析頁裡進出。
 let usdTransactions = [];
-let usdModel = null;
 let analysisScreen = null;   // 'stocks'｜'usd'，null 就是一般的資產頁
+let analysisOwner = 'husband';   // 分析頁看的是誰的部位
 let expandedStock = null;   // 台帳清單裡就地展開的那一檔，一次只開一個
 // 分析頁是狀態切換不是換頁，返回手勢預設不會有反應。進去時推一筆歷史，
 // 手勢／返回鍵就有東西可以退，popstate 再把畫面收回來。
@@ -320,8 +320,8 @@ async function applySession(nextSession) {
   portfolioStocks = [];
   portfolioModel = null;
   analysisScreen = null;
+  analysisOwner = 'husband';
   usdTransactions = [];
-  usdModel = null;
   expandedStock = null;
   analysisPushed = false;
   analysisReturnScroll = 0;
@@ -360,10 +360,7 @@ async function loadData({ blocking = false } = {}) {
       portfolioStocks = decodePortfolioBootstrap(portfolioResult.data);
       portfolioModel = calculatePortfolio(portfolioStocks, fxRate);
     }
-    if (!usdResult.error) {
-      usdTransactions = usdResult.data ?? [];
-      usdModel = calculateUsd(usdTransactions, fxRate);
-    }
+    if (!usdResult.error) usdTransactions = usdResult.data ?? [];
     render();
     return true;
   })().catch(error => {
@@ -505,11 +502,7 @@ async function refreshQuotes({ force = false } = {}) {
       ...quoteData,
       ...Object.fromEntries(successfulQuotes.map(result => [result.id, result])),
     };
-    if (data?.fx?.rate) {
-      fxRate = toFiniteNumber(data.fx.rate, fxRate);
-      // 美元部位的市值整個掛在匯率上，匯率一動就得重算。
-      usdModel = calculateUsd(usdTransactions, fxRate);
-    }
+    if (data?.fx?.rate) fxRate = toFiniteNumber(data.fx.rate, fxRate);
     const failed = toFiniteNumber(data?.failed);
     const succeeded = toFiniteNumber(data?.updated) + toFiniteNumber(data?.priceOnly);
     quoteStatus = failed > 0 ? (succeeded > 0 ? 'partial' : 'error') : 'success';
@@ -626,6 +619,18 @@ function analysisEntry() {
   return `<div class="analysisEntry"><button data-open-portfolio>股票分析<i>›</i></button><button data-open-usd>美金分析<i>›</i></button></div>`;
 }
 
+// 分析頁只看單一個人的部位。全部合起來的 portfolioModel 還是要留著 ——
+// 編輯表單與 syncPortfolioFinancialItem() 是照 key 找標的，跟歸屬無關。
+const ownerName = ownerScope => ownerScope === 'wife' ? '老婆' : '老公';
+
+function ownerPortfolioModel(ownerScope) {
+  return calculatePortfolio(portfolioStocks.filter(stock => stock.ownerScope === ownerScope), fxRate);
+}
+
+function ownerUsdModel(ownerScope) {
+  return calculateUsd(usdTransactions.filter(row => (row.owner_scope ?? 'husband') === ownerScope), fxRate);
+}
+
 function portfolioSummaryCards(bucket) {
   const tone = bucket.profitTwd >= 0 ? 'up' : 'down';
   return `<div class="portfolioSummary"><div class="portfolioMetric"><span>目前市值</span><b>NT$ ${formatNumber(bucket.currentValueTwd)}</b><small>${bucket.holdings} 檔持有中</small></div><div class="portfolioMetric"><span>累計淨投入</span><b>NT$ ${formatNumber(bucket.netInvestedTwd)}</b><small>買進－賣出－股息</small></div><div class="portfolioMetric"><span>累計損益</span><b class="${tone}">NT$ ${formatNumber(bucket.profitTwd)}</b><small>${formatPercent(bucket.returnRate)}</small></div><div class="portfolioMetric"><span>年化報酬率</span><b>${formatPercent(bucket.xirr)}</b><small>計入每筆買賣的時點</small></div></div>`;
@@ -656,13 +661,14 @@ function portfolioStockCard(stock, expanded) {
 }
 
 function portfolioListPage() {
+  const model = ownerPortfolioModel(analysisOwner);
   const marketRows = portfolioMarket === 'all'
-    ? portfolioModel.positions
-    : portfolioModel.positions.filter(stock => stock.market === portfolioMarket);
+    ? model.positions
+    : model.positions.filter(stock => stock.market === portfolioMarket);
   const rows = marketRows.filter(stock => portfolioShowExited || stock.shares > 0.0000001)
     .sort((a, b) => b.currentValueTwd - a.currentValueTwd || a.display.localeCompare(b.display, 'zh-Hant'));
-  const bucket = portfolioMarket === '台股' ? portfolioModel.tw : portfolioMarket === '美股' ? portfolioModel.us : portfolioModel.all;
-  shell(`<div class="portfolioView"><div class="seg"><button data-portfolio-market="all" class="${portfolioMarket === 'all' ? 'on' : ''}">全部</button><button data-portfolio-market="台股" class="${portfolioMarket === '台股' ? 'on' : ''}">台股</button><button data-portfolio-market="美股" class="${portfolioMarket === '美股' ? 'on' : ''}">美股</button></div>${portfolioSummaryCards(bucket)}<label class="portfolioToolbar"><span>${rows.length} 檔標的</span><span><input type="checkbox" data-show-exited ${portfolioShowExited ? 'checked' : ''}> 顯示已出清</span></label><div class="portfolioList">${rows.length ? rows.map(stock => portfolioStockCard(stock, stock.key === expandedStock)).join('') : '<div class="portfolioEmpty">這個篩選條件目前沒有標的。</div>'}</div></div>`, '股票投資');
+  const bucket = portfolioMarket === '台股' ? model.tw : portfolioMarket === '美股' ? model.us : model.all;
+  shell(`<div class="portfolioView"><div class="seg"><button data-portfolio-market="all" class="${portfolioMarket === 'all' ? 'on' : ''}">全部</button><button data-portfolio-market="台股" class="${portfolioMarket === '台股' ? 'on' : ''}">台股</button><button data-portfolio-market="美股" class="${portfolioMarket === '美股' ? 'on' : ''}">美股</button></div>${portfolioSummaryCards(bucket)}<label class="portfolioToolbar"><span>${rows.length} 檔標的</span><span><input type="checkbox" data-show-exited ${portfolioShowExited ? 'checked' : ''}> 顯示已出清</span></label><div class="portfolioList">${rows.length ? rows.map(stock => portfolioStockCard(stock, stock.key === expandedStock)).join('') : '<div class="portfolioEmpty">這個篩選條件目前沒有標的。</div>'}</div></div>`, `${ownerName(analysisOwner)}股票分析`);
   root.querySelectorAll('[data-portfolio-market]').forEach(button => { button.onclick = () => { portfolioMarket = button.dataset.portfolioMarket; render(); }; });
   root.querySelector('[data-show-exited]').onchange = event => { portfolioShowExited = event.target.checked; render(); };
   root.querySelectorAll('[data-portfolio-stock]').forEach(button => { button.onclick = () => {
@@ -718,7 +724,7 @@ async function syncPortfolioFinancialItem(stockKey, { ownerScope, notes } = {}) 
 
 function analysisPage() {
   if (analysisScreen === 'usd') return usdPage();
-  if (!portfolioModel) { analysisScreen = null; return personPage('husband'); }
+  if (!portfolioModel) { analysisScreen = null; return personPage(analysisOwner); }
   portfolioListPage();
 }
 
@@ -731,10 +737,10 @@ const rateFormat = value => Number.isFinite(Number(value)) && Number(value) > 0
 
 // 對照 KLFAN 試算表「美金」工作表的那塊「美元資產績效（全部以新台幣計算）」。
 function usdPage() {
-  const model = usdModel ?? calculateUsd([], fxRate);
+  const model = ownerUsdModel(analysisOwner);
   const tone = value => value >= 0 ? 'up' : 'down';
   const rows = [...model.rows].reverse();
-  shell(`<div class="portfolioView"><div class="portfolioSummary"><div class="portfolioMetric"><span>目前美元部位</span><b>US$ ${usdFormat(model.balance)}</b><small>加權平均成本 ${rateFormat(model.averageCost)}</small></div><div class="portfolioMetric"><span>目前台幣市值</span><b>NT$ ${formatNumber(model.marketValueTwd)}</b><small>目前匯率 ${rateFormat(model.currentRate)}</small></div><div class="portfolioMetric"><span>累計淨投入</span><b>NT$ ${formatNumber(model.netInvestedTwd)}</b><small>買進－賣出</small></div><div class="portfolioMetric"><span>剩餘美元成本</span><b>NT$ ${formatNumber(model.remainingCostTwd)}</b><small>移動加權平均</small></div><div class="portfolioMetric"><span>已實現匯兌損益</span><b class="${tone(model.realizedTwd)}">NT$ ${formatNumber(model.realizedTwd)}</b><small>賣出時認列</small></div><div class="portfolioMetric"><span>未實現匯兌損益</span><b class="${tone(model.unrealizedTwd)}">NT$ ${formatNumber(model.unrealizedTwd)}</b><small>市值－剩餘成本</small></div><div class="portfolioMetric"><span>總匯兌損益</span><b class="${tone(model.totalProfitTwd)}">NT$ ${formatNumber(model.totalProfitTwd)}</b><small>已實現＋未實現</small></div><div class="portfolioMetric"><span>年化報酬率</span><b>${formatPercent(model.xirr)}</b><small>計入每筆買賣的時點</small></div></div><div class="sectionHead"><span>交易紀錄${model.firstTradeDate ? ` · 自 ${escapeHtml(model.firstTradeDate)}` : ''}</span><b>${model.transactions} 筆</b></div><div class="portfolioTxList">${rows.length ? rows.map(usdTransactionRow).join('') : '<div class="portfolioEmpty">還沒有美金交易，按右下角 ＋ 記第一筆。</div>'}</div></div>`, '美金分析', true);
+  shell(`<div class="portfolioView"><div class="portfolioSummary"><div class="portfolioMetric"><span>目前美元部位</span><b>US$ ${usdFormat(model.balance)}</b><small>加權平均成本 ${rateFormat(model.averageCost)}</small></div><div class="portfolioMetric"><span>目前台幣市值</span><b>NT$ ${formatNumber(model.marketValueTwd)}</b><small>目前匯率 ${rateFormat(model.currentRate)}</small></div><div class="portfolioMetric"><span>累計淨投入</span><b>NT$ ${formatNumber(model.netInvestedTwd)}</b><small>買進－賣出</small></div><div class="portfolioMetric"><span>剩餘美元成本</span><b>NT$ ${formatNumber(model.remainingCostTwd)}</b><small>移動加權平均</small></div><div class="portfolioMetric"><span>已實現匯兌損益</span><b class="${tone(model.realizedTwd)}">NT$ ${formatNumber(model.realizedTwd)}</b><small>賣出時認列</small></div><div class="portfolioMetric"><span>未實現匯兌損益</span><b class="${tone(model.unrealizedTwd)}">NT$ ${formatNumber(model.unrealizedTwd)}</b><small>市值－剩餘成本</small></div><div class="portfolioMetric"><span>總匯兌損益</span><b class="${tone(model.totalProfitTwd)}">NT$ ${formatNumber(model.totalProfitTwd)}</b><small>已實現＋未實現</small></div><div class="portfolioMetric"><span>年化報酬率</span><b>${formatPercent(model.xirr)}</b><small>計入每筆買賣的時點</small></div></div><div class="sectionHead"><span>交易紀錄${model.firstTradeDate ? ` · 自 ${escapeHtml(model.firstTradeDate)}` : ''}</span><b>${model.transactions} 筆</b></div><div class="portfolioTxList">${rows.length ? rows.map(usdTransactionRow).join('') : '<div class="portfolioEmpty">還沒有美金交易，按右下角 ＋ 記第一筆。</div>'}</div></div>`, `${ownerName(analysisOwner)}美金分析`, true);
 
   root.querySelector('#add').onclick = () => editUsdTransaction();
   root.querySelectorAll('[data-delete-usd-tx]').forEach(button => { button.onclick = async () => {
@@ -797,6 +803,7 @@ function editUsdTransaction() {
     saving = true;
     const { error } = await sb.from('usd_transactions').insert({
       household_id: member.household_id,
+      owner_scope: analysisOwner,
       trade_date: dateInput.value,
       usd_amount: selling ? -usd : usd,
       rate,
@@ -823,7 +830,7 @@ function personPage(ownerScope) {
   const distributionRows = distributionKind === 'asset' ? totals.assets : totals.liabilities;
   const distributionTotal = distributionKind === 'asset' ? totals.totalAssets : totals.totalLiabilities;
   const distributionTitle = `${name}${distributionKind === 'asset' ? '資產' : '負債'}分布`;
-  shell(`<section class="portfolioHero"><div class="heroLabel"><span>${name}淨資產</span><span>${totals.assets.length + totals.liabilities.length} 筆</span></div><div class="bigMoney">${formatMoney(totals.netWorth)}</div><div class="miniStats"><div><span>資產總額</span><b>NT$ ${formatNumber(totals.totalAssets)}</b></div><div><span>負債總額</span><b>NT$ ${formatNumber(totals.totalLiabilities)}</b></div></div></section>${trendChart(personalTrendRows(ownerScope, totals.netWorth))}${distributionPanel(distributionRows, distributionTotal, distributionTitle, distributionKind)}${ownerScope === 'husband' ? analysisEntry() : ''}<div class="seg personSeg" id="personSeg"><button data-kind="asset" class="${kind === 'asset' ? 'on' : ''}">資產</button><button data-kind="liability" class="${kind === 'liability' ? 'on' : ''}">負債</button></div><div class="sectionHead"><span>${kind === 'asset' ? '投資與資產' : '貸款與負債'}</span><b>NT$ ${formatNumber(total)}</b></div><div class="categoryList">${list.length ? groupedCards(list, ownerScope, kind) : `<div class="empty"><div><b>目前沒有${kind === 'asset' ? '資產' : '負債'}資料</b><span>按右下角 ＋ 新增財務項目。</span></div></div>`}</div>`, name, true);
+  shell(`<section class="portfolioHero"><div class="heroLabel"><span>${name}淨資產</span><span>${totals.assets.length + totals.liabilities.length} 筆</span></div><div class="bigMoney">${formatMoney(totals.netWorth)}</div><div class="miniStats"><div><span>資產總額</span><b>NT$ ${formatNumber(totals.totalAssets)}</b></div><div><span>負債總額</span><b>NT$ ${formatNumber(totals.totalLiabilities)}</b></div></div></section>${trendChart(personalTrendRows(ownerScope, totals.netWorth))}${distributionPanel(distributionRows, distributionTotal, distributionTitle, distributionKind)}${analysisEntry()}<div class="seg personSeg" id="personSeg"><button data-kind="asset" class="${kind === 'asset' ? 'on' : ''}">資產</button><button data-kind="liability" class="${kind === 'liability' ? 'on' : ''}">負債</button></div><div class="sectionHead"><span>${kind === 'asset' ? '投資與資產' : '貸款與負債'}</span><b>NT$ ${formatNumber(total)}</b></div><div class="categoryList">${list.length ? groupedCards(list, ownerScope, kind) : `<div class="empty"><div><b>目前沒有${kind === 'asset' ? '資產' : '負債'}資料</b><span>按右下角 ＋ 新增財務項目。</span></div></div>`}</div>`, name, true);
 
   root.querySelector('#personSeg').onclick = event => {
     const button = event.target.closest('[data-kind]');
@@ -833,9 +840,9 @@ function personPage(ownerScope) {
   };
   root.querySelector('#add').onclick = () => editItem(null, ownerScope, kind);
   const portfolioButton = root.querySelector('[data-open-portfolio]');
-  if (portfolioButton) portfolioButton.onclick = () => openAnalysis('stocks');
+  if (portfolioButton) portfolioButton.onclick = () => openAnalysis('stocks', ownerScope);
   const usdButton = root.querySelector('[data-open-usd]');
-  if (usdButton) usdButton.onclick = () => openAnalysis('usd');
+  if (usdButton) usdButton.onclick = () => openAnalysis('usd', ownerScope);
   root.querySelector('.categoryList').onclick = event => {
     const group = event.target.closest('[data-group]');
     if (group) {
@@ -896,7 +903,9 @@ function renderKeepingAnchor(attribute, value) {
   if (documentTopAfter !== documentTopBefore) window.scrollTo(0, window.scrollY + (documentTopAfter - documentTopBefore));
 }
 
-function openAnalysis(screen) {
+function openAnalysis(screen, ownerScope) {
+  analysisOwner = ownerScope;
+  expandedStock = null;   // 換人看就把展開的那張收掉，免得停在另一個人的標的上
   analysisReturnScroll = window.scrollY;
   analysisScreen = screen;
   window.history.pushState({ ks: 'analysis' }, '');

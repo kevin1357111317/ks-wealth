@@ -443,5 +443,53 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
   });
 
 
+  await t.test('老婆頁也有兩個分析入口，而且看到的是自己的部位', async () => {
+    await page.click('[data-tab="wife"]');
+    await page.waitForSelector('.fab');
+    assert.equal(await page.locator('[data-open-portfolio]').count(), 1, '老婆頁也要有股票分析');
+    assert.equal(await page.locator('[data-open-usd]').count(), 1, '老婆頁也要有美金分析');
+
+    // 目前所有標的都掛在老公名下，老婆進去應該是空的、不是看到老公的
+    await page.click('[data-open-portfolio]');
+    await page.waitForSelector('.portfolioView');
+    assert.match(await page.textContent('.topbar h1'), /老婆股票分析/);
+    assert.equal(await page.locator('[data-portfolio-stock]').count(), 0, '不該看到老公的標的');
+    await page.goBack();
+    await page.waitForSelector('.fab');
+
+    // 美金也一樣：老公那邊剛剛記了兩筆，老婆這邊要是乾淨的
+    await page.click('[data-open-usd]');
+    await page.waitForSelector('.portfolioSummary');
+    assert.match(await page.textContent('.topbar h1'), /老婆美金分析/);
+    assert.match(await page.textContent('.portfolioEmpty'), /還沒有美金交易/);
+
+    // 在老婆頁記一筆，要記到老婆名下
+    await page.click('.fab');
+    await page.waitForSelector('#usdform');
+    await page.fill('#usdAmount', '100');
+    await page.fill('#usdRate', '30');
+    await page.click('#usdSave');
+    await page.waitForSelector('#usdform', { state: 'detached', timeout: 10_000 });
+    await settle();
+    assert.equal(await page.locator('.portfolioTx').count(), 1);
+    const scopes = await page.evaluate(() =>
+      globalThis.__fake.db.usd_transactions.map(row => row.owner_scope));
+    assert.deepEqual(scopes.filter(scope => scope === 'wife').length, 1, '新的那筆記在老婆名下');
+    assert.ok(scopes.filter(scope => scope === 'husband').length >= 1, '老公原本的那幾筆不動');
+
+    await page.goBack();
+    await page.waitForSelector('.fab');
+    // 老公那邊的美金筆數不會因為老婆記了一筆而變多
+    await page.click('[data-tab="husband"]');
+    await page.waitForSelector('.fab');
+    await page.click('[data-open-usd]');
+    await page.waitForSelector('.portfolioSummary');
+    assert.match(await page.textContent('.topbar h1'), /老公美金分析/);
+    assert.equal(await page.locator('.portfolioTx').count(), 2, '老婆那筆不該跑到老公這裡');
+    await page.goBack();
+    await page.waitForSelector('.fab');
+  });
+
+
   assert.deepEqual(failures, [], '瀏覽器不該有錯誤');
 });

@@ -71,6 +71,16 @@
 台帳部位濾掉；原始的 `items` 陣列不動，`syncPortfolioFinancialItem()` 還要靠它找到那一列。
 手動建立的 0 元項目不受影響。
 
+## 分析頁分老公／老婆
+
+股票分析與美金分析在兩個人的頁面上都有，各自只看自己名下的部位：
+
+- 股票照 `klfan_stocks.owner_scope` 切。這一欄本來就有，只是 `klfan_bootstrap()` 沒有把它送到
+  前端 —— `s` 陣列現在多帶第 7 個元素 `owner_scope`
+- 美金照 `usd_transactions.owner_scope` 切，在美金分析頁記的那筆就記在當下看的那個人名下
+- 合起來的 `portfolioModel` 還是要留著：編輯表單與 `syncPortfolioFinancialItem()` 是照 key
+  找標的，跟歸屬無關，用切過的那份會找不到
+
 ## 美金分析
 
 美金部位自己一本帳（`usd_transactions`），跟 `financial_items` **沒有連動** —— 買賣只在美金分析頁裡進出，
