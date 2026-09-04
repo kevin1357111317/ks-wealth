@@ -209,6 +209,8 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     await page.click('[data-open-portfolio]');
     await page.waitForSelector('[data-portfolio-market]');
     assert.equal(await page.locator('[data-close-portfolio]').count(), 0, '返回按鈕已移除');
+    // 新增股票統一走財務項目表單，台帳頁不再放第二個入口
+    assert.equal(await page.locator('[data-add-portfolio-stock]').count(), 0, '新增標的按鈕已移除');
 
     // 台帳是狀態切換不是換頁，沒有推歷史的話返回手勢不會有反應
     await page.goBack();
