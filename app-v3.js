@@ -10,7 +10,7 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=gold-1';
+} from './financial-core.js?v=hide-sold-out-1';
 import { calculatePortfolio, decodePortfolioBootstrap } from './portfolio-core.js?v=portfolio-1';
 
 // App / Supabase -------------------------------------------------------------
