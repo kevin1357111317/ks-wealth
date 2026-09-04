@@ -78,7 +78,7 @@ export function makeClient() {
       const stocks = db.klfan_stocks;
       const index = new Map(stocks.map((s, i) => [s.key, i]));
       return { data: {
-        s: stocks.map(s => [s.key, s.display, s.market, s.currency, s.symbol, null]),
+        s: stocks.map(s => [s.key, s.display, s.market, s.currency, s.symbol, null, s.owner_scope ?? 'husband']),
         q: Object.entries(QUOTES).map(([sym, price]) => [sym, price, sym.startsWith('TPE') ? 'TWD' : 'USD', 'fugle', 'x', Date.now()]),
         t: db.klfan_transactions.map(t => [t.id, index.get(t.stock_key), t.tx_date, t.amount, t.shares, 0, t.kind === 'dividend' ? 1 : 0, 0, t.kind === 'dividend' ? t.amount : t.amount]),
         d: { banks: [''], notes: [''], kinds: ['trade', 'dividend'] },
