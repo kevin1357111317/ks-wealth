@@ -69,6 +69,10 @@ let expandedStock = null;   // 台帳清單裡就地展開的那一檔，一次�
 // 台帳是狀態切換不是換頁，返回手勢預設不會有反應。進去時推一筆歷史，
 // 手勢／返回鍵就有東西可以退，popstate 再把畫面收回來。
 let portfolioPushed = false;
+let portfolioReturnScroll = 0;   // 進台帳前在資產頁停的位置，退出來要回到那裡
+// 瀏覽器預設會在 popstate 之後自己還原捲動位置，蓋掉我們設好的值。
+// 這個 App 的畫面是狀態切換不是真的換頁，捲動由我們自己決定。
+if ('scrollRestoration' in window.history) window.history.scrollRestoration = 'manual';
 let portfolioMarket = 'all';
 let portfolioShowExited = false;
 let openGroups = new Set();
@@ -314,6 +318,7 @@ async function applySession(nextSession) {
   portfolioScreen = null;
   expandedStock = null;
   portfolioPushed = false;
+  portfolioReturnScroll = 0;
   quoteData = {};
   quoteStatus = 'idle';
   quoteFlight = null;
@@ -537,6 +542,7 @@ function shell(body, title, showAdd = false) {
     // 在台帳頁時 render() 會直接回傳台帳畫面，不先收掉就切不出去。
     // 有推過歷史就用 history.back()，交給 popstate 收 —— 免得歷史多留一筆。
     if (portfolioScreen) {
+      portfolioReturnScroll = 0;   // 切到別的分頁是換畫面，不是返回
       if (portfolioPushed) return window.history.back();
       portfolioScreen = null;
       expandedStock = null;
@@ -603,7 +609,7 @@ function portfolioEntry() {
   if (!portfolioModel) return '';
   const total = portfolioModel.all;
   const profitTone = total.profitTwd >= 0 ? 'up' : 'down';
-  return `<button class="portfolioEntry" data-open-portfolio><div class="portfolioEntryTop"><span>股票投資台帳</span><small>${total.holdings} 檔持有中 · ${total.transactions} 筆交易 ›</small></div><strong>NT$ ${formatNumber(total.currentValueTwd)}</strong><div class="portfolioEntryStats"><div><small>累計淨投入</small><b>NT$ ${formatNumber(total.netInvestedTwd)}</b></div><div><small>累計損益</small><b class="${profitTone}">NT$ ${formatNumber(total.profitTwd)}</b></div><div><small>年化報酬率</small><b>${formatPercent(total.xirr)}</b></div></div></button>`;
+  return `<button class="portfolioEntry" data-open-portfolio><div class="portfolioEntryTop"><span>股票投資分析</span><small>${total.holdings} 檔持有中 · ${total.transactions} 筆交易 ›</small></div><strong>NT$ ${formatNumber(total.currentValueTwd)}</strong><div class="portfolioEntryStats"><div><small>累計淨投入</small><b>NT$ ${formatNumber(total.netInvestedTwd)}</b></div><div><small>累計損益</small><b class="${profitTone}">NT$ ${formatNumber(total.profitTwd)}</b></div><div><small>年化報酬率</small><b>${formatPercent(total.xirr)}</b></div></div></button>`;
 }
 
 function portfolioSummaryCards(bucket) {
@@ -782,10 +788,12 @@ function renderKeepingAnchor(attribute, value) {
 }
 
 function openPortfolio() {
+  portfolioReturnScroll = window.scrollY;
   portfolioScreen = 'list';
   window.history.pushState({ ks: 'portfolio' }, '');
   portfolioPushed = true;
   render();
+  window.scrollTo(0, 0);
 }
 
 // 手勢、返回鍵、以及底部導覽切分頁都走這裡收回台帳畫面。
@@ -795,6 +803,7 @@ window.addEventListener('popstate', () => {
   expandedStock = null;
   portfolioPushed = false;
   render();
+  window.scrollTo(0, portfolioReturnScroll);
 });
 
 function render() {

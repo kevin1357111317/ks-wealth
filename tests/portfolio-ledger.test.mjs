@@ -346,6 +346,34 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     assert.deepEqual(mine, ['大額', '中額', '小額']);
   });
 
+  await t.test('進台帳從最上面開始，返回回到原本停的位置', async () => {
+    await page.setViewportSize({ width: 390, height: 500 });
+    // click() 會把視窗外的元素捲進來，先自己捲到定位再量，才不會量到 Playwright 捲過的位置
+    await page.evaluate(() => document.querySelector('[data-open-portfolio]').scrollIntoView({ block: 'center' }));
+    await page.waitForTimeout(100);
+    const scrollBefore = await page.evaluate(() => window.scrollY);
+    assert.ok(scrollBefore > 0, '測試前提：資產頁要是可捲的');
+    assert.match(await page.textContent('[data-open-portfolio]'), /股票投資分析/);
+
+    await page.click('[data-open-portfolio]');
+    await page.waitForSelector('[data-portfolio-market]');
+    assert.equal(await page.evaluate(() => window.scrollY), 0, '進台帳要從最上面開始，不是接著原本的位置顯示');
+
+    await page.goBack();
+    await page.waitForSelector('.fab');
+    assert.equal(await page.evaluate(() => window.scrollY), scrollBefore, '返回要回到原本停的位置');
+
+    // 切分頁是換畫面不是返回，新畫面要從頂端開始
+    await page.click('[data-open-portfolio]');
+    await page.waitForSelector('[data-portfolio-market]');
+    await page.click('[data-tab="dashboard"]');
+    await page.waitForTimeout(300);
+    assert.equal(await page.evaluate(() => window.scrollY), 0, '切到別的分頁要從頂端開始');
+    await page.click('[data-tab="husband"]');
+    await page.waitForSelector('.fab');
+    await page.setViewportSize({ width: 390, height: 900 });
+  });
+
 
   assert.deepEqual(failures, [], '瀏覽器不該有錯誤');
 });
