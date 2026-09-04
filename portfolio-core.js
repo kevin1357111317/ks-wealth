@@ -94,6 +94,63 @@ export function xirr(cashflows) {
   return null;
 }
 
+// 把台幣現金流拆成「已實現」與「還壓在手上的成本」，用先進先出配對賣出。
+// 賣掉的那幾股要用當初買它們的成本去算損益，不是用整體平均 —— 同一檔在不同價位
+// 分批買進時兩者差很多。股息沒有對應的成本，整筆算已實現。
+//
+// 不變式：已實現 + 未實現 = 累計損益。未實現 = 目前市值 − 剩下的成本。
+export function splitRealized(stock) {
+  const lots = [];        // 先進先出佇列：{ qty, cost }，最舊的在前
+  let realized = 0;
+  const ordered = (stock.transactions ?? []).slice().sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+    return number(a.id) - number(b.id);
+  });
+  ordered.forEach(tx => {
+    const cash = number(tx.twd);
+    const qty = number(tx.shares);
+    if (tx.kind === 'dividend' || Math.abs(qty) < EPSILON) {
+      realized += cash;
+      return;
+    }
+    if (qty > 0) {
+      lots.push({ qty, cost: -cash });
+      return;
+    }
+    let unsold = -qty;
+    let costOut = 0;
+    while (unsold > EPSILON && lots.length) {
+      const lot = lots[0];
+      const take = Math.min(lot.qty, unsold);
+      const unit = lot.qty > EPSILON ? lot.cost / lot.qty : 0;
+      costOut += unit * take;
+      lot.qty -= take;
+      lot.cost -= unit * take;
+      unsold -= take;
+      if (lot.qty <= EPSILON) lots.shift();
+    }
+    realized += cash - costOut;
+  });
+  let shares = 0;
+  let cost = 0;
+  lots.forEach(lot => { shares += lot.qty; cost += lot.cost; });
+  // 全部出清了就沒有未實現可言，剩下的殘值歸到已實現。
+  if (shares <= EPSILON) return { realizedTwd: realized + cost, remainingCostTwd: 0 };
+  return { realizedTwd: realized, remainingCostTwd: cost };
+}
+
+export function firstTradeDate(stock) {
+  return (stock.transactions ?? []).reduce(
+    (earliest, tx) => (!earliest || tx.date < earliest ? tx.date : earliest), null);
+}
+
+export function holdingYears(stock, today = localIsoDate()) {
+  const first = firstTradeDate(stock);
+  if (!first) return null;
+  const days = (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${first}T00:00:00Z`)) / 86_400_000;
+  return days > 0 ? days / 365 : 0;
+}
+
 export function calculateStockMetrics(stock, fxRate, today = localIsoDate()) {
   const shares = currentShares(stock);
   const price = effectivePrice(stock);
@@ -104,9 +161,15 @@ export function calculateStockMetrics(stock, fxRate, today = localIsoDate()) {
   const dividendsTwd = (stock.transactions ?? []).filter(tx => tx.kind === 'dividend')
     .reduce((sum, tx) => sum + number(tx.twd), 0);
   if (currentValueTwd > 0) cashflows.push({ date: today, amount: currentValueTwd });
+  const { realizedTwd, remainingCostTwd } = splitRealized(stock);
   return {
     ...stock, shares, price, currentValueNative, currentValueTwd, netInvestedTwd, dividendsTwd,
     profitTwd: currentValueTwd - netInvestedTwd,
+    realizedTwd,
+    unrealizedTwd: currentValueTwd - remainingCostTwd,
+    remainingCostTwd,
+    firstTradeDate: firstTradeDate(stock),
+    holdingYears: holdingYears(stock, today),
     returnRate: netInvestedTwd > EPSILON ? (currentValueTwd - netInvestedTwd) / netInvestedTwd : null,
     xirr: xirr(cashflows),
   };
@@ -119,9 +182,11 @@ export function calculatePortfolio(stocks, fxRate, today = localIsoDate()) {
       currentValueTwd: result.currentValueTwd + row.currentValueTwd,
       netInvestedTwd: result.netInvestedTwd + row.netInvestedTwd,
       dividendsTwd: result.dividendsTwd + row.dividendsTwd,
+      realizedTwd: result.realizedTwd + row.realizedTwd,
+      unrealizedTwd: result.unrealizedTwd + row.unrealizedTwd,
       transactions: result.transactions + row.transactions.length,
       holdings: result.holdings + (row.shares > EPSILON ? 1 : 0),
-    }), { currentValueTwd: 0, netInvestedTwd: 0, dividendsTwd: 0, transactions: 0, holdings: 0 });
+    }), { currentValueTwd: 0, netInvestedTwd: 0, dividendsTwd: 0, realizedTwd: 0, unrealizedTwd: 0, transactions: 0, holdings: 0 });
     const cashflows = rows.flatMap(row => row.transactions.map(tx => ({ date: tx.date, amount: number(tx.twd) })));
     if (totals.currentValueTwd > 0) cashflows.push({ date: today, amount: totals.currentValueTwd });
     return {

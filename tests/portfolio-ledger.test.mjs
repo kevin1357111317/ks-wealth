@@ -137,15 +137,23 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     assert.equal(data.financial_items[0].name, '台積電（改名）');
   });
 
-  await t.test('台帳明細頁只看歷史，不再重複一份新增交易表單', async () => {
+  await t.test('台帳卡片就地展開，不跳頁', async () => {
     await page.click('[data-open-portfolio]');
     await page.waitForSelector('[data-portfolio-stock]');
+    assert.equal(await page.locator('.portfolioStockDetail').count(), 0, '一開始是收合的');
     await page.click('[data-portfolio-stock]');
-    await page.waitForSelector('.portfolioTxList');
+    await page.waitForSelector('.portfolioStockDetail');
+    // 還在同一頁：清單的市場切換與其他卡片都還在
+    assert.ok(await page.isVisible('[data-portfolio-market="台股"]'), '沒有離開清單頁');
     assert.equal(await page.locator('#portfolioTxForm').count(), 0, '記交易只留在財務項目表單那一處');
-    assert.equal(await page.locator('.portfolioTx').count(), 3, '完整歷史還是列在這裡');
-    await page.click('[data-back-portfolio]');
-    await page.waitForSelector('[data-close-portfolio]');
+    assert.equal(await page.locator('.portfolioTx').count(), 3, '完整歷史列在展開的卡片裡');
+    const detail = await page.textContent('.portfolioStockDetail');
+    for (const label of ['已實現損益', '未實現損益', '累計股息', '投資期間', '首筆交易', '持有股數']) {
+      assert.match(detail, new RegExp(label), `展開的內容應該有「${label}」`);
+    }
+    await page.click('[data-portfolio-stock]');
+    await page.waitForTimeout(200);
+    assert.equal(await page.locator('.portfolioStockDetail').count(), 0, '再點一次收起來');
     await page.click('[data-close-portfolio]');
     await page.waitForSelector('.fab');
   });
