@@ -64,12 +64,12 @@ let quoteData = {};
 let fxRate = null;
 let portfolioStocks = [];
 let portfolioModel = null;
-let portfolioScreen = null;
+let analysisScreen = null;   // 'stocks'｜'usd'，null 就是一般的資產頁
 let expandedStock = null;   // 台帳清單裡就地展開的那一檔，一次只開一個
-// 台帳是狀態切換不是換頁，返回手勢預設不會有反應。進去時推一筆歷史，
+// 分析頁是狀態切換不是換頁，返回手勢預設不會有反應。進去時推一筆歷史，
 // 手勢／返回鍵就有東西可以退，popstate 再把畫面收回來。
-let portfolioPushed = false;
-let portfolioReturnScroll = 0;   // 進台帳前在資產頁停的位置，退出來要回到那裡
+let analysisPushed = false;
+let analysisReturnScroll = 0;   // 進分析頁前在資產頁停的位置，退出來要回到那裡
 // 瀏覽器預設會在 popstate 之後自己還原捲動位置，蓋掉我們設好的值。
 // 這個 App 的畫面是狀態切換不是真的換頁，捲動由我們自己決定。
 if ('scrollRestoration' in window.history) window.history.scrollRestoration = 'manual';
@@ -315,10 +315,10 @@ async function applySession(nextSession) {
   scopeHistory = [];
   portfolioStocks = [];
   portfolioModel = null;
-  portfolioScreen = null;
+  analysisScreen = null;
   expandedStock = null;
-  portfolioPushed = false;
-  portfolioReturnScroll = 0;
+  analysisPushed = false;
+  analysisReturnScroll = 0;
   quoteData = {};
   quoteStatus = 'idle';
   quoteFlight = null;
@@ -539,12 +539,12 @@ function shell(body, title, showAdd = false) {
     const button = event.target.closest('[data-tab]');
     if (!button) return;
     tab = button.dataset.tab;
-    // 在台帳頁時 render() 會直接回傳台帳畫面，不先收掉就切不出去。
+    // 在分析頁時 render() 會直接回傳分析畫面，不先收掉就切不出去。
     // 有推過歷史就用 history.back()，交給 popstate 收 —— 免得歷史多留一筆。
-    if (portfolioScreen) {
-      portfolioReturnScroll = 0;   // 切到別的分頁是換畫面，不是返回
-      if (portfolioPushed) return window.history.back();
-      portfolioScreen = null;
+    if (analysisScreen) {
+      analysisReturnScroll = 0;   // 切到別的分頁是換畫面，不是返回
+      if (analysisPushed) return window.history.back();
+      analysisScreen = null;
       expandedStock = null;
     }
     render();
@@ -605,11 +605,10 @@ function groupedCards(list, ownerScope, kind) {
   }).join('');
 }
 
-function portfolioEntry() {
+// 資產頁上只放入口，數字留在分析頁裡面講。
+function analysisEntry() {
   if (!portfolioModel) return '';
-  const total = portfolioModel.all;
-  const profitTone = total.profitTwd >= 0 ? 'up' : 'down';
-  return `<button class="portfolioEntry" data-open-portfolio><div class="portfolioEntryTop"><span>股票投資分析</span><small>${total.holdings} 檔持有中 · ${total.transactions} 筆交易 ›</small></div><strong>NT$ ${formatNumber(total.currentValueTwd)}</strong><div class="portfolioEntryStats"><div><small>累計淨投入</small><b>NT$ ${formatNumber(total.netInvestedTwd)}</b></div><div><small>累計損益</small><b class="${profitTone}">NT$ ${formatNumber(total.profitTwd)}</b></div><div><small>年化報酬率</small><b>${formatPercent(total.xirr)}</b></div></div></button>`;
+  return `<div class="analysisEntry"><button data-open-portfolio>股票分析</button><button data-open-usd>美金分析</button></div>`;
 }
 
 function portfolioSummaryCards(bucket) {
@@ -701,9 +700,15 @@ async function syncPortfolioFinancialItem(stockKey, { ownerScope, notes } = {}) 
   if (result.error) throw result.error;
 }
 
-function portfolioPage() {
-  if (!portfolioModel) { portfolioScreen = null; return personPage('husband'); }
+function analysisPage() {
+  if (analysisScreen === 'usd') return usdPage();
+  if (!portfolioModel) { analysisScreen = null; return personPage('husband'); }
   portfolioListPage();
+}
+
+// 美金分析還沒開始做，先把入口與返回這條路走通，內容之後補。
+function usdPage() {
+  shell('<div class="portfolioView"><div class="portfolioEmpty">美金分析還在做，之後會放在這一頁。</div></div>', '美金分析');
 }
 
 function personPage(ownerScope) {
@@ -716,7 +721,7 @@ function personPage(ownerScope) {
   const distributionRows = distributionKind === 'asset' ? totals.assets : totals.liabilities;
   const distributionTotal = distributionKind === 'asset' ? totals.totalAssets : totals.totalLiabilities;
   const distributionTitle = `${name}${distributionKind === 'asset' ? '資產' : '負債'}分布`;
-  shell(`<section class="portfolioHero"><div class="heroLabel"><span>${name}淨資產</span><span>${totals.assets.length + totals.liabilities.length} 筆</span></div><div class="bigMoney">${formatMoney(totals.netWorth)}</div><div class="miniStats"><div><span>資產總額</span><b>NT$ ${formatNumber(totals.totalAssets)}</b></div><div><span>負債總額</span><b>NT$ ${formatNumber(totals.totalLiabilities)}</b></div></div></section>${trendChart(personalTrendRows(ownerScope, totals.netWorth))}${distributionPanel(distributionRows, distributionTotal, distributionTitle, distributionKind)}${ownerScope === 'husband' ? portfolioEntry() : ''}<div class="seg personSeg" id="personSeg"><button data-kind="asset" class="${kind === 'asset' ? 'on' : ''}">資產</button><button data-kind="liability" class="${kind === 'liability' ? 'on' : ''}">負債</button></div><div class="sectionHead"><span>${kind === 'asset' ? '投資與資產' : '貸款與負債'}</span><b>NT$ ${formatNumber(total)}</b></div><div class="categoryList">${list.length ? groupedCards(list, ownerScope, kind) : `<div class="empty"><div><b>目前沒有${kind === 'asset' ? '資產' : '負債'}資料</b><span>按右下角 ＋ 新增財務項目。</span></div></div>`}</div>`, name, true);
+  shell(`<section class="portfolioHero"><div class="heroLabel"><span>${name}淨資產</span><span>${totals.assets.length + totals.liabilities.length} 筆</span></div><div class="bigMoney">${formatMoney(totals.netWorth)}</div><div class="miniStats"><div><span>資產總額</span><b>NT$ ${formatNumber(totals.totalAssets)}</b></div><div><span>負債總額</span><b>NT$ ${formatNumber(totals.totalLiabilities)}</b></div></div></section>${trendChart(personalTrendRows(ownerScope, totals.netWorth))}${distributionPanel(distributionRows, distributionTotal, distributionTitle, distributionKind)}${ownerScope === 'husband' ? analysisEntry() : ''}<div class="seg personSeg" id="personSeg"><button data-kind="asset" class="${kind === 'asset' ? 'on' : ''}">資產</button><button data-kind="liability" class="${kind === 'liability' ? 'on' : ''}">負債</button></div><div class="sectionHead"><span>${kind === 'asset' ? '投資與資產' : '貸款與負債'}</span><b>NT$ ${formatNumber(total)}</b></div><div class="categoryList">${list.length ? groupedCards(list, ownerScope, kind) : `<div class="empty"><div><b>目前沒有${kind === 'asset' ? '資產' : '負債'}資料</b><span>按右下角 ＋ 新增財務項目。</span></div></div>`}</div>`, name, true);
 
   root.querySelector('#personSeg').onclick = event => {
     const button = event.target.closest('[data-kind]');
@@ -726,7 +731,9 @@ function personPage(ownerScope) {
   };
   root.querySelector('#add').onclick = () => editItem(null, ownerScope, kind);
   const portfolioButton = root.querySelector('[data-open-portfolio]');
-  if (portfolioButton) portfolioButton.onclick = openPortfolio;
+  if (portfolioButton) portfolioButton.onclick = () => openAnalysis('stocks');
+  const usdButton = root.querySelector('[data-open-usd]');
+  if (usdButton) usdButton.onclick = () => openAnalysis('usd');
   root.querySelector('.categoryList').onclick = event => {
     const group = event.target.closest('[data-group]');
     if (group) {
@@ -787,28 +794,28 @@ function renderKeepingAnchor(attribute, value) {
   if (documentTopAfter !== documentTopBefore) window.scrollTo(0, window.scrollY + (documentTopAfter - documentTopBefore));
 }
 
-function openPortfolio() {
-  portfolioReturnScroll = window.scrollY;
-  portfolioScreen = 'list';
-  window.history.pushState({ ks: 'portfolio' }, '');
-  portfolioPushed = true;
+function openAnalysis(screen) {
+  analysisReturnScroll = window.scrollY;
+  analysisScreen = screen;
+  window.history.pushState({ ks: 'analysis' }, '');
+  analysisPushed = true;
   render();
   window.scrollTo(0, 0);
 }
 
-// 手勢、返回鍵、以及底部導覽切分頁都走這裡收回台帳畫面。
+// 手勢、返回鍵、以及底部導覽切分頁都走這裡收回分析畫面。
 window.addEventListener('popstate', () => {
-  if (!portfolioScreen) return;
-  portfolioScreen = null;
+  if (!analysisScreen) return;
+  analysisScreen = null;
   expandedStock = null;
-  portfolioPushed = false;
+  analysisPushed = false;
   render();
-  window.scrollTo(0, portfolioReturnScroll);
+  window.scrollTo(0, analysisReturnScroll);
 });
 
 function render() {
   if (!session || !member) return;
-  if (portfolioScreen) return portfolioPage();
+  if (analysisScreen) return analysisPage();
   if (tab === 'dashboard') dashboard();
   else personPage(tab);
 }
