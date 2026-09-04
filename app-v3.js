@@ -695,7 +695,7 @@ function transactionRow(transaction, stock) {
   const positive = transaction.amount >= 0;
   const currency = stock.currency === 'USD' ? 'US$' : 'NT$';
   const action = transaction.kind === 'dividend' ? '股息' : transaction.shares < 0 ? '賣出' : '買進';
-  return `<div class="portfolioTx"><div><b>${action}</b><small>${escapeHtml(transaction.date)} · ${escapeHtml(transaction.bank || '未填帳戶')}</small></div><div><b class="${positive ? 'positive' : 'negative'}">${positive ? '+' : '−'}${currency} ${new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 2 }).format(Math.abs(transaction.amount))}</b><small>${transaction.shares ? `${transaction.shares > 0 ? '+' : ''}${transaction.shares} 股` : escapeHtml(transaction.note)}</small><button class="link" type="button" data-delete-portfolio-tx="${transaction.id}">刪除</button></div></div>`;
+  return `<div class="portfolioTx"><div class="portfolioTxWhen"><b>${action}</b><small>${escapeHtml(transaction.date)} · ${escapeHtml(transaction.bank || '未填帳戶')}</small></div><div class="portfolioTxAmount"><b class="${positive ? 'positive' : 'negative'}">${positive ? '+' : '−'}${currency} ${new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 2 }).format(Math.abs(transaction.amount))}</b><small>${transaction.shares ? `${transaction.shares > 0 ? '+' : ''}${transaction.shares} 股` : escapeHtml(transaction.note)}</small></div><button class="portfolioTxDelete" type="button" data-delete-portfolio-tx="${transaction.id}">刪除</button></div>`;
 }
 
 async function syncPortfolioFinancialItem(stockKey, { ownerScope, notes } = {}) {
