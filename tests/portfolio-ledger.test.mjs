@@ -254,5 +254,22 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     assert.equal(data.klfan_stocks.length, 0, '現金不該碰台帳');
   });
 
+  await t.test('分類展開後照金額由大到小排', async () => {
+    // 刻意由小到大建立：照 sort_order（建立先後）與照金額會給出相反的結果
+    for (const [name, amount] of [['小額', '10000'], ['中額', '500000'], ['大額', '9000000']]) {
+      await page.click('.fab');
+      await page.waitForSelector('#editform');
+      await page.selectOption('#cat', 'cash-twd');
+      await page.fill('#nm', name);
+      await page.fill('#amt', amount);
+      await save();
+    }
+    if (!(await page.isVisible('.itemCard'))) await page.click('.categoryHead');
+    const order = await page.$$eval('.itemCard .compactIdentity b', els => els.map(el => el.textContent.trim()));
+    const mine = order.filter(name => ['大額', '中額', '小額'].includes(name));
+    assert.deepEqual(mine, ['大額', '中額', '小額']);
+  });
+
+
   assert.deepEqual(failures, [], '瀏覽器不該有錯誤');
 });

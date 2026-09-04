@@ -589,6 +589,9 @@ function groupedCards(list, ownerScope, kind) {
   return [...groups]
     .sort(([categoryA], [categoryB]) => categoryIndex(categoryA) - categoryIndex(categoryB))
     .map(([category, rows]) => {
+    // 分類裡面照金額由大到小 —— 原本是 sort_order，等於建立的先後，
+    // 展開後最小的那筆常常排在最上面。
+    rows.sort((a, b) => b.amount_twd - a.amount_twd || a.name.localeCompare(b.name, 'zh-Hant'));
     const key = encodeURIComponent(`${ownerScope}|${kind}|${category}`);
     const groupTotal = rows.reduce((sum, item) => sum + item.amount_twd, 0);
     const open = openGroups.has(key);
