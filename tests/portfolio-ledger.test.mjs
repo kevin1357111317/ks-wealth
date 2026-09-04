@@ -137,6 +137,19 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     assert.equal(data.financial_items[0].name, '台積電（改名）');
   });
 
+  await t.test('台帳明細頁只看歷史，不再重複一份新增交易表單', async () => {
+    await page.click('[data-open-portfolio]');
+    await page.waitForSelector('[data-portfolio-stock]');
+    await page.click('[data-portfolio-stock]');
+    await page.waitForSelector('.portfolioTxList');
+    assert.equal(await page.locator('#portfolioTxForm').count(), 0, '記交易只留在財務項目表單那一處');
+    assert.equal(await page.locator('.portfolioTx').count(), 3, '完整歷史還是列在這裡');
+    await page.click('[data-back-portfolio]');
+    await page.waitForSelector('[data-close-portfolio]');
+    await page.click('[data-close-portfolio]');
+    await page.waitForSelector('.fab');
+  });
+
   await t.test('刪除要連台帳一起刪，否則觸發器會把它重建回來', async () => {
     await openCard();
     await page.click('#del');

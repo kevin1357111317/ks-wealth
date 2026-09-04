@@ -694,42 +694,9 @@ function portfolioStockPage(stockKey) {
   const stock = portfolioModel.positions.find(row => row.key === stockKey);
   if (!stock) { portfolioScreen = 'list'; return portfolioListPage(); }
   const txRows = stock.transactions.slice().sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
-  shell(`<div class="portfolioView"><div class="portfolioToolbar"><button class="portfolioBack" data-back-portfolio>‹ 全部標的</button><span>${escapeHtml(stock.market)} · ${escapeHtml(stock.symbol || '')}</span></div>${portfolioSummaryCards({ ...stock, holdings: stock.shares > 0.0000001 ? 1 : 0 })}<section class="panel"><div class="panelTitle"><div><h2>新增交易</h2></div></div><form class="form" id="portfolioTxForm"><div class="two"><label>類型<select id="portfolioAction"><option value="buy">買進</option><option value="sell">賣出</option><option value="dividend">股息</option></select></label><label>日期<input id="portfolioDate" type="date" value="${taipeiDate()}" required></label></div><div class="two"><label>總金額（${stock.currency}）<input id="portfolioAmount" inputmode="decimal" required></label><label>股數<input id="portfolioShares" inputmode="decimal" required></label></div><div class="two"><label>銀行／券商<input id="portfolioBank"></label><label>備註<input id="portfolioNote"></label></div><div id="portfolioMessage"></div><button class="primary">儲存並同步總資產</button></form></section><section class="panel"><div class="panelTitle"><div><h2>交易紀錄</h2></div><span>${txRows.length} 筆</span></div><div class="portfolioTxList">${txRows.map(tx => transactionRow(tx, stock)).join('')}</div></section></div>`, stock.display);
+  shell(`<div class="portfolioView"><div class="portfolioToolbar"><button class="portfolioBack" data-back-portfolio>‹ 全部標的</button><span>${escapeHtml(stock.market)} · ${escapeHtml(stock.symbol || '')}</span></div>${portfolioSummaryCards({ ...stock, holdings: stock.shares > 0.0000001 ? 1 : 0 })}<section class="panel"><div class="panelTitle"><div><h2>交易紀錄</h2></div><span>${txRows.length} 筆</span></div><div class="portfolioTxList">${txRows.map(tx => transactionRow(tx, stock)).join('')}</div></section></div>`, stock.display);
+  // 記交易改在「新增／編輯財務項目」那張表單裡；這一頁只負責看完整歷史。
   root.querySelector('[data-back-portfolio]').onclick = () => { portfolioScreen = 'list'; render(); };
-  const actionInput = root.querySelector('#portfolioAction');
-  const sharesInput = root.querySelector('#portfolioShares');
-  actionInput.onchange = () => { sharesInput.closest('label').classList.toggle('hide', actionInput.value === 'dividend'); sharesInput.required = actionInput.value !== 'dividend'; };
-  root.querySelector('#portfolioTxForm').onsubmit = async event => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const submit = form.querySelector('button.primary');
-    const message = form.querySelector('#portfolioMessage');
-    try {
-      const action = actionInput.value;
-      const amountValue = parseNonNegative(form.querySelector('#portfolioAmount').value, '總金額', { positive: true });
-      const sharesValue = action === 'dividend' ? 0 : parseNonNegative(sharesInput.value, '股數', { positive: true });
-      const payload = {
-        stock_key: stock.key, tx_date: form.querySelector('#portfolioDate').value,
-        amount: action === 'buy' ? -amountValue : amountValue,
-        shares: action === 'buy' ? sharesValue : action === 'sell' ? -sharesValue : 0,
-        bank: form.querySelector('#portfolioBank').value.trim(),
-        kind: action === 'dividend' ? 'dividend' : 'trade',
-        note: form.querySelector('#portfolioNote').value.trim() || (action === 'dividend' ? '股息' : '股票'),
-      };
-      submit.disabled = true;
-      submit.textContent = '儲存中…';
-      const { error } = await sb.from('klfan_transactions').insert(payload);
-      if (error) throw error;
-      await loadData({ blocking: false });
-      await syncPortfolioFinancialItem(stock.key);
-      await loadData({ blocking: false });
-    } catch (error) {
-      submit.disabled = false;
-      submit.textContent = '儲存並同步總資產';
-      message.className = 'message error';
-      message.textContent = error.message || '交易儲存失敗。';
-    }
-  };
   root.querySelectorAll('[data-delete-portfolio-tx]').forEach(button => { button.onclick = async () => {
     if (!confirm('確定刪除這筆交易？')) return;
     button.disabled = true;
@@ -1096,6 +1063,7 @@ function editItem(item, defaultOwner, defaultKind) {
     if (!/^[0-9A-Z.:-]{1,32}$/.test(symbol)) throw new Error('報價代號格式不正確。');
     if (!name) throw new Error('請輸入名稱。');
     let key = item?.portfolio_stock_key ?? null;
+    const isNewStock = !key;
     const transaction = readTransaction({ required: !key });
 
     saving = true;
@@ -1130,7 +1098,10 @@ function editItem(item, defaultOwner, defaultKind) {
     // 備註只存在 financial_items 上，觸發器不會碰它，所以跟著這次同步一起寫回去。
     await syncPortfolioFinancialItem(key, { ownerScope, notes: noteInput.value.trim() || null });
     await loadData({ blocking: false });
-    void refreshQuotes({ force: true });
+    // 只有全新的標的要立刻抓報價 —— 那個代號從來沒被報價過。既有標的記一筆交易並不會
+    // 讓行情變動，強制重抓只是白白吃掉 Twelve Data 每分鐘 8 credits 的額度：連續存個
+    // 幾筆就會超過，而被擋掉的永遠是排在最後的 XAU/USD（黃金）。
+    if (isNewStock) void refreshQuotes({ force: true });
   };
 
   form.onsubmit = async event => {
