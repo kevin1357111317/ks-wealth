@@ -641,10 +641,9 @@ function portfolioListPage() {
   const rows = marketRows.filter(stock => portfolioShowExited || stock.shares > 0.0000001)
     .sort((a, b) => b.currentValueTwd - a.currentValueTwd || a.display.localeCompare(b.display, 'zh-Hant'));
   const bucket = portfolioMarket === '台股' ? portfolioModel.tw : portfolioMarket === '美股' ? portfolioModel.us : portfolioModel.all;
-  shell(`<div class="portfolioView"><div class="portfolioToolbar"><button class="portfolioBack" data-add-portfolio-stock>＋ 新增標的</button></div><div class="seg"><button data-portfolio-market="all" class="${portfolioMarket === 'all' ? 'on' : ''}">全部</button><button data-portfolio-market="台股" class="${portfolioMarket === '台股' ? 'on' : ''}">台股</button><button data-portfolio-market="美股" class="${portfolioMarket === '美股' ? 'on' : ''}">美股</button></div>${portfolioSummaryCards(bucket)}<label class="portfolioToolbar"><span>${rows.length} 檔標的</span><span><input type="checkbox" data-show-exited ${portfolioShowExited ? 'checked' : ''}> 顯示已出清</span></label><div class="portfolioList">${rows.length ? rows.map(stock => portfolioStockCard(stock, stock.key === expandedStock)).join('') : '<div class="portfolioEmpty">這個篩選條件目前沒有標的。</div>'}</div></div>`, '股票投資');
+  shell(`<div class="portfolioView"><div class="seg"><button data-portfolio-market="all" class="${portfolioMarket === 'all' ? 'on' : ''}">全部</button><button data-portfolio-market="台股" class="${portfolioMarket === '台股' ? 'on' : ''}">台股</button><button data-portfolio-market="美股" class="${portfolioMarket === '美股' ? 'on' : ''}">美股</button></div>${portfolioSummaryCards(bucket)}<label class="portfolioToolbar"><span>${rows.length} 檔標的</span><span><input type="checkbox" data-show-exited ${portfolioShowExited ? 'checked' : ''}> 顯示已出清</span></label><div class="portfolioList">${rows.length ? rows.map(stock => portfolioStockCard(stock, stock.key === expandedStock)).join('') : '<div class="portfolioEmpty">這個篩選條件目前沒有標的。</div>'}</div></div>`, '股票投資');
   root.querySelectorAll('[data-portfolio-market]').forEach(button => { button.onclick = () => { portfolioMarket = button.dataset.portfolioMarket; render(); }; });
   root.querySelector('[data-show-exited]').onchange = event => { portfolioShowExited = event.target.checked; render(); };
-  root.querySelector('[data-add-portfolio-stock]').onclick = addPortfolioStock;
   root.querySelectorAll('[data-portfolio-stock]').forEach(button => { button.onclick = () => {
     // 就地展開，不再跳頁；再點一次收起來。
     const key = button.dataset.portfolioStock;
@@ -660,55 +659,6 @@ function portfolioListPage() {
     await syncPortfolioFinancialItem(expandedStock);
     await loadData({ blocking: false });
   }; });
-}
-
-function addPortfolioStock() {
-  const backdrop = document.createElement('div');
-  backdrop.className = 'backdrop';
-  backdrop.innerHTML = `<section class="sheet"><div class="handle"></div><div class="sheetHead"><div><h2>新增股票標的</h2></div></div><form class="form" id="portfolioStockForm"><label>名稱<input id="portfolioDisplay" required placeholder="例如：台積電、VOO"></label><div class="two"><label>市場<select id="portfolioNewMarket"><option value="台股">台股</option><option value="美股">美股</option></select></label><label>報價代號<input id="portfolioSymbol" required placeholder="TPE:2330"></label></div><small>台股格式如 TPE:2330；美股格式如 NASDAQ:QQQ 或 NYSEARCA:VOO。</small><div id="portfolioStockMessage"></div><button class="primary">建立標的</button></form></section>`;
-  document.body.append(backdrop);
-  backdrop.onclick = event => { if (event.target === backdrop) backdrop.remove(); };
-  backdrop.querySelector('#portfolioNewMarket').onchange = event => {
-    backdrop.querySelector('#portfolioSymbol').placeholder = event.target.value === '台股' ? 'TPE:2330' : 'NASDAQ:QQQ';
-  };
-  backdrop.querySelector('#portfolioStockForm').onsubmit = async event => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const display = form.querySelector('#portfolioDisplay').value.trim();
-    const market = form.querySelector('#portfolioNewMarket').value;
-    const symbol = form.querySelector('#portfolioSymbol').value.trim().toUpperCase();
-    const message = form.querySelector('#portfolioStockMessage');
-    const button = form.querySelector('button.primary');
-    if (!/^[0-9A-Z.:-]{1,32}$/.test(symbol)) {
-      message.className = 'message error'; message.textContent = '報價代號格式不正確。'; return;
-    }
-    const bare = symbol.replace(/^[A-Za-z0-9]+:/, '');
-    const existing = portfolioStocks.find(stock => stock.market === market
-      && String(stock.symbol || stock.key).replace(/^[A-Za-z0-9]+:/, '').toUpperCase() === bare);
-    if (existing) {
-      message.className = 'message error';
-      message.textContent = `「${existing.display}」已經在台帳裡了，直接點它記交易就好。`;
-      return;
-    }
-    const baseKey = bare || display;
-    const key = portfolioStocks.some(stock => stock.key === baseKey) ? `${baseKey}-${Date.now().toString(36)}` : baseKey;
-    button.disabled = true;
-    button.textContent = '建立中…';
-    const { error } = await sb.from('klfan_stocks').insert({
-      key, display, market, currency: market === '美股' ? 'USD' : 'TWD', symbol,
-      household_id: member.household_id, owner_scope: 'husband',
-    });
-    if (error) {
-      button.disabled = false; button.textContent = '建立標的';
-      message.className = 'message error'; message.textContent = error.message; return;
-    }
-    backdrop.remove();
-    await loadData({ blocking: false });
-    portfolioScreen = 'list';
-    expandedStock = key;
-    render();
-    void refreshQuotes({ force: true });
-  };
 }
 
 function transactionRow(transaction, stock) {
