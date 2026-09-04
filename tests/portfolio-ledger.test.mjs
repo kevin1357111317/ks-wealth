@@ -374,6 +374,24 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     await page.setViewportSize({ width: 390, height: 900 });
   });
 
+  await t.test('股票投資分析排在資產／負債切換的上面', async () => {
+    const order = await page.evaluate(() => {
+      const entry = document.querySelector('[data-open-portfolio]');
+      const seg = document.querySelector('#personSeg');
+      if (!entry || !seg) return null;
+      // 2 = DOCUMENT_POSITION_FOLLOWING：seg 在 entry 後面
+      return entry.compareDocumentPosition(seg) & Node.DOCUMENT_POSITION_FOLLOWING ? 'entry-first' : 'seg-first';
+    });
+    assert.equal(order, 'entry-first');
+
+    // 卡片講的是整體投資，不屬於資產或負債任何一邊，切到負債也要留著
+    await page.click('#personSeg button[data-kind="liability"]');
+    await page.waitForTimeout(200);
+    assert.equal(await page.locator('[data-open-portfolio]').count(), 1, '切到負債也要看得到');
+    await page.click('#personSeg button[data-kind="asset"]');
+    await page.waitForTimeout(200);
+  });
+
 
   assert.deepEqual(failures, [], '瀏覽器不該有錯誤');
 });
