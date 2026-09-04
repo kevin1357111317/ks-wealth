@@ -682,7 +682,14 @@ function addPortfolioStock() {
     if (!/^[0-9A-Z.:-]{1,32}$/.test(symbol)) {
       message.className = 'message error'; message.textContent = '報價代號格式不正確。'; return;
     }
-    const bare = symbol.replace(/^(TPE:|NASDAQ:|NYSEARCA:|NYSE:)/, '');
+    const bare = symbol.replace(/^[A-Za-z0-9]+:/, '');
+    const existing = portfolioStocks.find(stock => stock.market === market
+      && String(stock.symbol || stock.key).replace(/^[A-Za-z0-9]+:/, '').toUpperCase() === bare);
+    if (existing) {
+      message.className = 'message error';
+      message.textContent = `「${existing.display}」已經在台帳裡了，直接點它記交易就好。`;
+      return;
+    }
     const baseKey = bare || display;
     const key = portfolioStocks.some(stock => stock.key === baseKey) ? `${baseKey}-${Date.now().toString(36)}` : baseKey;
     button.disabled = true;
@@ -716,7 +723,7 @@ async function syncPortfolioFinancialItem(stockKey, { ownerScope, notes } = {}) 
   if (!metrics) return;
   const linked = items.find(item => item.portfolio_stock_key === stockKey);
   const market = metrics.market === '美股' ? 'US' : 'TW';
-  const symbol = String(metrics.symbol || metrics.key).replace(/^(TPE:|TWO:|NASDAQ:|NYSEARCA:|NYSE:)/i, '').toUpperCase();
+  const symbol = String(metrics.symbol || metrics.key).replace(/^[A-Za-z0-9]+:/, '').toUpperCase();
   const payload = {
     household_id: member.household_id,
     // 沒有指定就沿用這一列現在的歸屬 —— 寫死 husband 會在同步時把設成老婆的標的搬回老公。
@@ -973,7 +980,7 @@ function editItem(item, defaultOwner, defaultKind) {
   // 台帳只認帶交易所前綴的代號（TPE:2330 / NASDAQ:QQQ），sync_klfan_financial_item
   // 也是靠這個前綴把裸代號切出來寫進 financial_items.symbol。使用者只打 2330 的話
   // 這裡補上去，並且把補完的結果顯示出來讓他確認。
-  const QUOTE_PREFIXES = /^(TPE:|TWO:|NASDAQ:|NYSEARCA:|NYSE:|BATS:)/;
+  const QUOTE_PREFIXES = /^[A-Za-z0-9]+:/;
   const normalizeQuoteSymbol = (raw, marketLabel) => {
     const value = String(raw || '').trim().toUpperCase();
     if (!value) return '';
@@ -1160,13 +1167,20 @@ function editItem(item, defaultOwner, defaultKind) {
         .eq('key', key);
       if (error) throw error;
     } else {
-      const baseKey = symbol.replace(QUOTE_PREFIXES, '') || display;
-      key = portfolioStocks.some(stock => stock.key === baseKey) ? `${baseKey}-${Date.now().toString(36)}` : baseKey;
-      const { error } = await sb.from('klfan_stocks').insert({
-        key, display, market: marketLabel, currency, symbol,
-        household_id: member.household_id, owner_scope: ownerScope,
-      });
-      if (error) throw error;
+      const bare = symbol.replace(QUOTE_PREFIXES, '');
+      const existing = portfolioStocks.find(stock => stock.market === marketLabel
+        && String(stock.symbol || stock.key).replace(QUOTE_PREFIXES, '').toUpperCase() === bare);
+      if (existing) {
+        key = existing.key;
+      } else {
+        const baseKey = bare || display;
+        key = portfolioStocks.some(stock => stock.key === baseKey) ? `${baseKey}-${Date.now().toString(36)}` : baseKey;
+        const { error } = await sb.from('klfan_stocks').insert({
+          key, display, market: marketLabel, currency, symbol,
+          household_id: member.household_id, owner_scope: ownerScope,
+        });
+        if (error) throw error;
+      }
     }
 
     if (transaction) {

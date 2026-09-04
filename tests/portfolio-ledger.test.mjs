@@ -254,6 +254,40 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     assert.equal(data.klfan_stocks.length, 0, '現金不該碰台帳');
   });
 
+  await t.test('同一檔再買一次要併回原本的標的，不是另開一筆', async () => {
+    // 先建一檔並全部賣掉 —— 出清後再買回來是最容易踩到的情境
+    await page.click('.fab');
+    await page.waitForSelector('#editform');
+    await page.selectOption('#cat', 'stock-tw');
+    await page.fill('#symbol', '2330');
+    await page.waitForFunction(() => document.querySelector('#stockHint')?.textContent.includes('台積電'), null, { timeout: 5000 });
+    await page.fill('#txAmount', '100000');
+    await page.fill('#txShares', '100');
+    await save();
+    await openCard();
+    await page.selectOption('#txAction', 'sell');
+    await page.fill('#txAmount', '110000');
+    await page.fill('#txShares', '100');
+    await save();
+
+    // 再從「＋」買回同一檔
+    await page.click('.fab');
+    await page.waitForSelector('#editform');
+    await page.selectOption('#cat', 'stock-tw');
+    await page.fill('#symbol', '2330');
+    await page.waitForFunction(() => document.querySelector('#stockHint')?.textContent.includes('台積電'), null, { timeout: 5000 });
+    await page.fill('#txAmount', '240000');
+    await page.fill('#txShares', '100');
+    await save();
+
+    const data = await db();
+    const tsmc = data.klfan_stocks.filter(row => String(row.symbol).endsWith('2330'));
+    assert.equal(tsmc.length, 1, `同一檔不該變成兩個標的，實際 ${tsmc.map(r => r.key).join(', ')}`);
+    assert.equal(data.klfan_transactions.filter(t => t.stock_key === tsmc[0].key).length, 3,
+      '三筆交易要都掛在同一個標的下');
+    assert.equal(data.financial_items.filter(i => i.portfolio_stock_key === tsmc[0].key).length, 1);
+  });
+
   await t.test('分類展開後照金額由大到小排', async () => {
     // 刻意由小到大建立：照 sort_order（建立先後）與照金額會給出相反的結果
     for (const [name, amount] of [['小額', '10000'], ['中額', '500000'], ['大額', '9000000']]) {
@@ -264,9 +298,11 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
       await page.fill('#amt', amount);
       await save();
     }
-    if (!(await page.isVisible('.itemCard'))) await page.click('.categoryHead');
-    const order = await page.$$eval('.itemCard .compactIdentity b', els => els.map(el => el.textContent.trim()));
-    const mine = order.filter(name => ['大額', '中額', '小額'].includes(name));
+    const cash = page.locator('.categoryGroup', { hasText: '現金及存款' });
+    if (!(await cash.evaluate(el => el.classList.contains('open')))) await cash.locator('.categoryHead').click();
+    await page.waitForTimeout(200);
+    const order = await cash.locator('.itemCard .compactIdentity b').allTextContents();
+    const mine = order.map(t => t.trim()).filter(name => ['大額', '中額', '小額'].includes(name));
     assert.deepEqual(mine, ['大額', '中額', '小額']);
   });
 
