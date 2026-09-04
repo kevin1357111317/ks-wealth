@@ -29,7 +29,7 @@
 .categoryItems{display:grid;gap:9px;padding:0 10px 10px}
 .categoryItems .itemCard{border-radius:18px;background:#0a0d13}
 .bottomNav{grid-template-columns:repeat(3,1fr);padding:7px;border-color:#343c4b;background:#11151df8}
-.bottomNav button{min-height:68px;color:#9aa4b5;font-size:12px;font-weight:750}
+.bottomNav button{min-height:44px;color:#9aa4b5;font-size:12px;font-weight:750}
 .bottomNav button span{font-size:27px;font-weight:900;line-height:1}
 .bottomNav .navBear{display:block;width:34px;height:34px;object-fit:contain;overflow:visible}
 .bottomNav button.on{background:#252c40;color:#e1e5ff;box-shadow:inset 0 0 0 1px #39425b}
@@ -62,7 +62,7 @@ button:disabled{cursor:wait;opacity:.62}
 @keyframes pulse{to{opacity:.35}}
 @media(max-width:600px){
   body{font-size:16px}
-  .app{padding-right:14px;padding-left:14px;padding-bottom:calc(122px + max(12px,calc(env(safe-area-inset-bottom) - 12px)))}
+  .app{padding-right:14px;padding-left:14px;padding-bottom:calc(94px + max(12px,calc(env(safe-area-inset-bottom) - 12px)))}
   .topbar{padding-top:15px;padding-bottom:19px}
   .brand small{font-size:11px}.brand h1{font-size:24px}
   .iconBtn{width:46px;height:46px}
@@ -89,7 +89,7 @@ button:disabled{cursor:wait;opacity:.62}
   .trendToggle{min-width:44px;min-height:28px;font-size:11px}
   .trendFooter{font-size:12px}.trendChange b{font-size:15px}.trendChange span{font-size:12px}
   .bottomNav{grid-template-columns:repeat(3,1fr)}
-  .bottomNav button{min-height:72px;font-size:13px}.bottomNav button span{font-size:29px}
+  .bottomNav button{min-height:44px;font-size:13px}.bottomNav button span{font-size:29px}
   .bottomNav .navBear{width:33px;height:33px}
   .compactCard{padding:17px 15px}.compactIdentity b{font-size:17px}.compactAmount{font-size:16px}
   .form label{font-size:14px}.authCard>p{font-size:15px}
