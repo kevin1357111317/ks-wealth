@@ -608,7 +608,7 @@ function groupedCards(list, ownerScope, kind) {
 // 資產頁上只放入口，數字留在分析頁裡面講。
 function analysisEntry() {
   if (!portfolioModel) return '';
-  return `<div class="analysisEntry"><button data-open-portfolio>股票分析</button><button data-open-usd>美金分析</button></div>`;
+  return `<div class="analysisEntry"><button data-open-portfolio>股票分析<i>›</i></button><button data-open-usd>美金分析<i>›</i></button></div>`;
 }
 
 function portfolioSummaryCards(bucket) {
