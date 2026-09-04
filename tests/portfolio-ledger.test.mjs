@@ -353,7 +353,7 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     await page.waitForTimeout(100);
     const scrollBefore = await page.evaluate(() => window.scrollY);
     assert.ok(scrollBefore > 0, '測試前提：資產頁要是可捲的');
-    assert.match(await page.textContent('[data-open-portfolio]'), /股票投資分析/);
+    assert.equal((await page.textContent('[data-open-portfolio]')).trim(), '股票分析');
 
     await page.click('[data-open-portfolio]');
     await page.waitForSelector('[data-portfolio-market]');
@@ -374,9 +374,9 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     await page.setViewportSize({ width: 390, height: 900 });
   });
 
-  await t.test('股票投資分析排在資產／負債切換的上面', async () => {
+  await t.test('兩個分析入口排在資產／負債切換的上面', async () => {
     const order = await page.evaluate(() => {
-      const entry = document.querySelector('[data-open-portfolio]');
+      const entry = document.querySelector('.analysisEntry');
       const seg = document.querySelector('#personSeg');
       if (!entry || !seg) return null;
       // 2 = DOCUMENT_POSITION_FOLLOWING：seg 在 entry 後面
@@ -390,6 +390,22 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     assert.equal(await page.locator('[data-open-portfolio]').count(), 1, '切到負債也要看得到');
     await page.click('#personSeg button[data-kind="asset"]');
     await page.waitForTimeout(200);
+  });
+
+  await t.test('美金分析是先留的入口，按下去進得去也退得回來', async () => {
+    assert.equal((await page.textContent('[data-open-usd]')).trim(), '美金分析');
+    // 入口只留按鈕，數字都收進分析頁裡
+    const entry = (await page.textContent('.analysisEntry')).replace(/\s+/g, '');
+    assert.equal(entry, '股票分析美金分析');
+
+    await page.click('[data-open-usd]');
+    await page.waitForTimeout(300);
+    assert.match(await page.textContent('.portfolioEmpty'), /美金分析/);
+    assert.equal(await page.locator('[data-portfolio-market]').count(), 0, '進的是美金分析，不是股票台帳');
+
+    await page.goBack();
+    await page.waitForSelector('.fab');
+    assert.equal(await page.locator('[data-open-usd]').count(), 1, '返回手勢要能離開美金分析');
   });
 
 
