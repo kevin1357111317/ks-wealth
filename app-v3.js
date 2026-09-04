@@ -663,14 +663,17 @@ function transactionRow(transaction, stock) {
   return `<div class="portfolioTx"><div><b>${action}</b><small>${escapeHtml(transaction.date)} · ${escapeHtml(transaction.bank || '未填帳戶')}</small></div><div><b class="${positive ? 'positive' : 'negative'}">${positive ? '+' : '−'}${currency} ${new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 2 }).format(Math.abs(transaction.amount))}</b><small>${transaction.shares ? `${transaction.shares > 0 ? '+' : ''}${transaction.shares} 股` : escapeHtml(transaction.note)}</small><button class="link" type="button" data-delete-portfolio-tx="${transaction.id}">刪除</button></div></div>`;
 }
 
-async function syncPortfolioFinancialItem(stockKey) {
+async function syncPortfolioFinancialItem(stockKey, { ownerScope, notes } = {}) {
   const metrics = portfolioModel?.positions.find(stock => stock.key === stockKey);
   if (!metrics) return;
   const linked = items.find(item => item.portfolio_stock_key === stockKey);
   const market = metrics.market === '美股' ? 'US' : 'TW';
-  const symbol = String(metrics.symbol || metrics.key).replace(/^(TPE:|NASDAQ:|NYSEARCA:|NYSE:)/i, '').toUpperCase();
+  const symbol = String(metrics.symbol || metrics.key).replace(/^(TPE:|TWO:|NASDAQ:|NYSEARCA:|NYSE:)/i, '').toUpperCase();
   const payload = {
-    household_id: member.household_id, owner_scope: 'husband', kind: 'asset',
+    household_id: member.household_id,
+    // 沒有指定就沿用這一列現在的歸屬 —— 寫死 husband 會在同步時把設成老婆的標的搬回老公。
+    owner_scope: ownerScope ?? linked?.owner_scope ?? 'husband',
+    kind: 'asset',
     category: market === 'US' ? '美股' : '台股', name: metrics.display,
     amount_twd: Math.max(0, metrics.currentValueTwd), symbol, market,
     quantity: Math.max(0, metrics.shares), quote_currency: metrics.currency,
@@ -678,6 +681,7 @@ async function syncPortfolioFinancialItem(stockKey) {
     fx_rate_twd: market === 'US' ? fxRate : 1,
     portfolio_stock_key: stockKey, updated_by: session.user.id, updated_at: new Date().toISOString(),
   };
+  if (notes !== undefined) payload.notes = notes;
   const result = linked
     ? await sb.from('financial_items').update(payload).eq('id', linked.id).eq('household_id', member.household_id)
     : metrics.shares > 0.0000001
@@ -774,9 +778,9 @@ function personPage(ownerScope) {
     }
     const item = event.target.closest('[data-id]');
     if (item) {
-      const selected = items.find(row => row.id === item.dataset.id);
-      if (selected?.portfolio_stock_key) { portfolioScreen = selected.portfolio_stock_key; render(); }
-      else editItem(selected, ownerScope, kind);
+      // 台股／美股以前會跳到「股票投資」的明細頁，現在交易就記在編輯表單裡，
+      // 所以一律開表單；完整的交易歷史還是從上面的台帳卡片進去看。
+      editItem(items.find(row => row.id === item.dataset.id), ownerScope, kind);
     }
   };
 }
@@ -859,6 +863,12 @@ function assetAttributeForItem(item) {
 }
 
 function editItem(item, defaultOwner, defaultKind) {
+  // 台股／美股的股數與市值是從交易推算出來的（klfan_transactions 一動，
+  // sync_klfan_financial_item 觸發器就會把結果寫回 financial_items），所以這種
+  // 項目在這張表單裡直接編台帳、記買賣，而不是手打股數。
+  const ledgerStock = item?.portfolio_stock_key
+    ? portfolioModel?.positions.find(row => row.key === item.portfolio_stock_key) ?? null
+    : null;
   let owner = item?.owner_scope || defaultOwner || 'husband';
   let kind = item?.kind || defaultKind || 'asset';
   let mode = modeForItem(item, kind);
@@ -868,7 +878,7 @@ function editItem(item, defaultOwner, defaultKind) {
   const initialNativeAmount = item?.native_amount ?? item?.original_amount ?? item?.amount_twd ?? '';
   const backdrop = document.createElement('div');
   backdrop.className = 'backdrop';
-  backdrop.innerHTML = `<section class="sheet"><div class="handle"></div><div class="sheetHead"><div><h2>${item ? '編輯' : '新增'}財務項目</h2></div>${item ? '<button id="del" class="trash">刪除</button>' : ''}</div><form id="editform" class="form" novalidate><label>歸屬<select id="owner"><option value="husband">老公</option><option value="wife">老婆</option></select></label><div class="seg"><button type="button" data-kind="asset">資產</button><button type="button" data-kind="liability">負債</button></div><label><span id="categoryLabel">資產屬性</span><select id="cat"></select></label><label id="nameBox">名稱<input id="nm" required value="${escapeHtml(item?.name || '')}"></label><label id="insuranceCurrencyBox" class="hide">保險幣別<select id="insuranceCurrency"><option value="TWD">台幣（TWD）</option><option value="USD">美金（USD）</option></select></label><label id="modeBox">資料型態<select id="mode"><option value="manual-twd">手動台幣資產</option><option value="manual-usd">手動美元資產</option><option value="stock-tw">台股</option><option value="stock-us">美股</option><option value="gold">黃金（自動行情）</option></select><small id="modeHint" class="quoteHint"></small></label><div id="manualFields"><label id="amountLabel">台幣金額<input id="amt" inputmode="decimal" value="${initialNativeAmount}"></label><div id="usdFields" class="two hide"><label>USD/TWD 匯率<input id="fx" inputmode="decimal" readonly></label><label>自動換算台幣<input id="converted" readonly></label></div></div><div id="stockFields" class="hide"><div class="two"><label>股票代號<input id="symbol" value="${escapeHtml(item?.symbol || '')}" placeholder="例如 2330 / VOO" autocapitalize="characters"></label><label>持有股數<input id="qty" inputmode="decimal" value="${item?.quantity ?? ''}"></label></div><div class="quoteHint hide" id="stockHint"></div></div><div id="goldFields" class="hide"><div class="two"><label>持有重量<input id="goldWeight" inputmode="decimal" value="${item?.market === 'GOLD' ? item.quantity ?? '' : ''}"></label><label>單位<select disabled><option>g 公克</option></select></label></div></div><div id="loanFields" class="hide"><label>剩餘本金（TWD）<input id="principal" inputmode="decimal" value="${item?.amount_twd ?? ''}"></label><div class="two"><label>年利率 %<input id="rate" inputmode="decimal" value="${item?.interest_rate ?? ''}"></label><label>每月月付（TWD）<input id="pay" inputmode="decimal" value="${item?.monthly_payment_twd ?? ''}"></label></div></div><label>備註（選填）<textarea id="note" rows="3">${escapeHtml(item?.notes || '')}</textarea></label><div id="emsg"></div><button id="save" class="primary">儲存並同步</button></form></section>`;
+  backdrop.innerHTML = `<section class="sheet"><div class="handle"></div><div class="sheetHead"><div><h2>${item ? '編輯' : '新增'}財務項目</h2></div>${item ? '<button id="del" class="trash">刪除</button>' : ''}</div><form id="editform" class="form" novalidate><label>歸屬<select id="owner"><option value="husband">老公</option><option value="wife">老婆</option></select></label><div class="seg"><button type="button" data-kind="asset">資產</button><button type="button" data-kind="liability">負債</button></div><label><span id="categoryLabel">資產屬性</span><select id="cat"></select></label><label id="nameBox">名稱<input id="nm" required value="${escapeHtml(item?.name || '')}"></label><label id="insuranceCurrencyBox" class="hide">保險幣別<select id="insuranceCurrency"><option value="TWD">台幣（TWD）</option><option value="USD">美金（USD）</option></select></label><label id="modeBox">資料型態<select id="mode"><option value="manual-twd">手動台幣資產</option><option value="manual-usd">手動美元資產</option><option value="stock-tw">台股</option><option value="stock-us">美股</option><option value="gold">黃金（自動行情）</option></select><small id="modeHint" class="quoteHint"></small></label><div id="manualFields"><label id="amountLabel">台幣金額<input id="amt" inputmode="decimal" value="${initialNativeAmount}"></label><div id="usdFields" class="two hide"><label>USD/TWD 匯率<input id="fx" inputmode="decimal" readonly></label><label>自動換算台幣<input id="converted" readonly></label></div></div><div id="stockFields" class="hide"><div class="two"><label>報價代號<input id="symbol" value="${escapeHtml(ledgerStock?.symbol || item?.symbol || '')}" placeholder="2330 或 TPE:2330" autocapitalize="characters"></label><label id="qtyBox">持有股數<input id="qty" inputmode="decimal" value="${item?.quantity ?? ''}"></label></div><div class="quoteHint hide" id="stockHint"></div><div id="ledgerFields" class="hide"><div class="sectionHead"><b>新增交易</b><span id="txHint"></span></div><div class="two"><label>類型<select id="txAction"><option value="buy">買進</option><option value="sell">賣出</option><option value="dividend">股息</option></select></label><label>日期<input id="txDate" type="date" value="${taipeiDate()}"></label></div><div class="two"><label id="txAmountBox">總金額<input id="txAmount" inputmode="decimal"></label><label id="txSharesBox">股數<input id="txShares" inputmode="decimal"></label></div><div class="two"><label>銀行／券商<input id="txBank"></label><label>備註<input id="txNote"></label></div><div id="txHistoryBox" class="hide"><div class="sectionHead"><b>交易紀錄</b><span id="txCount"></span></div><div class="portfolioTxList" id="txHistory"></div></div></div></div><div id="goldFields" class="hide"><div class="two"><label>持有重量<input id="goldWeight" inputmode="decimal" value="${item?.market === 'GOLD' ? item.quantity ?? '' : ''}"></label><label>單位<select disabled><option>g 公克</option></select></label></div></div><div id="loanFields" class="hide"><label>剩餘本金（TWD）<input id="principal" inputmode="decimal" value="${item?.amount_twd ?? ''}"></label><div class="two"><label>年利率 %<input id="rate" inputmode="decimal" value="${item?.interest_rate ?? ''}"></label><label>每月月付（TWD）<input id="pay" inputmode="decimal" value="${item?.monthly_payment_twd ?? ''}"></label></div></div><label>備註（選填）<textarea id="note" rows="3">${escapeHtml(item?.notes || '')}</textarea></label><div id="emsg"></div><button id="save" class="primary">儲存並同步</button></form></section>`;
   document.body.append(backdrop);
 
   const form = backdrop.querySelector('#editform');
@@ -890,8 +900,22 @@ function editItem(item, defaultOwner, defaultKind) {
   const convertedInput = backdrop.querySelector('#converted');
   const stockFields = backdrop.querySelector('#stockFields');
   const symbolInput = backdrop.querySelector('#symbol');
+  const quantityBox = backdrop.querySelector('#qtyBox');
   const quantityInput = backdrop.querySelector('#qty');
   const stockHint = backdrop.querySelector('#stockHint');
+  const ledgerFields = backdrop.querySelector('#ledgerFields');
+  const txHint = backdrop.querySelector('#txHint');
+  const txAction = backdrop.querySelector('#txAction');
+  const txDate = backdrop.querySelector('#txDate');
+  const txAmountBox = backdrop.querySelector('#txAmountBox');
+  const txAmount = backdrop.querySelector('#txAmount');
+  const txSharesBox = backdrop.querySelector('#txSharesBox');
+  const txShares = backdrop.querySelector('#txShares');
+  const txBank = backdrop.querySelector('#txBank');
+  const txNote = backdrop.querySelector('#txNote');
+  const txHistoryBox = backdrop.querySelector('#txHistoryBox');
+  const txCountLabel = backdrop.querySelector('#txCount');
+  const txHistory = backdrop.querySelector('#txHistory');
   const goldFields = backdrop.querySelector('#goldFields');
   const goldWeightInput = backdrop.querySelector('#goldWeight');
   const loanFields = backdrop.querySelector('#loanFields');
@@ -904,6 +928,7 @@ function editItem(item, defaultOwner, defaultKind) {
   ownerInput.value = owner;
   insuranceCurrencyInput.value = insuranceCurrency;
   modeInput.value = mode;
+  if (ledgerStock?.display) nameInput.value = ledgerStock.display;
 
   const currentFxRate = () => toFiniteNumber(fxRate || item?.fx_rate_twd);
   const updateConversion = () => {
@@ -915,6 +940,60 @@ function editItem(item, defaultOwner, defaultKind) {
       ? `NT$ ${new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 }).format(Math.round(amount * rate))}`
       : '等待有效美元金額與匯率';
   };
+  // 台帳只認帶交易所前綴的代號（TPE:2330 / NASDAQ:QQQ），sync_klfan_financial_item
+  // 也是靠這個前綴把裸代號切出來寫進 financial_items.symbol。使用者只打 2330 的話
+  // 這裡補上去，並且把補完的結果顯示出來讓他確認。
+  const QUOTE_PREFIXES = /^(TPE:|TWO:|NASDAQ:|NYSEARCA:|NYSE:)/;
+  const normalizeQuoteSymbol = (raw, marketLabel) => {
+    const value = String(raw || '').trim().toUpperCase();
+    if (!value) return '';
+    if (value.includes(':')) return value;
+    return marketLabel === '美股' ? `NASDAQ:${value}` : `TPE:${value}`;
+  };
+
+  const MAX_TX_ROWS = 10;
+  const updateLedgerFields = () => {
+    const dividend = txAction.value === 'dividend';
+    txSharesBox.classList.toggle('hide', dividend);
+    txAmountBox.firstChild.textContent = `總金額（${mode === 'stock-us' ? 'USD' : 'TWD'}）`;
+    const marketLabel = mode === 'stock-us' ? '美股' : '台股';
+    const normalized = normalizeQuoteSymbol(symbolInput.value, marketLabel);
+    if (item?.portfolio_stock_key) {
+      const shares = ledgerStock
+        ? new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 6 }).format(ledgerStock.shares)
+        : null;
+      txHint.textContent = shares === null ? '留白就不新增' : `目前 ${shares} 股 · 留白就不新增`;
+    } else {
+      txHint.textContent = normalized ? `將建立 ${normalized} · 第一筆交易必填` : '第一筆交易必填';
+    }
+    if (!ledgerStock) return;
+    const all = ledgerStock.transactions.slice()
+      .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+    txHistoryBox.classList.toggle('hide', all.length === 0);
+    // 這張表單不是為了瀏覽全部歷史而存在的 —— 只列最近幾筆讓人補漏或刪掉打錯的，
+    // 完整的紀錄在「股票投資」那一頁。
+    txCountLabel.textContent = all.length > MAX_TX_ROWS
+      ? `最近 ${MAX_TX_ROWS} 筆，共 ${all.length} 筆`
+      : `${all.length} 筆`;
+    txHistory.innerHTML = all.slice(0, MAX_TX_ROWS)
+      .map(tx => transactionRow(tx, ledgerStock)).join('');
+    txHistory.querySelectorAll('[data-delete-portfolio-tx]').forEach(button => { button.onclick = async () => {
+      if (saving || !confirm('確定刪除這筆交易？')) return;
+      button.disabled = true;
+      const { error } = await sb.from('klfan_transactions').delete().eq('id', Number(button.dataset.deletePortfolioTx));
+      if (error) {
+        button.disabled = false;
+        message.className = 'message error';
+        message.textContent = error.message;
+        return;
+      }
+      backdrop.remove();
+      await loadData({ blocking: false });
+      await syncPortfolioFinancialItem(ledgerStock.key, { ownerScope: owner });
+      await loadData({ blocking: false });
+    }; });
+  };
+
   const fillCategories = () => {
     if (kind === 'asset') {
       categoryLabel.textContent = '資產屬性';
@@ -942,14 +1021,20 @@ function editItem(item, defaultOwner, defaultKind) {
     const manual = kind === 'asset' && mode.startsWith('manual-');
     const stock = kind === 'asset' && mode.startsWith('stock-');
     const gold = kind === 'asset' && mode === 'gold';
-    nameBox.classList.toggle('hide', stock);
-    nameInput.required = !stock;
+    // 新增的台股／美股一律走台帳；既有項目只有真的連著台帳的才走（沒連的還是手打股數）。
+    const ledger = stock && (!item || Boolean(item.portfolio_stock_key));
+    nameBox.classList.toggle('hide', false);
+    nameInput.required = true;
     categoryInput.disabled = false;
     modeHint.textContent = '';
     modeBox.classList.add('hide');
     insuranceCurrencyBox.classList.toggle('hide', kind !== 'asset' || assetAttribute !== 'insurance');
     manualFields.classList.toggle('hide', !manual);
     stockFields.classList.toggle('hide', !stock);
+    ledgerFields.classList.toggle('hide', !ledger);
+    quantityBox.classList.toggle('hide', ledger);
+    quantityInput.required = stock && !ledger;
+    if (ledger) updateLedgerFields();
     goldFields.classList.toggle('hide', !gold);
     loanFields.classList.toggle('hide', kind !== 'liability');
     usdFields.classList.toggle('hide', mode !== 'manual-usd');
@@ -971,6 +1056,8 @@ function editItem(item, defaultOwner, defaultKind) {
     updateFields();
   };
   amountInput.oninput = updateConversion;
+  txAction.onchange = updateLedgerFields;
+  symbolInput.oninput = () => { if (!ledgerFields.classList.contains('hide')) updateLedgerFields(); };
   backdrop.onclick = event => {
     if (event.target === backdrop && !saving) backdrop.remove();
     const button = event.target.closest('[data-kind]');
@@ -978,6 +1065,72 @@ function editItem(item, defaultOwner, defaultKind) {
     kind = button.dataset.kind;
     fillCategories();
     updateFields();
+  };
+
+  // 讀「新增交易」那一區。既有標的可以整區留白，代表這次不記交易；新標的一定要有
+  // 第一筆 —— sync_klfan_financial_item 只在股數不為零時才建 financial_items 那一列，
+  // 沒有交易的話標的只會出現在「股票投資」，不會出現在資產裡。
+  const readTransaction = ({ required }) => {
+    const action = txAction.value;
+    const amountRaw = txAmount.value.trim();
+    const sharesRaw = txShares.value.trim();
+    if (!required && !amountRaw && !sharesRaw) return null;
+    const amountValue = parseNonNegative(amountRaw, '總金額', { positive: true });
+    const sharesValue = action === 'dividend' ? 0 : parseNonNegative(sharesRaw, '股數', { positive: true });
+    const date = txDate.value;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('請選擇交易日期。');
+    return {
+      tx_date: date,
+      amount: action === 'buy' ? -amountValue : amountValue,
+      shares: action === 'buy' ? sharesValue : action === 'sell' ? -sharesValue : 0,
+      bank: txBank.value.trim(),
+      kind: action === 'dividend' ? 'dividend' : 'trade',
+      note: txNote.value.trim() || (action === 'dividend' ? '股息' : '股票'),
+    };
+  };
+
+  const saveLedgerStock = async ({ ownerScope, name }) => {
+    const marketLabel = mode === 'stock-us' ? '美股' : '台股';
+    const currency = mode === 'stock-us' ? 'USD' : 'TWD';
+    const symbol = normalizeQuoteSymbol(symbolInput.value, marketLabel);
+    if (!/^[0-9A-Z.:-]{1,32}$/.test(symbol)) throw new Error('報價代號格式不正確。');
+    if (!name) throw new Error('請輸入名稱。');
+    let key = item?.portfolio_stock_key ?? null;
+    const transaction = readTransaction({ required: !key });
+
+    saving = true;
+    saveButton.disabled = true;
+    saveButton.textContent = '儲存中…';
+
+    if (key) {
+      const { error } = await sb.from('klfan_stocks')
+        .update({ display: name, symbol, market: marketLabel, currency, owner_scope: ownerScope })
+        .eq('key', key);
+      if (error) throw error;
+    } else {
+      const bare = symbol.replace(QUOTE_PREFIXES, '');
+      const baseKey = bare || name;
+      key = portfolioStocks.some(stock => stock.key === baseKey) ? `${baseKey}-${Date.now().toString(36)}` : baseKey;
+      const { error } = await sb.from('klfan_stocks').insert({
+        key, display: name, market: marketLabel, currency, symbol,
+        household_id: member.household_id, owner_scope: ownerScope,
+      });
+      if (error) throw error;
+    }
+
+    if (transaction) {
+      const { error } = await sb.from('klfan_transactions').insert({ stock_key: key, ...transaction });
+      if (error) throw error;
+    }
+
+    backdrop.remove();
+    tab = ownerScope;
+    pageKind[ownerScope] = 'asset';
+    await loadData({ blocking: false });
+    // 備註只存在 financial_items 上，觸發器不會碰它，所以跟著這次同步一起寫回去。
+    await syncPortfolioFinancialItem(key, { ownerScope, notes: noteInput.value.trim() || null });
+    await loadData({ blocking: false });
+    void refreshQuotes({ force: true });
   };
 
   form.onsubmit = async event => {
@@ -993,6 +1146,13 @@ function editItem(item, defaultOwner, defaultKind) {
       if (!stockMode && !name) throw new Error('請輸入名稱。');
       const category = selectedCategory();
       if (!categories[kind].includes(category)) throw new Error('資產屬性／分類設定不正確。');
+
+      // 台帳項目的股數與市值是觸發器算出來的，financial_items 那一列完全是衍生的，
+      // 所以這條路徑只寫 klfan_stocks / klfan_transactions，不自己組 payload。
+      if (stockMode && (!item || item.portfolio_stock_key)) {
+        await saveLedgerStock({ ownerScope: owner, name });
+        return;
+      }
 
       let amountTwd = 0;
       let nativeCurrency = 'TWD';
@@ -1093,10 +1253,27 @@ function editItem(item, defaultOwner, defaultKind) {
 
   const deleteButton = backdrop.querySelector('#del');
   if (deleteButton) deleteButton.onclick = async () => {
-    if (saving || !confirm(`確定刪除「${item.name}」？`)) return;
+    // 台帳項目刪掉 financial_items 那一列是沒有用的：klfan_stocks 還在，下一筆交易或
+    // 報價更新會讓觸發器把它重建回來。要刪就得從台帳刪，交易會跟著 cascade。
+    const txCount = ledgerStock?.transactions.length ?? 0;
+    const warning = ledgerStock
+      ? `確定刪除「${item.name}」？連同 ${txCount} 筆交易紀錄一起刪除，無法復原。`
+      : `確定刪除「${item.name}」？`;
+    if (saving || !confirm(warning)) return;
     saving = true;
     deleteButton.disabled = true;
     deleteButton.textContent = '刪除中…';
+    if (ledgerStock) {
+      const { error: ledgerError } = await sb.from('klfan_stocks').delete().eq('key', ledgerStock.key);
+      if (ledgerError) {
+        saving = false;
+        deleteButton.disabled = false;
+        deleteButton.textContent = '刪除';
+        message.className = 'message error';
+        message.textContent = ledgerError.message;
+        return;
+      }
+    }
     const { error } = await sb.from('financial_items')
       .delete()
       .eq('id', item.id)
