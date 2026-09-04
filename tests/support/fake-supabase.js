@@ -14,6 +14,7 @@ export const db = {
   ],
   klfan_stocks: [],
   klfan_transactions: [],
+  usd_transactions: [],
 };
 export const calls = [];
 let txSeq = 1000;
@@ -90,7 +91,7 @@ export function makeClient() {
         insert(payload) {
           const list = Array.isArray(payload) ? payload : [payload];
           list.forEach(row => {
-            if (table === 'klfan_transactions') row = { id: txSeq++, ...row };
+            if (table === 'klfan_transactions' || table === 'usd_transactions') row = { id: txSeq++, ...row };
             rows.push(row);
             calls.push({ op: 'insert', table, row });
             if (table === 'klfan_transactions') syncTrigger(row.stock_key);
