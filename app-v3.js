@@ -609,7 +609,7 @@ function portfolioStockDetail(stock) {
   return `<div class="portfolioStockDetail">
     ${pair('已實現損益', signedMoney(stock.realizedTwd), tone(stock.realizedTwd), '未實現損益', signedMoney(stock.unrealizedTwd), tone(stock.unrealizedTwd))}
     ${pair('累計股息', `NT$ ${formatNumber(stock.dividendsTwd)}`, '', `目前股價${live ? ' · 即時' : ''}`, `${stock.currency === 'USD' ? 'US$' : 'NT$'} ${formatNumber(stock.price)}`, '')}
-    ${pair('投資期間', stock.holdingYears === null ? '—' : `${stock.holdingYears.toFixed(2)} 年`, '', '年化報酬率', formatPercent(stock.xirr), tone(stock.xirr ?? 0))}
+    ${pair('投資期間', stock.holdingYears === null ? '—' : `${stock.holdingYears.toFixed(2)} 年`, '', '持有股數', `${shareFormat(stock.shares)} 股`, '')}
     <div class="sectionHead"><b>交易紀錄</b><span>${rows.length} 筆</span></div>
     <div class="portfolioTxList">${rows.length ? rows.map(tx => transactionRow(tx, stock)).join('') : '<div class="portfolioEmpty">還沒有交易。</div>'}</div>
   </div>`;
@@ -617,7 +617,7 @@ function portfolioStockDetail(stock) {
 
 function portfolioStockCard(stock, expanded) {
   const tone = stock.profitTwd >= 0 ? 'up' : 'down';
-  return `<article class="portfolioStockCard ${expanded ? 'open' : ''}"><button class="portfolioStockSummary" data-portfolio-stock="${escapeHtml(stock.key)}"><div class="portfolioStockTop"><div><b>${escapeHtml(stock.display)}</b></div><div><b>NT$ ${formatNumber(stock.currentValueTwd)}</b><span class="${tone}">${formatPercent(stock.returnRate)}</span></div></div><div class="portfolioStockMeta"><div><span>持有股數</span><b>${shareFormat(stock.shares)}</b></div><div><span>累計淨投入</span><b>NT$ ${formatNumber(stock.netInvestedTwd)}</b></div><div><span>累計損益</span><b class="${tone}">NT$ ${formatNumber(stock.profitTwd)}</b></div></div></button>${expanded ? portfolioStockDetail(stock) : ''}</article>`;
+  return `<article class="portfolioStockCard ${expanded ? 'open' : ''}"><button class="portfolioStockSummary" data-portfolio-stock="${escapeHtml(stock.key)}"><div class="portfolioStockTop"><div><b>${escapeHtml(stock.display)}</b></div><div><b>NT$ ${formatNumber(stock.currentValueTwd)}</b><span class="${tone}">${formatPercent(stock.returnRate)}</span></div></div><div class="portfolioStockMeta"><div><span>累計損益</span><b class="${tone}">NT$ ${formatNumber(stock.profitTwd)}</b></div><div><span>年化報酬率</span><b class="${tone}">${formatPercent(stock.xirr)}</b></div></div></button>${expanded ? portfolioStockDetail(stock) : ''}</article>`;
 }
 
 function portfolioListPage() {
