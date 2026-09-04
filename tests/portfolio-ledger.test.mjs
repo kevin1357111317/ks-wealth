@@ -78,19 +78,26 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     await page.selectOption('#cat', 'stock-tw');
     assert.ok(await page.isVisible('#ledgerFields'), '應該出現新增交易區');
     assert.ok(!(await page.isVisible('#qtyBox')), '股數由交易推算，不該再手打');
-    await page.fill('#symbol', '2330');
+    assert.ok(!(await page.isVisible('#nameBox')), '股票沒有名稱欄，用代號當名字');
     assert.equal(await page.locator('#txNote').count(), 0, '交易備註拿掉了，只留項目自己的備註');
+    // 代號＋類型／金額＋股數／日期＋銀行，三組都要是整齊的兩欄
+    const widths = await page.$$eval('#stockFields .two', rows => rows
+      .filter(row => row.getBoundingClientRect().height > 0)
+      .map(row => [...row.children].filter(el => el.getBoundingClientRect().width > 0)
+        .map(el => Math.round(el.getBoundingClientRect().width))));
+    assert.equal(widths.length, 3, '應該是三組兩欄');
+    for (const [a, b] of widths) assert.equal(a, b, `兩欄要等寬，實際 ${a} vs ${b}`);
+    await page.fill('#symbol', '2330');
   });
 
   await t.test('第一筆交易寫進台帳，資產列由觸發器產生', async () => {
-    await page.fill('#nm', '台積電');
     await page.fill('#txAmount', '2400000');
     await page.fill('#txShares', '1000');
     await save();
     const data = await db();
     assert.equal(data.klfan_stocks.length, 1);
     assert.equal(data.klfan_stocks[0].symbol, 'TPE:2330', '裸代號要自動補交易所前綴');
-    assert.equal(data.klfan_stocks[0].display, '台積電');
+    assert.equal(data.klfan_stocks[0].display, '2330', '沒有名稱欄，用裸代號當名字');
     assert.equal(data.klfan_transactions.length, 1);
     assert.equal(data.klfan_transactions[0].amount, -2400000, '買進要存成負數現金流');
     assert.equal(data.klfan_transactions[0].shares, 1000);
@@ -127,12 +134,12 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
 
   await t.test('交易區留白就只改標的本身', async () => {
     await openCard();
-    await page.fill('#nm', '台積電（改名）');
+    await page.fill('#symbol', 'TPE:2317');
     await save();
     const data = await db();
     assert.equal(data.klfan_transactions.length, 3, '留白不該多記一筆');
-    assert.equal(data.klfan_stocks[0].display, '台積電（改名）');
-    assert.equal(data.financial_items[0].name, '台積電（改名）');
+    assert.equal(data.klfan_stocks[0].symbol, 'TPE:2317', '改代號要寫回台帳');
+    assert.equal(data.klfan_stocks[0].display, '2330', '既有標的的名字不該被代號蓋掉');
   });
 
   await t.test('台帳卡片就地展開，不跳頁', async () => {
