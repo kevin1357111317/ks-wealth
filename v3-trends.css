@@ -116,6 +116,9 @@ body{
   background:
     radial-gradient(circle at 92% 4%,#fffdf6 0 8%,transparent 8.2%),
     linear-gradient(180deg,#d9f5f1 0,#eef9f5 34%,#fff8e8 100%);
+  /* 釘在視窗上。沒有這一行的話漸層會鋪滿 body，而 body 的高度是內容撐出來的 ——
+     展開一張卡片、頁面變長，整片背景的顏色就跟著換了。 */
+  background-attachment:fixed;
   color:var(--text);
 }
 .center,.auth{background:linear-gradient(180deg,#9fe4df 0,#dff6f1 48%,#f8dc91 100%)}
