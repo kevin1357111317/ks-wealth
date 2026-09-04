@@ -47,9 +47,19 @@
   KLFAN 是用整張表最新的 `updated_at` 決定要不要重抓，只補一半會讓它把沒更新的那幾檔也當成新的。
 - 讀寫都走 service role，不必為了快取放寬 `klfan_quotes` 的 RLS。
 
-結果是不論哪一個 App 先開，那一分鐘總共只花 5 credits。回應裡的 `cache` 欄位（`read` / `write` /
-`error`）可以看出這一輪沿用了幾筆、有沒有寫回。`tests/quote-cache.test.mjs` 直接跑 Edge Function
-原始碼、把 fetch 換成假的來數 credit，改動這一段時請先跑它。
+`XAU/USD` 是例外，它進不了 `klfan_quotes`：KLFAN 沒在追黃金、會把不認得的代碼 prune 掉，而且多一個
+它不認得又一直被更新的代碼會弄壞它「整張表最新的 `updated_at`」那個新鮮度判斷。所以金價走自己的
+`ks_quote_cache`（同樣 10 分鐘、同樣只有 service role 進得來）。少了這層，金價每一輪都得重抓，而它
+又是最後才發出的請求 —— 前端那個 60 秒節流是存在記憶體裡的，換 App 回來或頁面重載就歸零，同一分鐘
+跑兩輪就是 10 credits，被擋掉的必然是它。
+
+結果是不論哪一個 App 先開、同一分鐘跑幾輪，都不會再超過額度。回應裡的 `cache` 欄位（`read` /
+`write` / `error`）與 `gold.cached` 可以看出這一輪沿用了幾筆、有沒有寫回。前端狀態列也會把失敗的
+標的名字與原因寫出來（例如「黃金：行情商額度用完了」），不必再去翻資料庫的 `updated_at` 才知道是
+誰沒更新。
+
+`tests/quote-cache.test.mjs` 直接跑 Edge Function 原始碼、把 fetch 換成假的來數 credit，改動這一段
+時請先跑它。
 
 ## 部署
 
