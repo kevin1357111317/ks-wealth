@@ -159,6 +159,8 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     assert.equal(await page.locator('.portfolioStockDetail').count(), 0, '一開始是收合的');
     // 台股名字是中文、美股名字就是代號，標題不該再貼一組報價代號
     assert.doesNotMatch(await page.textContent('.portfolioStockTop'), /TPE:|NASDAQ:|NYSEARCA:/);
+    // 標題列只留名字與市值：報酬率會被切掉，下面那一列也講得更清楚
+    assert.doesNotMatch(await page.textContent('.portfolioStockTop'), /%/);
     // 收合摘要只留累計損益與年化報酬率；股數與淨投入移到展開區／不再重複
     const meta = await page.textContent('.portfolioStockMeta');
     assert.match(meta, /累計損益/);
