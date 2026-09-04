@@ -641,8 +641,7 @@ function portfolioListPage() {
     // 就地展開，不再跳頁；再點一次收起來。
     const key = button.dataset.portfolioStock;
     expandedStock = expandedStock === key ? null : key;
-    render();
-    if (expandedStock) root.querySelector('.portfolioStockCard.open')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    renderKeepingAnchor('data-portfolio-stock', key);
   }; });
   root.querySelectorAll('[data-delete-portfolio-tx]').forEach(button => { button.onclick = async () => {
     if (!confirm('確定刪除這筆交易？')) return;
@@ -762,7 +761,7 @@ function personPage(ownerScope) {
     if (group) {
       const key = group.dataset.group;
       openGroups.has(key) ? openGroups.delete(key) : openGroups.add(key);
-      render();
+      renderKeepingAnchor('data-group', key);
       return;
     }
     const item = event.target.closest('[data-id]');
@@ -796,6 +795,25 @@ function itemCard(item, total) {
     ? `<span>US$ ${masked ? '••••••' : new Intl.NumberFormat('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(item.native_amount)}</span>`
     : '';
   return `<button class="itemCard compactCard" data-id="${item.id}"><div class="compactMain"><div class="allocationRing ${item.kind}" style="--pct:${Math.max(0, Math.min(100, percent))}%"><span>${percentLabel}%</span></div><div class="compactIdentity"><b>${escapeHtml(item.name)}</b>${subtitle ? `<span>${subtitle}</span>` : ''}</div><div class="compactAmount"><b>NT$ ${formatNumber(item.amount_twd)}</b>${original}</div></div>${meta ? `<div class="compactMeta ${item.kind}">${meta}</div>` : ''}</button>`;
+}
+
+// render() 會整個重建 DOM，捲動位置因此掉回頂部。但展開／收合是就地操作，
+// 畫面不該跳走 —— 記下錨點元素在視窗裡的位置，重繪後把差值補回捲動量，
+// 被點的那一張卡片就會留在原地。
+function renderKeepingAnchor(attribute, value) {
+  const selector = `[${attribute}="${String(value).replace(/["\\]/g, '\\$&')}"]`;
+  const scrollBefore = window.scrollY;
+  const anchor = root.querySelector(selector);
+  const documentTopBefore = anchor ? anchor.getBoundingClientRect().top + scrollBefore : null;
+  render();
+  if (documentTopBefore === null) return;
+  const next = root.querySelector(selector);
+  if (!next) return;
+  // 先回到原本的捲動位置，量測才有已知的基準 —— 剛 render() 完瀏覽器的捲動狀態是未定的。
+  window.scrollTo(0, scrollBefore);
+  const documentTopAfter = next.getBoundingClientRect().top + window.scrollY;
+  // 展開／收合同一張卡片時錨點不會移動，這一步就是零；換開另一張時才會補正。
+  if (documentTopAfter !== documentTopBefore) window.scrollTo(0, window.scrollY + (documentTopAfter - documentTopBefore));
 }
 
 function render() {
