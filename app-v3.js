@@ -66,6 +66,9 @@ let portfolioStocks = [];
 let portfolioModel = null;
 let portfolioScreen = null;
 let expandedStock = null;   // 台帳清單裡就地展開的那一檔，一次只開一個
+// 台帳是狀態切換不是換頁，返回手勢預設不會有反應。進去時推一筆歷史，
+// 手勢／返回鍵就有東西可以退，popstate 再把畫面收回來。
+let portfolioPushed = false;
 let portfolioMarket = 'all';
 let portfolioShowExited = false;
 let openGroups = new Set();
@@ -310,6 +313,7 @@ async function applySession(nextSession) {
   portfolioModel = null;
   portfolioScreen = null;
   expandedStock = null;
+  portfolioPushed = false;
   quoteData = {};
   quoteStatus = 'idle';
   quoteFlight = null;
@@ -530,6 +534,13 @@ function shell(body, title, showAdd = false) {
     const button = event.target.closest('[data-tab]');
     if (!button) return;
     tab = button.dataset.tab;
+    // 在台帳頁時 render() 會直接回傳台帳畫面，不先收掉就切不出去。
+    // 有推過歷史就用 history.back()，交給 popstate 收 —— 免得歷史多留一筆。
+    if (portfolioScreen) {
+      if (portfolioPushed) return window.history.back();
+      portfolioScreen = null;
+      expandedStock = null;
+    }
     render();
   };
 }
@@ -627,8 +638,7 @@ function portfolioListPage() {
   const rows = marketRows.filter(stock => portfolioShowExited || stock.shares > 0.0000001)
     .sort((a, b) => b.currentValueTwd - a.currentValueTwd || a.display.localeCompare(b.display, 'zh-Hant'));
   const bucket = portfolioMarket === '台股' ? portfolioModel.tw : portfolioMarket === '美股' ? portfolioModel.us : portfolioModel.all;
-  shell(`<div class="portfolioView"><div class="portfolioToolbar"><button class="portfolioBack" data-close-portfolio>‹ 回老公資產</button><button class="portfolioBack" data-add-portfolio-stock>＋ 新增標的</button></div><div class="seg"><button data-portfolio-market="all" class="${portfolioMarket === 'all' ? 'on' : ''}">全部</button><button data-portfolio-market="台股" class="${portfolioMarket === '台股' ? 'on' : ''}">台股</button><button data-portfolio-market="美股" class="${portfolioMarket === '美股' ? 'on' : ''}">美股</button></div>${portfolioSummaryCards(bucket)}<label class="portfolioToolbar"><span>${rows.length} 檔標的</span><span><input type="checkbox" data-show-exited ${portfolioShowExited ? 'checked' : ''}> 顯示已出清</span></label><div class="portfolioList">${rows.length ? rows.map(stock => portfolioStockCard(stock, stock.key === expandedStock)).join('') : '<div class="portfolioEmpty">這個篩選條件目前沒有標的。</div>'}</div></div>`, '股票投資');
-  root.querySelector('[data-close-portfolio]').onclick = () => { portfolioScreen = null; tab = 'husband'; render(); };
+  shell(`<div class="portfolioView"><div class="portfolioToolbar"><button class="portfolioBack" data-add-portfolio-stock>＋ 新增標的</button></div><div class="seg"><button data-portfolio-market="all" class="${portfolioMarket === 'all' ? 'on' : ''}">全部</button><button data-portfolio-market="台股" class="${portfolioMarket === '台股' ? 'on' : ''}">台股</button><button data-portfolio-market="美股" class="${portfolioMarket === '美股' ? 'on' : ''}">美股</button></div>${portfolioSummaryCards(bucket)}<label class="portfolioToolbar"><span>${rows.length} 檔標的</span><span><input type="checkbox" data-show-exited ${portfolioShowExited ? 'checked' : ''}> 顯示已出清</span></label><div class="portfolioList">${rows.length ? rows.map(stock => portfolioStockCard(stock, stock.key === expandedStock)).join('') : '<div class="portfolioEmpty">這個篩選條件目前沒有標的。</div>'}</div></div>`, '股票投資');
   root.querySelectorAll('[data-portfolio-market]').forEach(button => { button.onclick = () => { portfolioMarket = button.dataset.portfolioMarket; render(); }; });
   root.querySelector('[data-show-exited]').onchange = event => { portfolioShowExited = event.target.checked; render(); };
   root.querySelector('[data-add-portfolio-stock]').onclick = addPortfolioStock;
@@ -750,7 +760,7 @@ function personPage(ownerScope) {
   };
   root.querySelector('#add').onclick = () => editItem(null, ownerScope, kind);
   const portfolioButton = root.querySelector('[data-open-portfolio]');
-  if (portfolioButton) portfolioButton.onclick = () => { portfolioScreen = 'list'; render(); };
+  if (portfolioButton) portfolioButton.onclick = openPortfolio;
   root.querySelector('.categoryList').onclick = event => {
     const group = event.target.closest('[data-group]');
     if (group) {
@@ -810,6 +820,22 @@ function renderKeepingAnchor(attribute, value) {
   // 展開／收合同一張卡片時錨點不會移動，這一步就是零；換開另一張時才會補正。
   if (documentTopAfter !== documentTopBefore) window.scrollTo(0, window.scrollY + (documentTopAfter - documentTopBefore));
 }
+
+function openPortfolio() {
+  portfolioScreen = 'list';
+  window.history.pushState({ ks: 'portfolio' }, '');
+  portfolioPushed = true;
+  render();
+}
+
+// 手勢、返回鍵、以及底部導覽切分頁都走這裡收回台帳畫面。
+window.addEventListener('popstate', () => {
+  if (!portfolioScreen) return;
+  portfolioScreen = null;
+  expandedStock = null;
+  portfolioPushed = false;
+  render();
+});
 
 function render() {
   if (!session || !member) return;
