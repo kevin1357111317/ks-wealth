@@ -602,19 +602,14 @@ const signedMoney = value => `${value >= 0 ? '+' : '−'}NT$ ${formatNumber(Math
 
 function portfolioStockDetail(stock) {
   const tone = value => value >= 0 ? 'up' : 'down';
-  // 兩條長度互相比較的橫條：以較大的一邊為滿格，一眼看得出投入與市值誰大。
-  const scale = Math.max(stock.netInvestedTwd, stock.currentValueTwd, 1);
-  const bar = (label, value) => `<div class="portfolioBar"><span>${label}</span><i><b style="width:${Math.max(0, Math.min(100, value / scale * 100))}%"></b></i><em>NT$ ${formatNumber(value)}</em></div>`;
   const pair = (aLabel, aValue, aTone, bLabel, bValue, bTone) =>
     `<div class="portfolioPair"><div><span>${aLabel}</span><b class="${aTone}">${aValue}</b></div><div><span>${bLabel}</span><b class="${bTone}">${bValue}</b></div></div>`;
   const rows = stock.transactions.slice().sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
   const live = stock.quote?.price > 0;
   return `<div class="portfolioStockDetail">
-    ${bar('淨投入', stock.netInvestedTwd)}${bar('目前市值', stock.currentValueTwd)}
     ${pair('已實現損益', signedMoney(stock.realizedTwd), tone(stock.realizedTwd), '未實現損益', signedMoney(stock.unrealizedTwd), tone(stock.unrealizedTwd))}
-    ${pair('累計股息', `NT$ ${formatNumber(stock.dividendsTwd)}`, '', '累計損益', signedMoney(stock.profitTwd), tone(stock.profitTwd))}
+    ${pair('累計股息', `NT$ ${formatNumber(stock.dividendsTwd)}`, '', `目前股價${live ? ' · 即時' : ''}`, `${stock.currency === 'USD' ? 'US$' : 'NT$'} ${formatNumber(stock.price)}`, '')}
     ${pair('投資期間', stock.holdingYears === null ? '—' : `${stock.holdingYears.toFixed(2)} 年`, '', '首筆交易', stock.firstTradeDate ?? '—', '')}
-    ${pair(`目前股價${live ? ' · 即時' : ''}`, `${stock.currency === 'USD' ? 'US$' : 'NT$'} ${formatNumber(stock.price)}`, '', '持有股數', `${shareFormat(stock.shares)} 股`, '')}
     <div class="sectionHead"><b>交易紀錄</b><span>${rows.length} 筆</span></div>
     <div class="portfolioTxList">${rows.length ? rows.map(tx => transactionRow(tx, stock)).join('') : '<div class="portfolioEmpty">還沒有交易。</div>'}</div>
   </div>`;
