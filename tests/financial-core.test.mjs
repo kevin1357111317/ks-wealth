@@ -67,3 +67,25 @@ test('asset allocation uses each scope total and hides zero categories', () => {
     { category: '黃金', value: 40, percent: 40 },
   ]);
 });
+
+test('出清的台帳部位不出現在列表與統計裡', () => {
+  // 觸發器在股數歸零時是把那一列更新成 0，不是刪掉 —— 再買回來要接回同一列。
+  // 但 0 股的部位不是資產。
+  const items = [
+    { id: 1, owner_scope: 'husband', kind: 'asset', amount_twd: 100, category: '現金及存款' },
+    { id: 2, owner_scope: 'husband', kind: 'asset', amount_twd: 0, category: '美股', portfolio_stock_key: 'TSLA', quantity: 0 },
+    { id: 3, owner_scope: 'husband', kind: 'asset', amount_twd: 500, category: '美股', portfolio_stock_key: 'VOO', quantity: 350 },
+  ];
+  const summary = calculateSummary(items, 'husband');
+  assert.equal(summary.assets.length, 2, '出清的那筆不該被算進來');
+  assert.ok(!summary.assets.some(item => item.portfolio_stock_key === 'TSLA'));
+  assert.equal(summary.totalAssets, 600);
+  // 原始陣列不能被動到：syncPortfolioFinancialItem 還要靠它找到那一列來更新
+  assert.equal(items.length, 3);
+});
+
+test('手動建立的 0 元項目不受影響', () => {
+  // 只擋台帳連動的部位，手動輸入 0 是使用者自己的選擇
+  const items = [{ id: 1, owner_scope: 'wife', kind: 'asset', amount_twd: 0, category: '現金及存款' }];
+  assert.equal(calculateSummary(items, 'wife').assets.length, 1);
+});

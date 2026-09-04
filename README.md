@@ -66,6 +66,11 @@
 就是靠這個前綴把裸代號切出來寫進 `financial_items.symbol`。表單允許只打 `2330`，會自動補上
 並顯示補完的結果。
 
+台帳連動的股票出清後，`financial_items` 那一列是被更新成 0 股 0 元、**不是刪掉** —— 唯一索引建在
+`portfolio_stock_key` 上，再買回來要能接回同一列。所以 `getItemsForScope()` 在顯示層把 0 股的
+台帳部位濾掉；原始的 `items` 陣列不動，`syncPortfolioFinancialItem()` 還要靠它找到那一列。
+手動建立的 0 元項目不受影響。
+
 新增股票只有一個入口：「新增財務項目」表單。台帳頁不放第二個新增入口，也沒有返回按鈕。
 
 「股票投資」是狀態切換不是換頁，返回手勢預設不會有反應，所以進去時 `window.history.pushState()`

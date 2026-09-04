@@ -56,10 +56,17 @@ export function normalizeFinancialItem(row) {
   };
 }
 
+// 台帳連動的股票出清後，那一列是被更新成 0 股 0 元、不是刪掉 —— 再買回來要能接回
+// 同一列（唯一索引建在 portfolio_stock_key 上）。但 0 股的部位不是資產，不該出現在
+// 列表與統計裡。這裡只擋顯示，原始的 items 陣列不動：同步邏輯還要靠它找到那一列。
+const isSoldOutHolding = item =>
+  Boolean(item.portfolio_stock_key) && toFiniteNumber(item.quantity) <= 0;
+
 export function getItemsForScope(items, ownerScope = null) {
-  if (ownerScope === null) return items;
+  const held = (items ?? []).filter(item => !isSoldOutHolding(item));
+  if (ownerScope === null) return held;
   if (!OWNER_SCOPES.includes(ownerScope)) return [];
-  return items.filter(item => item.owner_scope === ownerScope);
+  return held.filter(item => item.owner_scope === ownerScope);
 }
 
 export function calculateSummary(items, ownerScope = null) {
