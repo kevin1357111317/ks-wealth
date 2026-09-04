@@ -62,7 +62,7 @@ button:disabled{cursor:wait;opacity:.62}
 @keyframes pulse{to{opacity:.35}}
 @media(max-width:600px){
   body{font-size:16px}
-  .app{padding-right:14px;padding-left:14px;padding-bottom:calc(134px + env(safe-area-inset-bottom))}
+  .app{padding-right:14px;padding-left:14px;padding-bottom:calc(122px + max(12px,calc(env(safe-area-inset-bottom) - 12px)))}
   .topbar{padding-top:15px;padding-bottom:19px}
   .brand small{font-size:11px}.brand h1{font-size:24px}
   .iconBtn{width:46px;height:46px}
