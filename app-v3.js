@@ -11,6 +11,7 @@ import {
   parseNonNegative,
   toFiniteNumber,
 } from './financial-core.js?v=gold-1';
+import { calculatePortfolio, decodePortfolioBootstrap } from './portfolio-core.js?v=portfolio-1';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -60,6 +61,11 @@ let quoteLastAt = 0;
 let quoteLastUpdatedAt = null;
 let quoteData = {};
 let fxRate = null;
+let portfolioStocks = [];
+let portfolioModel = null;
+let portfolioScreen = null;
+let portfolioMarket = 'all';
+let portfolioShowExited = false;
 let openGroups = new Set();
 let trendMode = 'value';
 const pageKind = { husband: 'asset', wife: 'asset' };
@@ -74,6 +80,9 @@ const formatNumber = value => masked
   ? '••••••'
   : new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 }).format(Math.round(toFiniteNumber(value)));
 const formatMoney = value => `<small>NT$</small> ${formatNumber(value)}`;
+const formatPercent = value => value === null || !Number.isFinite(value)
+  ? '—'
+  : `${value >= 0 ? '+' : ''}${(value * 100).toFixed(2)}%`;
 const taipeiDate = () => new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit',
 }).format(new Date());
@@ -295,6 +304,9 @@ async function applySession(nextSession) {
   items = [];
   history = [];
   scopeHistory = [];
+  portfolioStocks = [];
+  portfolioModel = null;
+  portfolioScreen = null;
   quoteData = {};
   quoteStatus = 'idle';
   quoteFlight = null;
@@ -309,11 +321,12 @@ async function loadData({ blocking = false } = {}) {
   if (loadFlight) return loadFlight;
   const householdId = member.household_id;
   loadFlight = (async () => {
-    const [itemResult, familyHistoryResult, householdResult, scopeHistoryResult] = await Promise.all([
+    const [itemResult, familyHistoryResult, householdResult, scopeHistoryResult, portfolioResult] = await Promise.all([
       sb.from('financial_items').select('*').eq('household_id', householdId).order('sort_order'),
       sb.from('net_worth_history').select('*').eq('household_id', householdId).order('recorded_on').range(0, 9999),
       sb.from('households').select('name').eq('id', householdId).single(),
       sb.from('financial_scope_history').select('*').eq('household_id', householdId).order('recorded_on').range(0, 9999),
+      sb.rpc('klfan_bootstrap'),
     ]);
     const failure = [itemResult.error, familyHistoryResult.error, householdResult.error, scopeHistoryResult.error].find(Boolean);
     if (failure) throw failure;
@@ -324,6 +337,10 @@ async function loadData({ blocking = false } = {}) {
     scopeHistory = (scopeHistoryResult.data ?? []).map(row => ({ ...row, total_twd: toFiniteNumber(row.total_twd) }));
     householdName = householdResult.data?.name || '布布一二的家';
     fxRate = items.find(item => item.fx_rate_twd > 1 && item.quote_currency === 'USD')?.fx_rate_twd ?? fxRate;
+    if (!portfolioResult.error && portfolioResult.data) {
+      portfolioStocks = decodePortfolioBootstrap(portfolioResult.data);
+      portfolioModel = calculatePortfolio(portfolioStocks, fxRate);
+    }
     render();
     return true;
   })().catch(error => {
@@ -354,6 +371,9 @@ function subscribeRealtime() {
     }, scheduleRealtimeReload)
     .on('postgres_changes', {
       event: '*', schema: 'public', table: 'net_worth_history', filter: `household_id=eq.${householdId}`,
+    }, scheduleRealtimeReload)
+    .on('postgres_changes', {
+      event: '*', schema: 'public', table: 'klfan_transactions',
     }, scheduleRealtimeReload)
     .subscribe(status => {
       if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
@@ -420,7 +440,11 @@ async function refreshQuotes({ force = false } = {}) {
   updateQuoteStatusUi();
 
   quoteFlight = (async () => {
-    const { data, error } = await sb.functions.invoke('refresh-tw-quotes', { body: {} });
+    const [wealthQuotes, portfolioQuotes] = await Promise.all([
+      sb.functions.invoke('refresh-tw-quotes', { body: {} }),
+      sb.functions.invoke('refresh-klfan-quotes', { body: {} }),
+    ]);
+    const { data, error } = wealthQuotes;
     if (error) {
       quoteStatus = 'error';
       updateQuoteStatusUi();
@@ -438,7 +462,7 @@ async function refreshQuotes({ force = false } = {}) {
     quoteStatus = failed > 0 ? (succeeded > 0 ? 'partial' : 'error') : 'success';
     saveQuoteTimestamp(data?.requestedAt || new Date().toISOString());
 
-    if (toFiniteNumber(data?.updated) > 0) await loadData({ blocking: false });
+    if (toFiniteNumber(data?.updated) > 0 || !portfolioQuotes.error) await loadData({ blocking: false });
     else render();
     return data;
   })().catch(() => {
@@ -528,6 +552,166 @@ function groupedCards(list, ownerScope, kind) {
   }).join('');
 }
 
+function portfolioEntry() {
+  if (!portfolioModel) return '';
+  const total = portfolioModel.all;
+  const profitTone = total.profitTwd >= 0 ? 'up' : 'down';
+  return `<button class="portfolioEntry" data-open-portfolio><div class="portfolioEntryTop"><span>股票投資台帳</span><small>${total.holdings} 檔持有中 · ${total.transactions} 筆交易 ›</small></div><strong>NT$ ${formatNumber(total.currentValueTwd)}</strong><div class="portfolioEntryStats"><div><small>累計淨投入</small><b>NT$ ${formatNumber(total.netInvestedTwd)}</b></div><div><small>累計損益</small><b class="${profitTone}">NT$ ${formatNumber(total.profitTwd)}</b></div><div><small>XIRR</small><b>${formatPercent(total.xirr)}</b></div></div></button>`;
+}
+
+function portfolioSummaryCards(bucket) {
+  const tone = bucket.profitTwd >= 0 ? 'up' : 'down';
+  return `<div class="portfolioSummary"><div class="portfolioMetric"><span>目前市值</span><b>NT$ ${formatNumber(bucket.currentValueTwd)}</b><small>${bucket.holdings} 檔持有中</small></div><div class="portfolioMetric"><span>累計淨投入</span><b>NT$ ${formatNumber(bucket.netInvestedTwd)}</b><small>買進－賣出－股息</small></div><div class="portfolioMetric"><span>累計損益</span><b class="${tone}">NT$ ${formatNumber(bucket.profitTwd)}</b><small>${formatPercent(bucket.returnRate)}</small></div><div class="portfolioMetric"><span>XIRR</span><b>${formatPercent(bucket.xirr)}</b><small>依現金流日期年化</small></div></div>`;
+}
+
+function portfolioStockCard(stock) {
+  const tone = stock.profitTwd >= 0 ? 'up' : 'down';
+  return `<button class="portfolioStockCard" data-portfolio-stock="${escapeHtml(stock.key)}"><div class="portfolioStockTop"><div><b>${escapeHtml(stock.display)}</b><span>${escapeHtml(stock.symbol || stock.key)}</span></div><div><b>NT$ ${formatNumber(stock.currentValueTwd)}</b><span class="${tone}">${formatPercent(stock.returnRate)}</span></div></div><div class="portfolioStockMeta"><div><span>持有股數</span><b>${new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 6 }).format(stock.shares)}</b></div><div><span>累計淨投入</span><b>NT$ ${formatNumber(stock.netInvestedTwd)}</b></div><div><span>累計損益</span><b class="${tone}">NT$ ${formatNumber(stock.profitTwd)}</b></div></div></button>`;
+}
+
+function portfolioListPage() {
+  const marketRows = portfolioMarket === 'all'
+    ? portfolioModel.positions
+    : portfolioModel.positions.filter(stock => stock.market === portfolioMarket);
+  const rows = marketRows.filter(stock => portfolioShowExited || stock.shares > 0.0000001)
+    .sort((a, b) => b.currentValueTwd - a.currentValueTwd || a.display.localeCompare(b.display, 'zh-Hant'));
+  const bucket = portfolioMarket === '台股' ? portfolioModel.tw : portfolioMarket === '美股' ? portfolioModel.us : portfolioModel.all;
+  shell(`<div class="portfolioView"><div class="portfolioToolbar"><button class="portfolioBack" data-close-portfolio>‹ 回老公資產</button><button class="portfolioBack" data-add-portfolio-stock>＋ 新增標的</button></div><div class="seg"><button data-portfolio-market="all" class="${portfolioMarket === 'all' ? 'on' : ''}">全部</button><button data-portfolio-market="台股" class="${portfolioMarket === '台股' ? 'on' : ''}">台股</button><button data-portfolio-market="美股" class="${portfolioMarket === '美股' ? 'on' : ''}">美股</button></div>${portfolioSummaryCards(bucket)}<label class="portfolioToolbar"><span>${rows.length} 檔標的</span><span><input type="checkbox" data-show-exited ${portfolioShowExited ? 'checked' : ''}> 顯示已出清</span></label><div class="portfolioList">${rows.length ? rows.map(portfolioStockCard).join('') : '<div class="portfolioEmpty">這個篩選條件目前沒有標的。</div>'}</div></div>`, '股票投資');
+  root.querySelector('[data-close-portfolio]').onclick = () => { portfolioScreen = null; tab = 'husband'; render(); };
+  root.querySelectorAll('[data-portfolio-market]').forEach(button => { button.onclick = () => { portfolioMarket = button.dataset.portfolioMarket; render(); }; });
+  root.querySelector('[data-show-exited]').onchange = event => { portfolioShowExited = event.target.checked; render(); };
+  root.querySelector('[data-add-portfolio-stock]').onclick = addPortfolioStock;
+  root.querySelectorAll('[data-portfolio-stock]').forEach(button => { button.onclick = () => { portfolioScreen = button.dataset.portfolioStock; render(); }; });
+}
+
+function addPortfolioStock() {
+  const backdrop = document.createElement('div');
+  backdrop.className = 'backdrop';
+  backdrop.innerHTML = `<section class="sheet"><div class="handle"></div><div class="sheetHead"><div><h2>新增股票標的</h2></div></div><form class="form" id="portfolioStockForm"><label>名稱<input id="portfolioDisplay" required placeholder="例如：台積電、VOO"></label><div class="two"><label>市場<select id="portfolioNewMarket"><option value="台股">台股</option><option value="美股">美股</option></select></label><label>報價代號<input id="portfolioSymbol" required placeholder="TPE:2330"></label></div><small>台股格式如 TPE:2330；美股格式如 NASDAQ:QQQ 或 NYSEARCA:VOO。</small><div id="portfolioStockMessage"></div><button class="primary">建立標的</button></form></section>`;
+  document.body.append(backdrop);
+  backdrop.onclick = event => { if (event.target === backdrop) backdrop.remove(); };
+  backdrop.querySelector('#portfolioNewMarket').onchange = event => {
+    backdrop.querySelector('#portfolioSymbol').placeholder = event.target.value === '台股' ? 'TPE:2330' : 'NASDAQ:QQQ';
+  };
+  backdrop.querySelector('#portfolioStockForm').onsubmit = async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const display = form.querySelector('#portfolioDisplay').value.trim();
+    const market = form.querySelector('#portfolioNewMarket').value;
+    const symbol = form.querySelector('#portfolioSymbol').value.trim().toUpperCase();
+    const message = form.querySelector('#portfolioStockMessage');
+    const button = form.querySelector('button.primary');
+    if (!/^[0-9A-Z.:-]{1,32}$/.test(symbol)) {
+      message.className = 'message error'; message.textContent = '報價代號格式不正確。'; return;
+    }
+    const bare = symbol.replace(/^(TPE:|NASDAQ:|NYSEARCA:|NYSE:)/, '');
+    const baseKey = bare || display;
+    const key = portfolioStocks.some(stock => stock.key === baseKey) ? `${baseKey}-${Date.now().toString(36)}` : baseKey;
+    button.disabled = true;
+    button.textContent = '建立中…';
+    const { error } = await sb.from('klfan_stocks').insert({
+      key, display, market, currency: market === '美股' ? 'USD' : 'TWD', symbol,
+      household_id: member.household_id, owner_scope: 'husband',
+    });
+    if (error) {
+      button.disabled = false; button.textContent = '建立標的';
+      message.className = 'message error'; message.textContent = error.message; return;
+    }
+    backdrop.remove();
+    await loadData({ blocking: false });
+    portfolioScreen = key;
+    render();
+    void refreshQuotes({ force: true });
+  };
+}
+
+function transactionRow(transaction, stock) {
+  const positive = transaction.amount >= 0;
+  const currency = stock.currency === 'USD' ? 'US$' : 'NT$';
+  const action = transaction.kind === 'dividend' ? '股息' : transaction.shares < 0 ? '賣出' : '買進';
+  return `<div class="portfolioTx"><div><b>${action}</b><small>${escapeHtml(transaction.date)} · ${escapeHtml(transaction.bank || '未填帳戶')}</small></div><div><b class="${positive ? 'positive' : 'negative'}">${positive ? '+' : '−'}${currency} ${new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 2 }).format(Math.abs(transaction.amount))}</b><small>${transaction.shares ? `${transaction.shares > 0 ? '+' : ''}${transaction.shares} 股` : escapeHtml(transaction.note)}</small><button class="link" type="button" data-delete-portfolio-tx="${transaction.id}">刪除</button></div></div>`;
+}
+
+async function syncPortfolioFinancialItem(stockKey) {
+  const metrics = portfolioModel?.positions.find(stock => stock.key === stockKey);
+  if (!metrics) return;
+  const linked = items.find(item => item.portfolio_stock_key === stockKey);
+  const market = metrics.market === '美股' ? 'US' : 'TW';
+  const symbol = String(metrics.symbol || metrics.key).replace(/^(TPE:|NASDAQ:|NYSEARCA:|NYSE:)/i, '').toUpperCase();
+  const payload = {
+    household_id: member.household_id, owner_scope: 'husband', kind: 'asset',
+    category: market === 'US' ? '美股' : '台股', name: metrics.display,
+    amount_twd: Math.max(0, metrics.currentValueTwd), symbol, market,
+    quantity: Math.max(0, metrics.shares), quote_currency: metrics.currency,
+    quote_source: market === 'US' ? 'twelve_data' : 'fugle',
+    fx_rate_twd: market === 'US' ? fxRate : 1,
+    portfolio_stock_key: stockKey, updated_by: session.user.id, updated_at: new Date().toISOString(),
+  };
+  const result = linked
+    ? await sb.from('financial_items').update(payload).eq('id', linked.id).eq('household_id', member.household_id)
+    : metrics.shares > 0.0000001
+      ? await sb.from('financial_items').insert({ ...payload, created_by: session.user.id })
+      : { error: null };
+  if (result.error) throw result.error;
+}
+
+function portfolioStockPage(stockKey) {
+  const stock = portfolioModel.positions.find(row => row.key === stockKey);
+  if (!stock) { portfolioScreen = 'list'; return portfolioListPage(); }
+  const txRows = stock.transactions.slice().sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+  shell(`<div class="portfolioView"><div class="portfolioToolbar"><button class="portfolioBack" data-back-portfolio>‹ 全部標的</button><span>${escapeHtml(stock.market)} · ${escapeHtml(stock.symbol || '')}</span></div>${portfolioSummaryCards({ ...stock, holdings: stock.shares > 0.0000001 ? 1 : 0 })}<section class="panel"><div class="panelTitle"><div><h2>新增交易</h2></div></div><form class="form" id="portfolioTxForm"><div class="two"><label>類型<select id="portfolioAction"><option value="buy">買進</option><option value="sell">賣出</option><option value="dividend">股息</option></select></label><label>日期<input id="portfolioDate" type="date" value="${taipeiDate()}" required></label></div><div class="two"><label>總金額（${stock.currency}）<input id="portfolioAmount" inputmode="decimal" required></label><label>股數<input id="portfolioShares" inputmode="decimal" required></label></div><div class="two"><label>銀行／券商<input id="portfolioBank"></label><label>備註<input id="portfolioNote"></label></div><div id="portfolioMessage"></div><button class="primary">儲存並同步總資產</button></form></section><section class="panel"><div class="panelTitle"><div><h2>交易紀錄</h2></div><span>${txRows.length} 筆</span></div><div class="portfolioTxList">${txRows.map(tx => transactionRow(tx, stock)).join('')}</div></section></div>`, stock.display);
+  root.querySelector('[data-back-portfolio]').onclick = () => { portfolioScreen = 'list'; render(); };
+  const actionInput = root.querySelector('#portfolioAction');
+  const sharesInput = root.querySelector('#portfolioShares');
+  actionInput.onchange = () => { sharesInput.closest('label').classList.toggle('hide', actionInput.value === 'dividend'); sharesInput.required = actionInput.value !== 'dividend'; };
+  root.querySelector('#portfolioTxForm').onsubmit = async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const submit = form.querySelector('button.primary');
+    const message = form.querySelector('#portfolioMessage');
+    try {
+      const action = actionInput.value;
+      const amountValue = parseNonNegative(form.querySelector('#portfolioAmount').value, '總金額', { positive: true });
+      const sharesValue = action === 'dividend' ? 0 : parseNonNegative(sharesInput.value, '股數', { positive: true });
+      const payload = {
+        stock_key: stock.key, tx_date: form.querySelector('#portfolioDate').value,
+        amount: action === 'buy' ? -amountValue : amountValue,
+        shares: action === 'buy' ? sharesValue : action === 'sell' ? -sharesValue : 0,
+        bank: form.querySelector('#portfolioBank').value.trim(),
+        kind: action === 'dividend' ? 'dividend' : 'trade',
+        note: form.querySelector('#portfolioNote').value.trim() || (action === 'dividend' ? '股息' : '股票'),
+      };
+      submit.disabled = true;
+      submit.textContent = '儲存中…';
+      const { error } = await sb.from('klfan_transactions').insert(payload);
+      if (error) throw error;
+      await loadData({ blocking: false });
+      await syncPortfolioFinancialItem(stock.key);
+      await loadData({ blocking: false });
+    } catch (error) {
+      submit.disabled = false;
+      submit.textContent = '儲存並同步總資產';
+      message.className = 'message error';
+      message.textContent = error.message || '交易儲存失敗。';
+    }
+  };
+  root.querySelectorAll('[data-delete-portfolio-tx]').forEach(button => { button.onclick = async () => {
+    if (!confirm('確定刪除這筆交易？')) return;
+    button.disabled = true;
+    const { error } = await sb.from('klfan_transactions').delete().eq('id', Number(button.dataset.deletePortfolioTx));
+    if (error) { button.disabled = false; return setNonBlockingStatus(error.message, 'error'); }
+    await loadData({ blocking: false });
+    await syncPortfolioFinancialItem(stock.key);
+    await loadData({ blocking: false });
+  }; });
+}
+
+function portfolioPage() {
+  if (!portfolioModel) { portfolioScreen = null; return personPage('husband'); }
+  if (portfolioScreen === 'list') portfolioListPage();
+  else portfolioStockPage(portfolioScreen);
+}
+
 function personPage(ownerScope) {
   const totals = summary(ownerScope);
   const kind = pageKind[ownerScope];
@@ -538,7 +722,7 @@ function personPage(ownerScope) {
   const distributionRows = distributionKind === 'asset' ? totals.assets : totals.liabilities;
   const distributionTotal = distributionKind === 'asset' ? totals.totalAssets : totals.totalLiabilities;
   const distributionTitle = `${name}${distributionKind === 'asset' ? '資產' : '負債'}分布`;
-  shell(`<section class="portfolioHero"><div class="heroLabel"><span>${name}淨資產</span><span>${totals.assets.length + totals.liabilities.length} 筆</span></div><div class="bigMoney">${formatMoney(totals.netWorth)}</div><div class="miniStats"><div><span>資產總額</span><b>NT$ ${formatNumber(totals.totalAssets)}</b></div><div><span>負債總額</span><b>NT$ ${formatNumber(totals.totalLiabilities)}</b></div></div></section>${trendChart(personalTrendRows(ownerScope, totals.netWorth))}${distributionPanel(distributionRows, distributionTotal, distributionTitle, distributionKind)}<div class="seg personSeg" id="personSeg"><button data-kind="asset" class="${kind === 'asset' ? 'on' : ''}">資產</button><button data-kind="liability" class="${kind === 'liability' ? 'on' : ''}">負債</button></div><div class="sectionHead"><span>${kind === 'asset' ? '投資與資產' : '貸款與負債'}</span><b>NT$ ${formatNumber(total)}</b></div><div class="categoryList">${list.length ? groupedCards(list, ownerScope, kind) : `<div class="empty"><div><b>目前沒有${kind === 'asset' ? '資產' : '負債'}資料</b><span>按右下角 ＋ 新增財務項目。</span></div></div>`}</div>`, name, true);
+  shell(`<section class="portfolioHero"><div class="heroLabel"><span>${name}淨資產</span><span>${totals.assets.length + totals.liabilities.length} 筆</span></div><div class="bigMoney">${formatMoney(totals.netWorth)}</div><div class="miniStats"><div><span>資產總額</span><b>NT$ ${formatNumber(totals.totalAssets)}</b></div><div><span>負債總額</span><b>NT$ ${formatNumber(totals.totalLiabilities)}</b></div></div></section>${trendChart(personalTrendRows(ownerScope, totals.netWorth))}${distributionPanel(distributionRows, distributionTotal, distributionTitle, distributionKind)}<div class="seg personSeg" id="personSeg"><button data-kind="asset" class="${kind === 'asset' ? 'on' : ''}">資產</button><button data-kind="liability" class="${kind === 'liability' ? 'on' : ''}">負債</button></div>${ownerScope === 'husband' && kind === 'asset' ? portfolioEntry() : ''}<div class="sectionHead"><span>${kind === 'asset' ? '投資與資產' : '貸款與負債'}</span><b>NT$ ${formatNumber(total)}</b></div><div class="categoryList">${list.length ? groupedCards(list, ownerScope, kind) : `<div class="empty"><div><b>目前沒有${kind === 'asset' ? '資產' : '負債'}資料</b><span>按右下角 ＋ 新增財務項目。</span></div></div>`}</div>`, name, true);
 
   root.querySelector('#personSeg').onclick = event => {
     const button = event.target.closest('[data-kind]');
@@ -547,6 +731,8 @@ function personPage(ownerScope) {
     render();
   };
   root.querySelector('#add').onclick = () => editItem(null, ownerScope, kind);
+  const portfolioButton = root.querySelector('[data-open-portfolio]');
+  if (portfolioButton) portfolioButton.onclick = () => { portfolioScreen = 'list'; render(); };
   root.querySelector('.categoryList').onclick = event => {
     const group = event.target.closest('[data-group]');
     if (group) {
@@ -556,7 +742,11 @@ function personPage(ownerScope) {
       return;
     }
     const item = event.target.closest('[data-id]');
-    if (item) editItem(items.find(row => row.id === item.dataset.id), ownerScope, kind);
+    if (item) {
+      const selected = items.find(row => row.id === item.dataset.id);
+      if (selected?.portfolio_stock_key) { portfolioScreen = selected.portfolio_stock_key; render(); }
+      else editItem(selected, ownerScope, kind);
+    }
   };
 }
 
@@ -586,6 +776,7 @@ function itemCard(item, total) {
 
 function render() {
   if (!session || !member) return;
+  if (portfolioScreen) return portfolioPage();
   if (tab === 'dashboard') dashboard();
   else personPage(tab);
 }
