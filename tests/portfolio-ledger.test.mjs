@@ -157,6 +157,8 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     await page.click('[data-open-portfolio]');
     await page.waitForSelector('[data-portfolio-stock]');
     assert.equal(await page.locator('.portfolioStockDetail').count(), 0, '一開始是收合的');
+    // 台股名字是中文、美股名字就是代號，標題不該再貼一組報價代號
+    assert.doesNotMatch(await page.textContent('.portfolioStockTop'), /TPE:|NASDAQ:|NYSEARCA:/);
     await page.click('[data-portfolio-stock]');
     await page.waitForSelector('.portfolioStockDetail');
     // 還在同一頁：清單的市場切換與其他卡片都還在
