@@ -231,6 +231,42 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     await page.waitForSelector('.fab');
   });
 
+  await t.test('卡片每一列共用同一組左右邊界', async () => {
+    await page.click('[data-open-portfolio]');
+    await page.waitForSelector('[data-portfolio-stock]');
+    await page.click('[data-portfolio-stock]');
+    await page.waitForSelector('.portfolioStockDetail');
+    const edges = await page.evaluate(() => {
+      const card = document.querySelector('.portfolioStockCard');
+      const rows = [];
+      const push = (label, el) => {
+        const box = el.getBoundingClientRect();
+        rows.push({ label, left: Math.round(box.left), right: Math.round(box.right) });
+      };
+      const top = card.querySelector('.portfolioStockTop');
+      push('title-name', top.children[0]);
+      push('title-value', top.children[1]);
+      const meta = card.querySelector('.portfolioStockMeta');
+      push('meta-left', meta.children[0]);
+      push('meta-right', meta.children[1]);
+      card.querySelectorAll('.portfolioPair').forEach((pair, index) => {
+        push(`pair${index}-left`, pair.children[0]);
+        push(`pair${index}-right`, pair.children[1]);
+      });
+      return rows;
+    });
+    // 標題用 space-between、下面卻各佔一半的話，右欄會從卡片正中間開始，
+    // 跟貼齊右緣的市值對不起來。所有列應該只有兩條邊界。
+    const lefts = new Set(edges.filter(r => r.label.endsWith('-left') || r.label === 'title-name').map(r => r.left));
+    const rights = new Set(edges.filter(r => r.label.endsWith('-right') || r.label === 'title-value').map(r => r.right));
+    assert.equal(lefts.size, 1, `左邊界應該只有一種，實際 ${[...lefts].join(', ')}`);
+    assert.equal(rights.size, 1, `右邊界應該只有一種，實際 ${[...rights].join(', ')}`);
+    await page.click('[data-portfolio-stock]');
+    await page.waitForTimeout(150);
+    await page.goBack();
+    await page.waitForSelector('.fab');
+  });
+
   await t.test('刪除要連台帳一起刪，否則觸發器會把它重建回來', async () => {
     await openCard();
     await page.click('#del');
