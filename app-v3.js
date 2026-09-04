@@ -89,9 +89,22 @@ const distributionMode = { dashboard: 'asset', husband: 'asset', wife: 'asset' }
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 }[character]));
-const formatNumber = value => masked
-  ? '••••••'
-  : new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 }).format(Math.round(toFiniteNumber(value)));
+const integerFormatter = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 });
+const formatReadableNumber = value => {
+  const rounded = Math.round(toFiniteNumber(value));
+  const absolute = Math.abs(rounded);
+  if (absolute < 100_000_000) return integerFormatter.format(rounded);
+
+  const sign = rounded < 0 ? '-' : '';
+  let yi = Math.floor(absolute / 100_000_000);
+  let wan = Math.round((absolute % 100_000_000) / 10_000);
+  if (wan === 10_000) {
+    yi += 1;
+    wan = 0;
+  }
+  return `${sign}${integerFormatter.format(yi)}億${wan ? `${integerFormatter.format(wan)}萬` : ''}`;
+};
+const formatNumber = value => masked ? '••••••' : formatReadableNumber(value);
 const formatMoney = value => `<small>NT$</small> ${formatNumber(value)}`;
 const formatPercent = value => value === null || !Number.isFinite(value)
   ? '—'
