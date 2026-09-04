@@ -55,18 +55,25 @@ const ENV = {
   FUGLE_MARKETDATA_API_KEY: 'FUGLE', TWELVE_DATA_API_KEY: 'TWELVE',
 };
 
-async function refresh({ cache, twelveBudget = 8 }) {
+async function refresh({ cache, gold = null, twelveBudget = 8 }) {
   let stored = cache;
+  let storedGold = gold;   // ks_quote_cache 裡的 XAU/USD，null = 沒有或已過期
   const used = { fugle: 0, twelve: 0 };
 
   const factory = () => ({
     auth: { getUser: () => Promise.resolve({ data: { user: { id: 'user-1' } }, error: null }) },
     from: (table) => ({
-      select: () => table === 'financial_items'
-        ? { eq: () => Promise.resolve({ data: ITEMS, error: null }) }
-        : Promise.resolve({ data: stored, error: null }),
+      select: () => {
+        if (table === 'financial_items') return { eq: () => Promise.resolve({ data: ITEMS, error: null }) };
+        if (table === 'ks_quote_cache') return { eq: () => ({ maybeSingle: () => Promise.resolve({ data: storedGold, error: null }) }) };
+        return Promise.resolve({ data: stored, error: null });
+      },
       update: () => ({ eq: () => Promise.resolve({ error: null }) }),
-      upsert: (rows) => { stored = rows.map(r => ({ ...r })); return Promise.resolve({ error: null }); },
+      upsert: (rows) => {
+        if (table === 'ks_quote_cache') storedGold = { ...rows };
+        else stored = rows.map(r => ({ ...r }));
+        return Promise.resolve({ error: null });
+      },
     }),
   });
 
@@ -91,7 +98,7 @@ async function refresh({ cache, twelveBudget = 8 }) {
   try {
     fn.__stub(factory, ENV);
     const body = await (await fn.handler(new Request('https://x/fn', { method: 'POST', headers: { Authorization: 'Bearer tok' }, body: '{}' }))).json();
-    return { body, used, stored };
+    return { body, used, stored, storedGold };
   } finally {
     globalThis.fetch = realFetch;
   }
@@ -134,4 +141,30 @@ test('額度真的被吃光時，失敗的是黃金而且不會寫壞既有金�
   assert.equal(body.failed, 1);
   assert.equal(body.gold.error, 'twelve_429');
   assert.equal(body.results.find(r => r.market === 'GOLD').status, 'error', '抓不到價就不該寫 amount_twd');
+});
+
+test('XAU/USD 也要進快取，否則同一分鐘跑兩輪必定壓死黃金', async () => {
+  // 第一輪冷快取：全部重抓，順手把金價寫進 ks_quote_cache。
+  const first = await refresh({ cache: cacheRows(28 * 60_000) });
+  assert.equal(first.used.twelve, 5);
+  assert.equal(first.body.gold.price, XAU);
+  assert.equal(first.body.gold.cached, false);
+  assert.equal(first.storedGold.symbol, 'XAU/USD');
+  assert.equal(first.storedGold.price, XAU);
+
+  // 緊接著的第二輪（換 App 回來、頁面重載、手動按更新都會觸發）。修正前這一輪會再花
+  // 5 個 credit，一分鐘合計 10 個、超過 8，被擋掉的必然是排最後的 XAU/USD。
+  const second = await refresh({ cache: first.stored, gold: first.storedGold });
+  assert.equal(second.used.twelve, 0, '兩邊都命中快取，一個 credit 都不該花');
+  assert.equal(second.body.gold.price, XAU);
+  assert.equal(second.body.gold.cached, true);
+  assert.equal(second.body.failed, 0);
+});
+
+test('金價快取過期就重抓', async () => {
+  const stale = { symbol: 'XAU/USD', price: 4000, updated_at: new Date(Date.now() - 28 * 60_000).toISOString() };
+  const { body, used } = await refresh({ cache: cacheRows(60_000), gold: stale });
+  assert.equal(used.twelve, 1, '只有 XAU/USD 要重抓');
+  assert.equal(body.gold.price, XAU, '不該沿用過期的 4000');
+  assert.equal(body.gold.cached, false);
 });

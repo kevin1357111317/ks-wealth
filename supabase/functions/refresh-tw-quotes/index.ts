@@ -193,9 +193,27 @@ Deno.serve(async (req: Request) => {
     }
   }));
 
+  // XAU/USD 沒辦法放進 klfan_quotes（KLFAN 沒追黃金、會 prune，而且多一個它不認得的
+  // 代碼會弄壞它的 updated_at 新鮮度判斷），所以走自己的 ks_quote_cache。
+  // 沒有這層快取的話它每一輪都要重抓，而它又是最後才發出的請求 —— 同一分鐘跑兩輪
+  // 就會超過免費方案的 8 credits，被擋掉的必然是它。
   let xauUsd: number | null = null;
   let goldError: string | null = null;
-  if (goldItems.length > 0 && twelveKey) {
+  let goldCached = false;
+  if (goldItems.length > 0 && cache) {
+    const { data } = await cache
+      .from("ks_quote_cache")
+      .select("price,updated_at")
+      .eq("symbol", "XAU/USD")
+      .maybeSingle();
+    const price = Number(data?.price);
+    if (data && Number.isFinite(price) && price > 0 &&
+        Date.parse(String(data.updated_at ?? "")) >= Date.now() - QUOTE_CACHE_TTL_MS) {
+      xauUsd = price;
+      goldCached = true;
+    }
+  }
+  if (goldItems.length > 0 && xauUsd === null && twelveKey) {
     try {
       const response = await fetch(
         `https://api.twelvedata.com/quote?symbol=XAU%2FUSD&apikey=${encodeURIComponent(twelveKey)}`,
@@ -205,11 +223,17 @@ Deno.serve(async (req: Request) => {
       const price = Number(quote.close);
       if (!response.ok || quote.status === "error" || !Number.isFinite(price) || price <= 0) {
         goldError = quote.code ? `twelve_${quote.code}` : "gold_unavailable";
-      } else xauUsd = price;
+      } else {
+        xauUsd = price;
+        if (cache) {
+          await cache.from("ks_quote_cache")
+            .upsert({ symbol: "XAU/USD", price, updated_at: new Date().toISOString() }, { onConflict: "symbol" });
+        }
+      }
     } catch {
       goldError = "twelve_unreachable";
     }
-  } else if (goldItems.length > 0) {
+  } else if (goldItems.length > 0 && xauUsd === null) {
     goldError = "twelve_key_missing";
   }
 
@@ -357,7 +381,7 @@ Deno.serve(async (req: Request) => {
     requestedAt: new Date().toISOString(),
     cache: { read: cachedUs.size + (cachedFx === null ? 0 : 1), write: cacheWrite, error: cacheError },
     fx: { symbol: "USD/TWD", rate: fxRate, error: fxError },
-    gold: { symbol: "XAU/USD", price: xauUsd, error: goldError },
+    gold: { symbol: "XAU/USD", price: xauUsd, error: goldError, cached: goldCached },
     updated: results.filter((x) => x.status === "updated").length,
     priceOnly: results.filter((x) => x.status === "price_only").length,
     failed: results.filter((x) => x.status === "error").length,

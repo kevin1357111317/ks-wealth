@@ -57,6 +57,7 @@ let realtimeReloadTimer = null;
 let loadFlight = null;
 let quoteFlight = null;
 let quoteStatus = 'idle';
+let quoteFailureNote = '';
 let quoteLastAt = 0;
 let quoteLastUpdatedAt = null;
 let quoteData = {};
@@ -408,13 +409,38 @@ function saveQuoteTimestamp(value) {
   if (key) localStorage.setItem(key, value);
 }
 
+const QUOTE_ERROR_COPY = {
+  twelve_429: '行情商額度用完了，等一分鐘再按更新',
+  twelve_401: '行情商金鑰無效',
+  twelve_key_missing: '缺少行情商金鑰',
+  twelve_unreachable: '連不上行情商',
+  fugle_key_missing: '缺少 Fugle 金鑰',
+  fugle_unreachable: '連不上 Fugle',
+  price_unavailable: '行情商沒有回價格',
+  fx_unavailable: '匯率抓不到',
+  gold_unavailable: '金價抓不到',
+  invalid_symbol: '代號有問題',
+};
+
+// 「部分行情更新失敗」本身沒有資訊量。把沒更新的標的名字與原因接上去，
+// 才看得出來是額度用完（等一下就好）還是代號寫錯（要自己去改）。
+function describeQuoteFailures(results) {
+  const failures = (results ?? []).filter(row => row?.status === 'error');
+  if (!failures.length) return '';
+  const names = [...new Set(failures.map(row => row.name).filter(Boolean))];
+  const reasons = [...new Set(failures.map(row => QUOTE_ERROR_COPY[row.error] ?? row.error).filter(Boolean))];
+  const who = names.length > 3 ? `${names.slice(0, 3).join('、')} 等 ${names.length} 筆` : names.join('、');
+  return `${who}：${reasons.join('、')}`;
+}
+
 function quoteStatusCopy() {
   const lastUpdate = formatClock(quoteLastUpdatedAt);
   const suffix = lastUpdate ? ` · 更新於 ${lastUpdate}` : '';
+  const why = quoteFailureNote ? `（${quoteFailureNote}）` : '';
   if (quoteStatus === 'updating') return '正在更新市場行情…';
   if (quoteStatus === 'success') return `台股、美股、黃金與匯率已更新${suffix}`;
-  if (quoteStatus === 'partial') return `部分行情更新失敗，沿用上一筆價格${suffix}`;
-  if (quoteStatus === 'error') return `行情更新失敗，沿用上一筆價格${suffix}`;
+  if (quoteStatus === 'partial') return `部分行情更新失敗${why}，沿用上一筆價格${suffix}`;
+  if (quoteStatus === 'error') return `行情更新失敗${why}，沿用上一筆價格${suffix}`;
   return `家庭資料已同步${suffix}`;
 }
 
@@ -447,6 +473,7 @@ async function refreshQuotes({ force = false } = {}) {
     const { data, error } = wealthQuotes;
     if (error) {
       quoteStatus = 'error';
+      quoteFailureNote = '';
       updateQuoteStatusUi();
       return null;
     }
@@ -460,6 +487,9 @@ async function refreshQuotes({ force = false } = {}) {
     const failed = toFiniteNumber(data?.failed);
     const succeeded = toFiniteNumber(data?.updated) + toFiniteNumber(data?.priceOnly);
     quoteStatus = failed > 0 ? (succeeded > 0 ? 'partial' : 'error') : 'success';
+    // 只說「部分行情更新失敗」等於什麼都沒說 —— 把哪幾筆、什麼原因帶出來，
+    // 不然每次都要翻資料庫的 updated_at 才知道是誰沒更新。
+    quoteFailureNote = failed > 0 ? describeQuoteFailures(data?.results) : '';
     saveQuoteTimestamp(data?.requestedAt || new Date().toISOString());
 
     if (toFiniteNumber(data?.updated) > 0 || !portfolioQuotes.error) await loadData({ blocking: false });
@@ -467,6 +497,7 @@ async function refreshQuotes({ force = false } = {}) {
     return data;
   })().catch(() => {
     quoteStatus = 'error';
+    quoteFailureNote = '';
     updateQuoteStatusUi();
     return null;
   }).finally(() => {
