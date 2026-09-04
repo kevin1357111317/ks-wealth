@@ -159,6 +159,11 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     assert.equal(await page.locator('.portfolioStockDetail').count(), 0, '一開始是收合的');
     // 台股名字是中文、美股名字就是代號，標題不該再貼一組報價代號
     assert.doesNotMatch(await page.textContent('.portfolioStockTop'), /TPE:|NASDAQ:|NYSEARCA:/);
+    // 收合摘要只留累計損益與年化報酬率；股數與淨投入移到展開區／不再重複
+    const meta = await page.textContent('.portfolioStockMeta');
+    assert.match(meta, /累計損益/);
+    assert.match(meta, /年化報酬率/);
+    assert.doesNotMatch(meta, /累計淨投入|持有股數/);
     await page.click('[data-portfolio-stock]');
     await page.waitForSelector('.portfolioStockDetail');
     // 還在同一頁：清單的市場切換與其他卡片都還在
@@ -166,11 +171,11 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     assert.equal(await page.locator('#portfolioTxForm').count(), 0, '記交易只留在財務項目表單那一處');
     assert.equal(await page.locator('.portfolioTx').count(), 3, '完整歷史列在展開的卡片裡');
     const detail = await page.textContent('.portfolioStockDetail');
-    for (const label of ['已實現損益', '未實現損益', '累計股息', '目前股價', '投資期間', '年化報酬率']) {
+    for (const label of ['已實現損益', '未實現損益', '累計股息', '目前股價', '投資期間', '持有股數']) {
       assert.match(detail, new RegExp(label), `展開的內容應該有「${label}」`);
     }
     // 收合的摘要已經有這些了，展開不該再列一次
-    for (const label of ['淨投入', '目前市值', '累計損益', '持有股數', '首筆交易']) {
+    for (const label of ['目前市值', '累計損益', '累計淨投入', '首筆交易']) {
       assert.doesNotMatch(detail, new RegExp(label), `「${label}」跟上面的摘要重複，不該出現在展開區`);
     }
     await page.click('[data-portfolio-stock]');
