@@ -170,6 +170,24 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     await page.click('[data-portfolio-stock]');
     await page.waitForTimeout(200);
     assert.equal(await page.locator('.portfolioStockDetail').count(), 0, '再點一次收起來');
+
+    // render() 會重建整個 DOM，捲動位置本來會掉回頂部。把視窗壓矮讓頁面可捲，
+    // 確認展開後畫面留在原地、被點的卡片也不動。
+    await page.setViewportSize({ width: 390, height: 500 });
+    // 卡片一定要先在畫面內：click() 會把視窗外的元素捲進來，那會蓋掉我們要量的東西。
+    await page.evaluate(() => document.querySelector('[data-portfolio-stock]').scrollIntoView({ block: 'center' }));
+    await page.waitForTimeout(100);
+    const scrollBefore = await page.evaluate(() => window.scrollY);
+    assert.ok(scrollBefore > 0, '測試前提：頁面要是可捲的');
+    const topBefore = await page.$eval('[data-portfolio-stock]', el => Math.round(el.getBoundingClientRect().top));
+    await page.click('[data-portfolio-stock]');
+    await page.waitForSelector('.portfolioStockDetail');
+    assert.equal(await page.evaluate(() => window.scrollY), scrollBefore, '展開不該彈回頂部');
+    const topAfter = await page.$eval('[data-portfolio-stock]', el => Math.round(el.getBoundingClientRect().top));
+    assert.ok(Math.abs(topAfter - topBefore) <= 2, `被點的卡片要留在原位，實際差 ${topAfter - topBefore}px`);
+    await page.click('[data-portfolio-stock]');
+    await page.waitForTimeout(150);
+    await page.setViewportSize({ width: 390, height: 900 });
     await page.click('[data-close-portfolio]');
     await page.waitForSelector('.fab');
   });
