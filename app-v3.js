@@ -609,7 +609,7 @@ function portfolioStockDetail(stock) {
   return `<div class="portfolioStockDetail">
     ${pair('已實現損益', signedMoney(stock.realizedTwd), tone(stock.realizedTwd), '未實現損益', signedMoney(stock.unrealizedTwd), tone(stock.unrealizedTwd))}
     ${pair('累計股息', `NT$ ${formatNumber(stock.dividendsTwd)}`, '', `目前股價${live ? ' · 即時' : ''}`, `${stock.currency === 'USD' ? 'US$' : 'NT$'} ${formatNumber(stock.price)}`, '')}
-    ${pair('投資期間', stock.holdingYears === null ? '—' : `${stock.holdingYears.toFixed(2)} 年`, '', '首筆交易', stock.firstTradeDate ?? '—', '')}
+    ${pair('投資期間', stock.holdingYears === null ? '—' : `${stock.holdingYears.toFixed(2)} 年`, '', '年化報酬率', formatPercent(stock.xirr), tone(stock.xirr ?? 0))}
     <div class="sectionHead"><b>交易紀錄</b><span>${rows.length} 筆</span></div>
     <div class="portfolioTxList">${rows.length ? rows.map(tx => transactionRow(tx, stock)).join('') : '<div class="portfolioEmpty">還沒有交易。</div>'}</div>
   </div>`;

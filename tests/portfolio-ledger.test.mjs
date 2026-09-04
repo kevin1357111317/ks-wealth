@@ -166,11 +166,11 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     assert.equal(await page.locator('#portfolioTxForm').count(), 0, '記交易只留在財務項目表單那一處');
     assert.equal(await page.locator('.portfolioTx').count(), 3, '完整歷史列在展開的卡片裡');
     const detail = await page.textContent('.portfolioStockDetail');
-    for (const label of ['已實現損益', '未實現損益', '累計股息', '目前股價', '投資期間', '首筆交易']) {
+    for (const label of ['已實現損益', '未實現損益', '累計股息', '目前股價', '投資期間', '年化報酬率']) {
       assert.match(detail, new RegExp(label), `展開的內容應該有「${label}」`);
     }
     // 收合的摘要已經有這些了，展開不該再列一次
-    for (const label of ['淨投入', '目前市值', '累計損益', '持有股數']) {
+    for (const label of ['淨投入', '目前市值', '累計損益', '持有股數', '首筆交易']) {
       assert.doesNotMatch(detail, new RegExp(label), `「${label}」跟上面的摘要重複，不該出現在展開區`);
     }
     await page.click('[data-portfolio-stock]');
