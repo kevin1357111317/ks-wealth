@@ -199,7 +199,33 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     await page.click('[data-portfolio-stock]');
     await page.waitForTimeout(150);
     await page.setViewportSize({ width: 390, height: 900 });
-    await page.click('[data-close-portfolio]');
+    await page.goBack();
+    await page.waitForSelector('.fab');
+  });
+
+  await t.test('台帳頁靠返回手勢離開，不再放返回按鈕', async () => {
+    await page.click('[data-open-portfolio]');
+    await page.waitForSelector('[data-portfolio-market]');
+    assert.equal(await page.locator('[data-close-portfolio]').count(), 0, '返回按鈕已移除');
+
+    // 台帳是狀態切換不是換頁，沒有推歷史的話返回手勢不會有反應
+    await page.goBack();
+    await page.waitForTimeout(300);
+    assert.equal(await page.locator('[data-portfolio-market]').count(), 0, '返回鍵要能離開台帳');
+    assert.ok(await page.isVisible('.fab'), '回到的是個人資產頁');
+
+    // 底部導覽是拿掉按鈕後的另一條出口：render() 在台帳頁會直接回傳台帳畫面，
+    // 不先收掉就會被困住
+    await page.click('[data-open-portfolio]');
+    await page.waitForSelector('[data-portfolio-market]');
+    await page.click('[data-tab="dashboard"]');
+    await page.waitForTimeout(300);
+    assert.equal(await page.locator('[data-portfolio-market]').count(), 0, '切分頁也要離得開');
+
+    // 切分頁時是用 history.back() 收的，所以那一筆歷史要被消耗掉、不留在堆疊上
+    assert.notEqual(await page.evaluate(() => window.history.state?.ks), 'portfolio',
+      '切分頁後不該還留著台帳那一筆歷史');
+    await page.click('[data-tab="husband"]');
     await page.waitForSelector('.fab');
   });
 
