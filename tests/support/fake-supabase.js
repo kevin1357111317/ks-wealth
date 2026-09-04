@@ -7,6 +7,11 @@ export const db = {
   financial_items: [],
   net_worth_history: [],
   financial_scope_history: [],
+  tw_stock_names: [
+    { code: '2330', name: '台積電', board: 'TPE' },
+    { code: '2317', name: '鴻海', board: 'TPE' },
+    { code: '8390', name: '金益鼎', board: 'TWO' },
+  ],
   klfan_stocks: [],
   klfan_transactions: [],
 };

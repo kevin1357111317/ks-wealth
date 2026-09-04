@@ -867,7 +867,7 @@ function editItem(item, defaultOwner, defaultKind) {
   const initialNativeAmount = item?.native_amount ?? item?.original_amount ?? item?.amount_twd ?? '';
   const backdrop = document.createElement('div');
   backdrop.className = 'backdrop';
-  backdrop.innerHTML = `<section class="sheet"><div class="handle"></div><div class="sheetHead"><div><h2>${item ? '編輯' : '新增'}財務項目</h2></div>${item ? '<button id="del" class="trash">刪除</button>' : ''}</div><form id="editform" class="form" novalidate><label>歸屬<select id="owner"><option value="husband">老公</option><option value="wife">老婆</option></select></label><div class="seg"><button type="button" data-kind="asset">資產</button><button type="button" data-kind="liability">負債</button></div><label><span id="categoryLabel">資產屬性</span><select id="cat"></select></label><label id="nameBox">名稱<input id="nm" required value="${escapeHtml(item?.name || '')}"></label><label id="insuranceCurrencyBox" class="hide">保險幣別<select id="insuranceCurrency"><option value="TWD">台幣（TWD）</option><option value="USD">美金（USD）</option></select></label><label id="modeBox">資料型態<select id="mode"><option value="manual-twd">手動台幣資產</option><option value="manual-usd">手動美元資產</option><option value="stock-tw">台股</option><option value="stock-us">美股</option><option value="gold">黃金（自動行情）</option></select><small id="modeHint" class="quoteHint"></small></label><div id="manualFields"><label id="amountLabel">台幣金額<input id="amt" inputmode="decimal" value="${initialNativeAmount}"></label><div id="usdFields" class="two hide"><label>USD/TWD 匯率<input id="fx" inputmode="decimal" readonly></label><label>自動換算台幣<input id="converted" readonly></label></div></div><div id="stockFields" class="hide"><div class="two"><label>報價代號<input id="symbol" value="${escapeHtml(ledgerStock?.symbol || item?.symbol || '')}" placeholder="2330 或 TPE:2330" autocapitalize="characters"></label><label id="qtyBox">持有股數<input id="qty" inputmode="decimal" value="${item?.quantity ?? ''}"></label><label id="txActionBox" class="hide">類型<select id="txAction"><option value="buy">買進</option><option value="sell">賣出</option><option value="dividend">股息</option></select></label></div><div class="quoteHint hide" id="stockHint"></div><div id="ledgerFields" class="hide"><div class="two"><label id="txAmountBox">總金額<input id="txAmount" inputmode="decimal"></label><label id="txSharesBox">股數<input id="txShares" inputmode="decimal"></label></div><div class="two"><label>日期<input id="txDate" type="date" value="${taipeiDate()}"></label><label>銀行／券商<input id="txBank"></label></div><div id="txHistoryBox" class="hide"><div class="sectionHead"><b>交易紀錄</b><span id="txCount"></span></div><div class="portfolioTxList" id="txHistory"></div></div></div></div><div id="goldFields" class="hide"><div class="two"><label>持有重量<input id="goldWeight" inputmode="decimal" value="${item?.market === 'GOLD' ? item.quantity ?? '' : ''}"></label><label>單位<select disabled><option>g 公克</option></select></label></div></div><div id="loanFields" class="hide"><label>剩餘本金（TWD）<input id="principal" inputmode="decimal" value="${item?.amount_twd ?? ''}"></label><div class="two"><label>年利率 %<input id="rate" inputmode="decimal" value="${item?.interest_rate ?? ''}"></label><label>每月月付（TWD）<input id="pay" inputmode="decimal" value="${item?.monthly_payment_twd ?? ''}"></label></div></div><label>備註（選填）<textarea id="note" rows="3">${escapeHtml(item?.notes || '')}</textarea></label><div id="emsg"></div><button id="save" class="primary">儲存並同步</button></form></section>`;
+  backdrop.innerHTML = `<section class="sheet"><div class="handle"></div><div class="sheetHead"><div><h2>${item ? '編輯' : '新增'}財務項目</h2></div>${item ? '<button id="del" class="trash">刪除</button>' : ''}</div><form id="editform" class="form" novalidate><label>歸屬<select id="owner"><option value="husband">老公</option><option value="wife">老婆</option></select></label><div class="seg"><button type="button" data-kind="asset">資產</button><button type="button" data-kind="liability">負債</button></div><label><span id="categoryLabel">資產屬性</span><select id="cat"></select></label><label id="nameBox">名稱<input id="nm" required value="${escapeHtml(item?.name || '')}"></label><label id="insuranceCurrencyBox" class="hide">保險幣別<select id="insuranceCurrency"><option value="TWD">台幣（TWD）</option><option value="USD">美金（USD）</option></select></label><label id="modeBox">資料型態<select id="mode"><option value="manual-twd">手動台幣資產</option><option value="manual-usd">手動美元資產</option><option value="stock-tw">台股</option><option value="stock-us">美股</option><option value="gold">黃金（自動行情）</option></select><small id="modeHint" class="quoteHint"></small></label><div id="manualFields"><label id="amountLabel">台幣金額<input id="amt" inputmode="decimal" value="${initialNativeAmount}"></label><div id="usdFields" class="two hide"><label>USD/TWD 匯率<input id="fx" inputmode="decimal" readonly></label><label>自動換算台幣<input id="converted" readonly></label></div></div><div id="stockFields" class="hide"><div class="two"><label>代號或名稱<input id="symbol" value="${escapeHtml(ledgerStock ? ledgerStock.display : item?.symbol || '')}" placeholder="2330 或 台積電" autocapitalize="characters"></label><label id="qtyBox">持有股數<input id="qty" inputmode="decimal" value="${item?.quantity ?? ''}"></label><label id="txActionBox" class="hide">類型<select id="txAction"><option value="buy">買進</option><option value="sell">賣出</option><option value="dividend">股息</option></select></label></div><div class="quoteHint hide" id="stockHint"></div><div id="ledgerFields" class="hide"><div class="two"><label id="txAmountBox">總金額<input id="txAmount" inputmode="decimal"></label><label id="txSharesBox">股數<input id="txShares" inputmode="decimal"></label></div><div class="two"><label>日期<input id="txDate" type="date" value="${taipeiDate()}"></label><label>銀行／券商<input id="txBank"></label></div><div id="txHistoryBox" class="hide"><div class="sectionHead"><b>交易紀錄</b><span id="txCount"></span></div><div class="portfolioTxList" id="txHistory"></div></div></div></div><div id="goldFields" class="hide"><div class="two"><label>持有重量<input id="goldWeight" inputmode="decimal" value="${item?.market === 'GOLD' ? item.quantity ?? '' : ''}"></label><label>單位<select disabled><option>g 公克</option></select></label></div></div><div id="loanFields" class="hide"><label>剩餘本金（TWD）<input id="principal" inputmode="decimal" value="${item?.amount_twd ?? ''}"></label><div class="two"><label>年利率 %<input id="rate" inputmode="decimal" value="${item?.interest_rate ?? ''}"></label><label>每月月付（TWD）<input id="pay" inputmode="decimal" value="${item?.monthly_payment_twd ?? ''}"></label></div></div><label>備註（選填）<textarea id="note" rows="3">${escapeHtml(item?.notes || '')}</textarea></label><div id="emsg"></div><button id="save" class="primary">儲存並同步</button></form></section>`;
   document.body.append(backdrop);
 
   const form = backdrop.querySelector('#editform');
@@ -931,13 +931,36 @@ function editItem(item, defaultOwner, defaultKind) {
   // 台帳只認帶交易所前綴的代號（TPE:2330 / NASDAQ:QQQ），sync_klfan_financial_item
   // 也是靠這個前綴把裸代號切出來寫進 financial_items.symbol。使用者只打 2330 的話
   // 這裡補上去，並且把補完的結果顯示出來讓他確認。
-  const QUOTE_PREFIXES = /^(TPE:|TWO:|NASDAQ:|NYSEARCA:|NYSE:)/;
+  const QUOTE_PREFIXES = /^(TPE:|TWO:|NASDAQ:|NYSEARCA:|NYSE:|BATS:)/;
   const normalizeQuoteSymbol = (raw, marketLabel) => {
     const value = String(raw || '').trim().toUpperCase();
     if (!value) return '';
     if (value.includes(':')) return value;
     return marketLabel === '美股' ? `NASDAQ:${value}` : `TPE:${value}`;
   };
+
+  // 台股欄位收代號或中文名都行 —— 只看代號記不住哪個是哪支股票。
+  // tw_stock_names 是證交所與櫃買中心的清單，查到就一律用它們的正式名稱當標的名。
+  let resolvedTw = ledgerStock && ledgerStock.market === '台股'
+    ? { code: String(ledgerStock.symbol || '').replace(QUOTE_PREFIXES, ''), name: ledgerStock.display, board: String(ledgerStock.symbol || '').startsWith('TWO:') ? 'TWO' : 'TPE' }
+    : null;
+  let lookupSeq = 0;
+
+  const lookupTwStock = async () => {
+    const raw = symbolInput.value.trim().replace(QUOTE_PREFIXES, '');
+    if (mode !== 'stock-tw' || !raw) { resolvedTw = null; stockHint.classList.add('hide'); return; }
+    const seq = ++lookupSeq;
+    // 純英數當代號查，其他（中文）當名稱查。
+    const column = /^[0-9A-Za-z]+$/.test(raw) ? 'code' : 'name';
+    const { data } = await sb.from('tw_stock_names').select('code,name,board').eq(column, raw.toUpperCase()).limit(1);
+    if (seq !== lookupSeq) return;   // 打字很快時，只認最後一次查詢的結果
+    resolvedTw = data?.[0] ?? null;
+    stockHint.classList.remove('hide');
+    stockHint.textContent = resolvedTw
+      ? `${resolvedTw.name}（${resolvedTw.board}:${resolvedTw.code}）`
+      : '證交所清單裡查不到，會照你輸入的存';
+  };
+  let lookupTimer = null;
 
   const MAX_TX_ROWS = 10;
   const updateLedgerFields = () => {
@@ -1037,6 +1060,7 @@ function editItem(item, defaultOwner, defaultKind) {
   };
   amountInput.oninput = updateConversion;
   txAction.onchange = updateLedgerFields;
+  symbolInput.oninput = () => { clearTimeout(lookupTimer); lookupTimer = setTimeout(lookupTwStock, 300); };
   backdrop.onclick = event => {
     if (event.target === backdrop && !saving) backdrop.remove();
     const button = event.target.closest('[data-kind]');
@@ -1071,10 +1095,15 @@ function editItem(item, defaultOwner, defaultKind) {
   const saveLedgerStock = async ({ ownerScope }) => {
     const marketLabel = mode === 'stock-us' ? '美股' : '台股';
     const currency = mode === 'stock-us' ? 'USD' : 'TWD';
-    const symbol = normalizeQuoteSymbol(symbolInput.value, marketLabel);
-    if (!/^[0-9A-Z.:-]{1,32}$/.test(symbol)) throw new Error('報價代號格式不正確。');
-    // 股票沒有名稱欄：新標的就叫它的裸代號，既有的沿用原本的名字（多半是匯入時的中文名）。
-    const display = ledgerStock?.display || item?.name || symbol.replace(QUOTE_PREFIXES, '');
+    // 台股查得到就用證交所的代號與正式名稱，查不到才照使用者輸入的存。美股一律英文代號。
+    await lookupTwStock();
+    const symbol = marketLabel === '台股' && resolvedTw
+      ? `${resolvedTw.board}:${resolvedTw.code}`
+      : normalizeQuoteSymbol(symbolInput.value, marketLabel);
+    if (!/^[0-9A-Z.:-]{1,32}$/.test(symbol)) throw new Error('代號格式不正確。');
+    const display = marketLabel === '台股'
+      ? (resolvedTw?.name || ledgerStock?.display || symbol.replace(QUOTE_PREFIXES, ''))
+      : symbol.replace(QUOTE_PREFIXES, '');
     let key = item?.portfolio_stock_key ?? null;
     const isNewStock = !key;
     const transaction = readTransaction({ required: !key });
