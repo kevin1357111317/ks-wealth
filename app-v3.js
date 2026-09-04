@@ -631,7 +631,7 @@ function portfolioStockDetail(stock) {
 
 function portfolioStockCard(stock, expanded) {
   const tone = stock.profitTwd >= 0 ? 'up' : 'down';
-  return `<article class="portfolioStockCard ${expanded ? 'open' : ''}"><button class="portfolioStockSummary" data-portfolio-stock="${escapeHtml(stock.key)}"><div class="portfolioStockTop"><div><b>${escapeHtml(stock.display)}</b></div><div><b>NT$ ${formatNumber(stock.currentValueTwd)}</b><span class="${tone}">${formatPercent(stock.returnRate)}</span></div></div><div class="portfolioStockMeta"><div><span>累計損益</span><b class="${tone}">NT$ ${formatNumber(stock.profitTwd)}</b></div><div><span>年化報酬率</span><b class="${tone}">${formatPercent(stock.xirr)}</b></div></div></button>${expanded ? portfolioStockDetail(stock) : ''}</article>`;
+  return `<article class="portfolioStockCard ${expanded ? 'open' : ''}"><button class="portfolioStockSummary" data-portfolio-stock="${escapeHtml(stock.key)}"><div class="portfolioStockTop"><div><b>${escapeHtml(stock.display)}</b></div><div><b>NT$ ${formatNumber(stock.currentValueTwd)}</b></div></div><div class="portfolioStockMeta"><div><span>累計損益</span><b class="${tone}">NT$ ${formatNumber(stock.profitTwd)}</b></div><div><span>年化報酬率</span><b class="${tone}">${formatPercent(stock.xirr)}</b></div></div></button>${expanded ? portfolioStockDetail(stock) : ''}</article>`;
 }
 
 function portfolioListPage() {
