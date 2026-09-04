@@ -353,7 +353,7 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     await page.waitForTimeout(100);
     const scrollBefore = await page.evaluate(() => window.scrollY);
     assert.ok(scrollBefore > 0, '測試前提：資產頁要是可捲的');
-    assert.equal((await page.textContent('[data-open-portfolio]')).trim(), '股票分析');
+    assert.match(await page.textContent('[data-open-portfolio]'), /^\s*股票分析/);
 
     await page.click('[data-open-portfolio]');
     await page.waitForSelector('[data-portfolio-market]');
@@ -393,9 +393,9 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
   });
 
   await t.test('美金分析是先留的入口，按下去進得去也退得回來', async () => {
-    assert.equal((await page.textContent('[data-open-usd]')).trim(), '美金分析');
+    assert.match(await page.textContent('[data-open-usd]'), /^\s*美金分析/);
     // 入口只留按鈕，數字都收進分析頁裡
-    const entry = (await page.textContent('.analysisEntry')).replace(/\s+/g, '');
+    const entry = (await page.textContent('.analysisEntry')).replace(/[\s›]+/g, '');
     assert.equal(entry, '股票分析美金分析');
 
     await page.click('[data-open-usd]');
