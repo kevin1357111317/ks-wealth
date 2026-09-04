@@ -122,7 +122,6 @@ body::before{
   z-index:-1;
   inset:0;
   background:
-    radial-gradient(circle at 92% 4%,#fffdf6 0 8%,transparent 8.2%),
     linear-gradient(180deg,#d9f5f1 0,#eef9f5 34%,#fff8e8 100%);
   pointer-events:none;
 }
