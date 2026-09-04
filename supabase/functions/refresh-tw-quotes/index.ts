@@ -53,6 +53,56 @@ Deno.serve(async (req: Request) => {
   const twSymbols = [...new Set(marketItems.filter((x) => x.market === "TW").map((x) => String(x.symbol).toUpperCase()))].filter(validSymbol);
   const usSymbols = [...new Set(marketItems.filter((x) => x.market === "US").map((x) => String(x.symbol).toUpperCase()))].filter(validSymbol);
 
+  // ── 共用報價快取 ───────────────────────────────────────────────────────────
+  // 這個 Supabase 專案同時服務兩個 App（本專案與 KLFAN），兩邊共用同一把
+  // TWELVE_DATA_API_KEY。免費方案是每分鐘 8 credits、一個 symbol 算一個，
+  // 而各自抓一輪剛好是 9 個：這裡 USD/TWD + 三檔美股 + XAU/USD，KLFAN 三檔
+  // 美股 + USD/TWD。超額的那一個被 429 擋掉，而且必然是排在最後的 XAU/USD
+  // —— 2026-09-04 08:25 只有黃金沒更新就是這樣來的。
+  //
+  // KLFAN 的 klfan_quotes 已經是一張現成的報價表，它要的美股與匯率跟這裡完全
+  // 重疊，所以：夠新就直接沿用，只有真的缺的才去打 API。台股走 Fugle、沒有額度
+  // 問題，一律重抓，只記下 KLFAN 追哪幾檔（決定能不能寫回，見下方）。
+  // 讀寫走 service role，不必為了快取放寬 klfan_quotes 的 RLS。
+  const QUOTE_CACHE_TTL_MS = 10 * 60 * 1000;
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  const cache = serviceRoleKey
+    ? createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } })
+    : null;
+
+  type CachedQuote = { price: number; change: number; changePercent: number; quotedAt: string | null };
+  const cachedUs = new Map<string, CachedQuote>();  // 'QQQ' -> 夠新、可直接沿用的報價
+  const cacheKeyFor = new Map<string, string>();    // 'QQQ' -> 'NASDAQ:QQQ'（KLFAN 的原始 key）
+  const cachedTwCodes = new Set<string>();          // KLFAN 追蹤的台股代碼
+  let cachedFx: number | null = null;
+  let cacheError: string | null = null;
+
+  if (cache) {
+    const { data: cacheRows, error } = await cache
+      .from("klfan_quotes")
+      .select("symbol,price,change,change_percent,quoted_at,updated_at");
+    if (error) cacheError = error.message;
+    const floor = Date.now() - QUOTE_CACHE_TTL_MS;
+    for (const row of cacheRows ?? []) {
+      const raw = String(row.symbol ?? "").trim();
+      if (!raw) continue;
+      const price = Number(row.price);
+      const fresh = Date.parse(String(row.updated_at ?? "")) >= floor && Number.isFinite(price) && price > 0;
+      if (raw === "USD/TWD") {
+        if (fresh) cachedFx = price;
+        continue;
+      }
+      const code = raw.slice(raw.lastIndexOf(":") + 1).toUpperCase();
+      if (!code) continue;
+      cacheKeyFor.set(code, raw);
+      if (raw.startsWith("TPE:") || raw.startsWith("TWO:")) {
+        cachedTwCodes.add(code);
+        continue;
+      }
+      if (fresh) cachedUs.set(code, { price, change: Number(row.change ?? 0), changePercent: Number(row.change_percent ?? 0), quotedAt: row.quoted_at ?? null });
+    }
+  }
+
   const twEntries = await Promise.all(twSymbols.map(async (symbol) => {
     if (!fugleKey) return [`TW:${symbol}`, { error: "fugle_key_missing" }] as const;
     try {
@@ -78,10 +128,11 @@ Deno.serve(async (req: Request) => {
     }
   }));
 
-  let fxRate: number | null = null;
+  let fxRate: number | null = cachedFx;
   let fxError: string | null = null;
+  let fxFetched = false;
   const needsUsdFx = usSymbols.length > 0 || usdCashItems.length > 0 || goldItems.length > 0;
-  if (needsUsdFx && twelveKey) {
+  if (needsUsdFx && fxRate === null && twelveKey) {
     try {
       const response = await fetch(
         `https://api.twelvedata.com/exchange_rate?symbol=USD%2FTWD&apikey=${encodeURIComponent(twelveKey)}`,
@@ -90,15 +141,32 @@ Deno.serve(async (req: Request) => {
       const data = await response.json();
       const rate = Number(data.rate);
       if (!response.ok || data.status === "error" || !Number.isFinite(rate) || rate <= 0) fxError = data.code ? `twelve_${data.code}` : "fx_unavailable";
-      else fxRate = rate;
+      else {
+        fxRate = rate;
+        fxFetched = true;
+      }
     } catch {
       fxError = "twelve_unreachable";
     }
-  } else if (needsUsdFx) {
+  } else if (needsUsdFx && fxRate === null) {
     fxError = "twelve_key_missing";
   }
 
   const usEntries = await Promise.all(usSymbols.map(async (symbol) => {
+    const hit = cachedUs.get(symbol);
+    if (hit) {
+      return [`US:${symbol}`, {
+        provider: "twelve_data",
+        currency: "USD",
+        price: hit.price,
+        change: hit.change,
+        changePercent: hit.changePercent,
+        date: hit.quotedAt,
+        lastUpdated: hit.quotedAt,
+        fxRate,
+        cached: true,
+      }] as const;
+    }
     if (!twelveKey) return [`US:${symbol}`, { error: "twelve_key_missing" }] as const;
     try {
       const response = await fetch(
@@ -118,6 +186,7 @@ Deno.serve(async (req: Request) => {
         date: quote.datetime ?? null,
         lastUpdated: quote.timestamp ?? null,
         fxRate,
+        cached: false,
       }] as const;
     } catch {
       return [`US:${symbol}`, { error: "twelve_unreachable" }] as const;
@@ -237,9 +306,56 @@ Deno.serve(async (req: Request) => {
       : { id: item.id, name: item.name, market: "GOLD", status: "updated", grams, amountTwd, currency: "USD", price: xauUsd, fxRate });
   }
 
+  // 寫回共用快取。只有在這一輪「每一檔都真的重抓到」、而且涵蓋 klfan_quotes
+  // 現有的每一個代碼時才寫 —— KLFAN 是用整張表最新的 updated_at 判斷要不要重抓，
+  // 只補一半會讓它把沒更新的那幾檔也當成新的，看起來很新其實是舊價。
+  // 沒寫回也沒關係：那代表這一輪本來就是沿用快取，KLFAN 那邊也還夠新。
+  let cacheWrite: string | null = null;
+  if (cache && fxFetched && fxRate !== null) {
+    const freshUs = new Map<string, { price: number; change: number; changePercent: number }>();
+    for (const [key, quote] of usEntries) {
+      if ("error" in quote || quote.cached) continue;
+      freshUs.set(key.slice(3), quote);
+    }
+    const freshTw = new Map<string, { price: number; change: number; changePercent: number }>();
+    for (const [key, quote] of twEntries) {
+      if ("error" in quote) continue;
+      freshTw.set(key.slice(3), quote);
+    }
+    const covered = [...cacheKeyFor.keys()].every((code) =>
+      cachedTwCodes.has(code) ? freshTw.has(code) : freshUs.has(code));
+
+    if (covered && (freshUs.size > 0 || freshTw.size > 0)) {
+      const now = new Date().toISOString();
+      const rows: Record<string, unknown>[] = [
+        { symbol: "USD/TWD", price: fxRate, currency: "TWD", change: null, change_percent: null, source: "twelve_data", quoted_at: now, updated_at: now },
+      ];
+      for (const [code, key] of cacheKeyFor) {
+        const tw = cachedTwCodes.has(code);
+        const quote = tw ? freshTw.get(code) : freshUs.get(code);
+        if (!quote) continue;
+        rows.push({
+          symbol: key,
+          price: quote.price,
+          currency: tw ? "TWD" : "USD",
+          change: quote.change,
+          change_percent: quote.changePercent,
+          source: tw ? "fugle" : "twelve_data",
+          quoted_at: now,
+          updated_at: now,
+        });
+      }
+      const { error } = await cache.from("klfan_quotes").upsert(rows, { onConflict: "symbol" });
+      cacheWrite = error ? error.message : `wrote_${rows.length}`;
+    } else {
+      cacheWrite = "skipped_partial_coverage";
+    }
+  }
+
   return json({
     source: "fugle+twelve_data",
     requestedAt: new Date().toISOString(),
+    cache: { read: cachedUs.size + (cachedFx === null ? 0 : 1), write: cacheWrite, error: cacheError },
     fx: { symbol: "USD/TWD", rate: fxRate, error: fxError },
     gold: { symbol: "XAU/USD", price: xauUsd, error: goldError },
     updated: results.filter((x) => x.status === "updated").length,

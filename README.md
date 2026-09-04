@@ -32,6 +32,25 @@
 - 舊資料仍可由 `original_currency` / `original_amount` fallback 讀取，新增與編輯統一寫入 `native_*`。
 - `net_worth_history` 保存家庭歷史，`financial_scope_history` 保存老公／老婆範圍歷史；今日顯示值只在前端即時計算。
 
+## 行情額度與共用快取
+
+這個 Supabase 專案同時服務兩個 App：本專案與 KLFAN（`KLFAN-stock-tracker`），兩邊共用同一把
+`TWELVE_DATA_API_KEY`。Twelve Data 免費方案是每分鐘 8 credits、一個 symbol 算一個，而兩邊各自
+抓一輪剛好是 9 個：本專案 `USD/TWD` + 三檔美股 + `XAU/USD`，KLFAN 三檔美股 + `USD/TWD`。
+超額的那一個會被 429 擋掉，而且必然是排在最後的 `XAU/USD` —— 症狀就是首頁出現
+「部分行情更新失敗，沿用上一筆價格」，而且只有黃金沒更新。
+
+`refresh-tw-quotes` 因此把 KLFAN 的 `klfan_quotes` 當共用快取：
+
+- **讀**：美股與匯率在 10 分鐘內抓過就直接沿用，只有真的缺的才打 API。台股走 Fugle、沒有額度問題，一律重抓。
+- **寫**：這一輪每一檔都真的重抓到、而且涵蓋 `klfan_quotes` 現有的每一個代碼時，才把結果寫回去。
+  KLFAN 是用整張表最新的 `updated_at` 決定要不要重抓，只補一半會讓它把沒更新的那幾檔也當成新的。
+- 讀寫都走 service role，不必為了快取放寬 `klfan_quotes` 的 RLS。
+
+結果是不論哪一個 App 先開，那一分鐘總共只花 5 credits。回應裡的 `cache` 欄位（`read` / `write` /
+`error`）可以看出這一輪沿用了幾筆、有沒有寫回。`tests/quote-cache.test.mjs` 直接跑 Edge Function
+原始碼、把 fetch 換成假的來數 credit，改動這一段時請先跑它。
+
 ## 部署
 
 GitHub `main` 已連接 Vercel Production；合併或 push 到 `main` 會觸發正式部署。功能變更應先在工作分支完成測試與 diff review，再合併至 `main`。

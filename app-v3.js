@@ -556,12 +556,12 @@ function portfolioEntry() {
   if (!portfolioModel) return '';
   const total = portfolioModel.all;
   const profitTone = total.profitTwd >= 0 ? 'up' : 'down';
-  return `<button class="portfolioEntry" data-open-portfolio><div class="portfolioEntryTop"><span>股票投資台帳</span><small>${total.holdings} 檔持有中 · ${total.transactions} 筆交易 ›</small></div><strong>NT$ ${formatNumber(total.currentValueTwd)}</strong><div class="portfolioEntryStats"><div><small>累計淨投入</small><b>NT$ ${formatNumber(total.netInvestedTwd)}</b></div><div><small>累計損益</small><b class="${profitTone}">NT$ ${formatNumber(total.profitTwd)}</b></div><div><small>XIRR</small><b>${formatPercent(total.xirr)}</b></div></div></button>`;
+  return `<button class="portfolioEntry" data-open-portfolio><div class="portfolioEntryTop"><span>股票投資台帳</span><small>${total.holdings} 檔持有中 · ${total.transactions} 筆交易 ›</small></div><strong>NT$ ${formatNumber(total.currentValueTwd)}</strong><div class="portfolioEntryStats"><div><small>累計淨投入</small><b>NT$ ${formatNumber(total.netInvestedTwd)}</b></div><div><small>累計損益</small><b class="${profitTone}">NT$ ${formatNumber(total.profitTwd)}</b></div><div><small>年化報酬率</small><b>${formatPercent(total.xirr)}</b></div></div></button>`;
 }
 
 function portfolioSummaryCards(bucket) {
   const tone = bucket.profitTwd >= 0 ? 'up' : 'down';
-  return `<div class="portfolioSummary"><div class="portfolioMetric"><span>目前市值</span><b>NT$ ${formatNumber(bucket.currentValueTwd)}</b><small>${bucket.holdings} 檔持有中</small></div><div class="portfolioMetric"><span>累計淨投入</span><b>NT$ ${formatNumber(bucket.netInvestedTwd)}</b><small>買進－賣出－股息</small></div><div class="portfolioMetric"><span>累計損益</span><b class="${tone}">NT$ ${formatNumber(bucket.profitTwd)}</b><small>${formatPercent(bucket.returnRate)}</small></div><div class="portfolioMetric"><span>XIRR</span><b>${formatPercent(bucket.xirr)}</b><small>依現金流日期年化</small></div></div>`;
+  return `<div class="portfolioSummary"><div class="portfolioMetric"><span>目前市值</span><b>NT$ ${formatNumber(bucket.currentValueTwd)}</b><small>${bucket.holdings} 檔持有中</small></div><div class="portfolioMetric"><span>累計淨投入</span><b>NT$ ${formatNumber(bucket.netInvestedTwd)}</b><small>買進－賣出－股息</small></div><div class="portfolioMetric"><span>累計損益</span><b class="${tone}">NT$ ${formatNumber(bucket.profitTwd)}</b><small>${formatPercent(bucket.returnRate)}</small></div><div class="portfolioMetric"><span>年化報酬率</span><b>${formatPercent(bucket.xirr)}</b><small>計入每筆買賣的時點</small></div></div>`;
 }
 
 function portfolioStockCard(stock) {
