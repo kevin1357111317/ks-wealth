@@ -22,8 +22,10 @@ test('realtime reloads are household-filtered and debounced', () => {
 });
 
 test('production shell loads the current app and PWA metadata', () => {
-  assert.match(html, /app-v3\.js\?v=portfolio-1/);
-  assert.match(html, /portfolio\.css\?v=portfolio-1/);
+  // 只檢查有帶 cache-buster，不釘死版本字串 —— 釘死的話每次改 app-v3.js 都得順手改測試，
+  // 而忘了改的下場是測試紅著、但 PWA 其實載的是舊 bundle。
+  assert.match(html, /app-v3\.js\?v=[\w-]+/);
+  assert.match(html, /portfolio\.css\?v=[\w-]+/);
   assert.match(html, /manifest\.webmanifest/);
   assert.match(html, /apple-mobile-web-app-title" content="布布一二的家"/);
   assert.doesNotMatch(html, /src="\/app\.js/);
