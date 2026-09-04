@@ -12,6 +12,7 @@ import {
   toFiniteNumber,
 } from './financial-core.js?v=hide-sold-out-1';
 import { calculatePortfolio, decodePortfolioBootstrap } from './portfolio-core.js?v=portfolio-1';
+import { calculateUsd } from './usd-core.js?v=usd-1';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -64,6 +65,9 @@ let quoteData = {};
 let fxRate = null;
 let portfolioStocks = [];
 let portfolioModel = null;
+// 美金部位自己一本帳，跟 financial_items 沒有連動：買賣只在美金分析頁裡進出。
+let usdTransactions = [];
+let usdModel = null;
 let analysisScreen = null;   // 'stocks'｜'usd'，null 就是一般的資產頁
 let expandedStock = null;   // 台帳清單裡就地展開的那一檔，一次只開一個
 // 分析頁是狀態切換不是換頁，返回手勢預設不會有反應。進去時推一筆歷史，
@@ -316,6 +320,8 @@ async function applySession(nextSession) {
   portfolioStocks = [];
   portfolioModel = null;
   analysisScreen = null;
+  usdTransactions = [];
+  usdModel = null;
   expandedStock = null;
   analysisPushed = false;
   analysisReturnScroll = 0;
@@ -333,12 +339,13 @@ async function loadData({ blocking = false } = {}) {
   if (loadFlight) return loadFlight;
   const householdId = member.household_id;
   loadFlight = (async () => {
-    const [itemResult, familyHistoryResult, householdResult, scopeHistoryResult, portfolioResult] = await Promise.all([
+    const [itemResult, familyHistoryResult, householdResult, scopeHistoryResult, portfolioResult, usdResult] = await Promise.all([
       sb.from('financial_items').select('*').eq('household_id', householdId).order('sort_order'),
       sb.from('net_worth_history').select('*').eq('household_id', householdId).order('recorded_on').range(0, 9999),
       sb.from('households').select('name').eq('id', householdId).single(),
       sb.from('financial_scope_history').select('*').eq('household_id', householdId).order('recorded_on').range(0, 9999),
       sb.rpc('klfan_bootstrap'),
+      sb.from('usd_transactions').select('*').eq('household_id', householdId).order('trade_date').order('id').range(0, 9999),
     ]);
     const failure = [itemResult.error, familyHistoryResult.error, householdResult.error, scopeHistoryResult.error].find(Boolean);
     if (failure) throw failure;
@@ -352,6 +359,10 @@ async function loadData({ blocking = false } = {}) {
     if (!portfolioResult.error && portfolioResult.data) {
       portfolioStocks = decodePortfolioBootstrap(portfolioResult.data);
       portfolioModel = calculatePortfolio(portfolioStocks, fxRate);
+    }
+    if (!usdResult.error) {
+      usdTransactions = usdResult.data ?? [];
+      usdModel = calculateUsd(usdTransactions, fxRate);
     }
     render();
     return true;
@@ -494,7 +505,11 @@ async function refreshQuotes({ force = false } = {}) {
       ...quoteData,
       ...Object.fromEntries(successfulQuotes.map(result => [result.id, result])),
     };
-    if (data?.fx?.rate) fxRate = toFiniteNumber(data.fx.rate, fxRate);
+    if (data?.fx?.rate) {
+      fxRate = toFiniteNumber(data.fx.rate, fxRate);
+      // 美元部位的市值整個掛在匯率上，匯率一動就得重算。
+      usdModel = calculateUsd(usdTransactions, fxRate);
+    }
     const failed = toFiniteNumber(data?.failed);
     const succeeded = toFiniteNumber(data?.updated) + toFiniteNumber(data?.priceOnly);
     quoteStatus = failed > 0 ? (succeeded > 0 ? 'partial' : 'error') : 'success';
@@ -620,7 +635,8 @@ const shareFormat = value => new Intl.NumberFormat('zh-TW', { maximumFractionDig
 const signedMoney = value => `${value >= 0 ? '+' : '−'}NT$ ${formatNumber(Math.abs(value))}`;
 
 function portfolioStockDetail(stock) {
-  const tone = value => value >= 0 ? 'up' : 'down';
+  // 剛好是零就不上漲跌色，紅綠留給真的有賺賠的時候。
+  const tone = value => Math.round(value) === 0 ? '' : value > 0 ? 'up' : 'down';
   const pair = (aLabel, aValue, aTone, bLabel, bValue, bTone) =>
     `<div class="portfolioPair"><div><span>${aLabel}</span><b class="${aTone}">${aValue}</b></div><div><span>${bLabel}</span><b class="${bTone}">${bValue}</b></div></div>`;
   const rows = stock.transactions.slice().sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
@@ -706,9 +722,95 @@ function analysisPage() {
   portfolioListPage();
 }
 
-// 美金分析還沒開始做，先把入口與返回這條路走通，內容之後補。
+const usdFormat = value => masked
+  ? '\u2022\u2022\u2022\u2022\u2022\u2022'
+  : new Intl.NumberFormat('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(toFiniteNumber(value));
+const rateFormat = value => Number.isFinite(Number(value)) && Number(value) > 0
+  ? Number(value).toFixed(3)
+  : '\u2014';
+
+// 對照 KLFAN 試算表「美金」工作表的那塊「美元資產績效（全部以新台幣計算）」。
 function usdPage() {
-  shell('<div class="portfolioView"><div class="portfolioEmpty">美金分析還在做，之後會放在這一頁。</div></div>', '美金分析');
+  const model = usdModel ?? calculateUsd([], fxRate);
+  const tone = value => value >= 0 ? 'up' : 'down';
+  const rows = [...model.rows].reverse();
+  shell(`<div class="portfolioView"><div class="portfolioSummary"><div class="portfolioMetric"><span>目前美元部位</span><b>US$ ${usdFormat(model.balance)}</b><small>加權平均成本 ${rateFormat(model.averageCost)}</small></div><div class="portfolioMetric"><span>目前台幣市值</span><b>NT$ ${formatNumber(model.marketValueTwd)}</b><small>目前匯率 ${rateFormat(model.currentRate)}</small></div><div class="portfolioMetric"><span>累計淨投入</span><b>NT$ ${formatNumber(model.netInvestedTwd)}</b><small>買進－賣出</small></div><div class="portfolioMetric"><span>剩餘美元成本</span><b>NT$ ${formatNumber(model.remainingCostTwd)}</b><small>移動加權平均</small></div><div class="portfolioMetric"><span>已實現匯兌損益</span><b class="${tone(model.realizedTwd)}">NT$ ${formatNumber(model.realizedTwd)}</b><small>賣出時認列</small></div><div class="portfolioMetric"><span>未實現匯兌損益</span><b class="${tone(model.unrealizedTwd)}">NT$ ${formatNumber(model.unrealizedTwd)}</b><small>市值－剩餘成本</small></div><div class="portfolioMetric"><span>總匯兌損益</span><b class="${tone(model.totalProfitTwd)}">NT$ ${formatNumber(model.totalProfitTwd)}</b><small>已實現＋未實現</small></div><div class="portfolioMetric"><span>年化報酬率</span><b>${formatPercent(model.xirr)}</b><small>計入每筆買賣的時點</small></div></div><div class="sectionHead"><span>交易紀錄${model.firstTradeDate ? ` · 自 ${escapeHtml(model.firstTradeDate)}` : ''}</span><b>${model.transactions} 筆</b></div><div class="portfolioTxList">${rows.length ? rows.map(usdTransactionRow).join('') : '<div class="portfolioEmpty">還沒有美金交易，按右下角 ＋ 記第一筆。</div>'}</div></div>`, '美金分析', true);
+
+  root.querySelector('#add').onclick = () => editUsdTransaction();
+  root.querySelectorAll('[data-delete-usd-tx]').forEach(button => { button.onclick = async () => {
+    if (!confirm('確定刪除這筆美金交易？')) return;
+    button.disabled = true;
+    const { error } = await sb.from('usd_transactions').delete()
+      .eq('id', Number(button.dataset.deleteUsdTx)).eq('household_id', member.household_id);
+    if (error) { button.disabled = false; return setNonBlockingStatus(error.message, 'error'); }
+    await loadData({ blocking: false });
+  }; });
+}
+
+function usdTransactionRow(row) {
+  const buying = row.usd >= 0;
+  return `<div class="portfolioTx"><div class="portfolioTxWhen"><b>${buying ? '買進' : '賣出'}</b><small>${escapeHtml(row.date)} · 匯率 ${rateFormat(row.rate)}</small></div><div class="portfolioTxAmount"><b class="${buying ? 'negative' : 'positive'}">${buying ? '\u2212' : '+'}NT$ ${formatNumber(Math.abs(row.twd))}</b><small>${buying ? '+' : '\u2212'}US$ ${usdFormat(Math.abs(row.usd))}</small></div><button class="portfolioTxDelete" type="button" data-delete-usd-tx="${row.id}">刪除</button></div>`;
+}
+
+// 美金的買賣只寫 usd_transactions，不碰資產頁的任何一列。
+function editUsdTransaction() {
+  let saving = false;
+  const backdrop = document.createElement('div');
+  backdrop.className = 'backdrop';
+  backdrop.innerHTML = `<section class="sheet"><div class="handle"></div><div class="sheetHead"><div><h2>新增美金交易</h2></div></div><form id="usdform" class="form" novalidate><label>類型<select id="usdKind"><option value="buy">買進</option><option value="sell">賣出</option></select></label><div class="two"><label>美元金額<input id="usdAmount" inputmode="decimal" placeholder="3152.59"></label><label>成交匯率<input id="usdRate" inputmode="decimal" value="${fxRate ? rateFormat(fxRate) : ''}"></label></div><div class="two"><label>台幣金額<input id="usdTwd" inputmode="decimal" placeholder="自動換算"></label><label>日期<input id="usdDate" type="date" value="${taipeiDate()}"></label></div><div id="usdMsg"></div><button id="usdSave" class="primary">儲存</button></form></section>`;
+  document.body.append(backdrop);
+
+  const form = backdrop.querySelector('#usdform');
+  const kindInput = backdrop.querySelector('#usdKind');
+  const amountInput = backdrop.querySelector('#usdAmount');
+  const rateInput = backdrop.querySelector('#usdRate');
+  const twdInput = backdrop.querySelector('#usdTwd');
+  const dateInput = backdrop.querySelector('#usdDate');
+  const message = backdrop.querySelector('#usdMsg');
+  const close = () => backdrop.remove();
+  backdrop.onclick = event => { if (event.target === backdrop && !saving) close(); };
+
+  // 台幣欄沒動過就跟著美元×匯率走；使用者一旦自己填了就不再蓋掉他的數字。
+  let twdEdited = false;
+  twdInput.oninput = () => { twdEdited = true; };
+  const syncTwd = () => {
+    if (twdEdited) return;
+    const usd = Math.abs(toFiniteNumber(amountInput.value));
+    const rate = toFiniteNumber(rateInput.value);
+    twdInput.value = usd > 0 && rate > 0 ? Math.round(usd * rate) : '';
+  };
+  amountInput.oninput = syncTwd;
+  rateInput.oninput = syncTwd;
+
+  form.onsubmit = async event => {
+    event.preventDefault();
+    if (saving) return;
+    const usd = Math.abs(toFiniteNumber(amountInput.value));
+    const rate = toFiniteNumber(rateInput.value);
+    const twd = Math.abs(toFiniteNumber(twdInput.value)) || Math.round(usd * rate);
+    if (!(usd > 0) || !(rate > 0) || !(twd > 0) || !dateInput.value) {
+      message.className = 'message error';
+      message.textContent = '美元金額、匯率與日期都要填。';
+      return;
+    }
+    const selling = kindInput.value === 'sell';
+    saving = true;
+    const { error } = await sb.from('usd_transactions').insert({
+      household_id: member.household_id,
+      trade_date: dateInput.value,
+      usd_amount: selling ? -usd : usd,
+      rate,
+      twd_amount: selling ? twd : -twd,
+    });
+    if (error) {
+      saving = false;
+      message.className = 'message error';
+      message.textContent = error.message;
+      return;
+    }
+    close();
+    await loadData({ blocking: false });
+  };
 }
 
 function personPage(ownerScope) {

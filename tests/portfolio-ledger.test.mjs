@@ -392,16 +392,50 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     await page.waitForTimeout(200);
   });
 
-  await t.test('美金分析是先留的入口，按下去進得去也退得回來', async () => {
+  await t.test('美金分析可以記買賣，數字跟著動，也退得回來', async () => {
     assert.match(await page.textContent('[data-open-usd]'), /^\s*美金分析/);
     // 入口只留按鈕，數字都收進分析頁裡
     const entry = (await page.textContent('.analysisEntry')).replace(/[\s›]+/g, '');
     assert.equal(entry, '股票分析美金分析');
 
     await page.click('[data-open-usd]');
-    await page.waitForTimeout(300);
-    assert.match(await page.textContent('.portfolioEmpty'), /美金分析/);
+    await page.waitForSelector('.portfolioSummary');
     assert.equal(await page.locator('[data-portfolio-market]').count(), 0, '進的是美金分析，不是股票台帳');
+    assert.match(await page.textContent('.portfolioEmpty'), /還沒有美金交易/);
+
+    const addUsd = async (kind, usd, rate) => {
+      await page.click('.fab');
+      await page.waitForSelector('#usdform');
+      await page.selectOption('#usdKind', kind);
+      await page.fill('#usdAmount', usd);
+      await page.fill('#usdRate', rate);
+      await page.click('#usdSave');
+      await page.waitForSelector('#usdform', { state: 'detached', timeout: 10_000 });
+      await settle();
+    };
+
+    // 台幣欄空著就用美元×匯率換算：1,000 × 30 = 30,000
+    await addUsd('buy', '1000', '30');
+    await addUsd('buy', '1000', '32');
+    const summary = await page.textContent('.portfolioSummary');
+    assert.match(summary, /US\$ 2,000\.00/, '目前美元部位要是兩筆相加');
+    assert.match(summary, /加權平均成本 31\.000/, '成本走移動加權平均');
+    assert.match(summary, /NT\$ 62,000/, '剩餘成本＝30,000＋32,000');
+    assert.equal(await page.locator('.portfolioTx').count(), 2);
+
+    // 賣 500 美元 @33：成本 31×500=15,500，收到 16,500，已實現 +1,000
+    await addUsd('sell', '500', '33');
+    const afterSell = await page.textContent('.portfolioSummary');
+    assert.match(afterSell, /US\$ 1,500\.00/, '賣掉之後部位要減少');
+    assert.match(afterSell, /已實現匯兌損益NT\$ 1,000/, '已實現損益 1,000');
+    assert.equal(await page.evaluate(() => globalThis.__fake.db.usd_transactions.length), 3);
+    // 美金的買賣不碰資產頁：不會多出任何一列 financial_items
+    assert.equal(await page.evaluate(() =>
+      globalThis.__fake.db.financial_items.filter(item => item.category === '美金').length), 0);
+
+    await page.click('[data-delete-usd-tx]');
+    await settle();
+    assert.equal(await page.locator('.portfolioTx').count(), 2, '刪掉一筆之後只剩兩筆');
 
     await page.goBack();
     await page.waitForSelector('.fab');
