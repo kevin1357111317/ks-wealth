@@ -11,6 +11,17 @@
 .trendHead h2{margin:3px 0 0;font-size:18px}
 .trendToggle{min-width:44px;min-height:28px;padding:0 9px;border:1px solid #3a4251;border-radius:10px;background:#1b202b;color:#eef0f5;font-size:11px;font-weight:850}
 .trend svg{overflow:visible}
+.trendPlot{position:relative;-webkit-user-select:none;user-select:none}
+.trendChart{display:block;width:100%;height:auto;touch-action:manipulation}
+.trendChartHit{cursor:crosshair;pointer-events:all}
+.trendSelection{pointer-events:none}
+.trendSelection[hidden]{display:none}
+.trend svg .trendGuide{stroke:#c99545!important;stroke-width:2;stroke-dasharray:5 5;opacity:.72}
+.trendDotHalo{fill:#fff7dc;opacity:.82}
+.trendDot{fill:#efb653;stroke:#fffdf6;stroke-width:3}
+.trendTooltipBox{fill:rgba(255,253,247,.94);stroke:#c7ddd6;stroke-width:1.5;filter:drop-shadow(0 5px 8px rgba(57,78,72,.22))}
+.trend svg .trendTooltipDate{fill:#776f68!important;font-size:13px;font-weight:650}
+.trend svg .trendTooltipValue{fill:#4b3028!important;font-size:17px;font-weight:850}
 .distributionActions{display:flex;align-items:center;gap:8px}
 .distributionToggle{min-width:44px;min-height:28px;padding:0 9px;border:1px solid #3a4251;border-radius:10px;background:#1b202b;color:#eef0f5;font-size:11px;font-weight:850}
 .personSeg{margin:0 0 14px}
