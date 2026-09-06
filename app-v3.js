@@ -193,7 +193,7 @@ function clearTrendPoint() {
 
 function showTrendPoint(event, svg) {
   if (!currentTrendSeries.length) return;
-  const bounds = svg.getBoundingClientRect();
+  const bounds = trendDrag?.chart === svg ? trendDrag.bounds : svg.getBoundingClientRect();
   if (!bounds.width) return;
   const svgX = (event.clientX - bounds.left) / bounds.width * 680;
   const ratio = Math.max(0, Math.min(1, (svgX - 112) / 552));
@@ -201,6 +201,8 @@ function showTrendPoint(event, svg) {
   const point = currentTrendSeries[index];
   const selection = svg.querySelector('[data-trend-selection]');
   if (!point || !selection) return;
+  if (!selection.hasAttribute('hidden') && selection.dataset.index === String(index)) return;
+  selection.dataset.index = String(index);
 
   const tooltipX = Math.max(109, Math.min(571, point.chartX));
   const tooltipY = point.chartY > 88 ? point.chartY - 68 : point.chartY + 14;
@@ -999,6 +1001,9 @@ root.addEventListener('pointerdown', event => {
     startX: event.clientX,
     startY: event.clientY,
     active: false,
+    bounds: chart.getBoundingClientRect(),
+    frame: null,
+    clientX: event.clientX,
   };
   chart.setPointerCapture?.(event.pointerId);
 });
@@ -1017,11 +1022,21 @@ root.addEventListener('pointermove', event => {
     trendDrag.active = true;
   }
   event.preventDefault();
-  showTrendPoint(event, trendDrag.chart);
+  const drag = trendDrag;
+  drag.clientX = event.clientX;
+  if (drag.frame === null) {
+    drag.frame = requestAnimationFrame(() => {
+      drag.frame = null;
+      if (trendDrag === drag && drag.chart.isConnected) {
+        showTrendPoint({ clientX: drag.clientX }, drag.chart);
+      }
+    });
+  }
 });
 
 root.addEventListener('pointerup', event => {
   if (!trendDrag || trendDrag.pointerId !== event.pointerId) return;
+  if (trendDrag.frame !== null) cancelAnimationFrame(trendDrag.frame);
   if (trendDrag.active) showTrendPoint(event, trendDrag.chart);
   trendDrag.chart.releasePointerCapture?.(event.pointerId);
   trendDrag = null;
@@ -1029,6 +1044,7 @@ root.addEventListener('pointerup', event => {
 
 root.addEventListener('pointercancel', event => {
   if (!trendDrag || trendDrag.pointerId !== event.pointerId) return;
+  if (trendDrag.frame !== null) cancelAnimationFrame(trendDrag.frame);
   trendDrag = null;
 });
 
