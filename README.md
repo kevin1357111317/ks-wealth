@@ -135,6 +135,24 @@ FIFO 與加權平均會給出不同答案的案例，改回平均成本就會被
 這是公開市場資料，登入後可讀；寫入的函式對 `public` / `anon` / `authenticated` 都撤銷執行權限
 （否則任何登入者都能觸發對外抓取），要更新清單時用管理連線手動 `select refresh_tw_stock_names();`。
 
+## 趨勢圖的手勢
+
+刮動趨勢圖的監聽器**不掛在 `#root` 上**。WebKit 會把「有 non-passive `pointermove` 監聽器」
+的範圍整塊標成主執行緒捲動區 —— 捲動前每一個 move 都得先回 JS 問過才交給合成器。掛在 `#root`
+等於整個 App 都是。
+
+現在的做法：
+
+- 平常只有圖表自己一個 **passive** 的 `pointerdown`（`bindTrendChart()`，每次 render 重掛）
+- `pointermove` / `pointerup` / `pointercancel` 只在真的在拖曳的那幾百毫秒掛在 `window` 上，
+  放開、或判斷成直向手勢，就整組收掉
+- `pointermove` 裡**不呼叫 `preventDefault()`**：`.trendChart` 的 `touch-action: pan-y`
+  已經擋掉橫向平移，擋了反而讓監聽器變成 non-passive
+- `setPointerCapture()` 要等確認是橫向手勢才抓。還沒判斷出方向就抓，等於先擋住捲動再放掉
+
+`tests/trend-chart.test.mjs` 會直接用 CDP 讀 `window` / `#root` / 圖表上的監聽器來守這件事，
+順便確認刮動本身、以及從圖表上往上滑還捲得動頁面。
+
 ## 行情額度與共用快取
 
 這個 Supabase 專案同時服務兩個 App：本專案與 KLFAN（`KLFAN-stock-tracker`），兩邊共用同一把

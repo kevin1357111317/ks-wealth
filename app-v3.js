@@ -601,6 +601,7 @@ function shell(body, title, showAdd = false) {
   root.className = 'app';
   root.innerHTML = `<header class="topbar"><div class="brand"><div class="logo">KS</div><div><h1>${title}</h1></div></div><div class="headActions"><button class="iconBtn" id="mask" title="隱藏金額">${masked ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a21.86 21.86 0 0 1 5.06-6.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a21.86 21.86 0 0 1-2.16 3.19M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>' : '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>'}</button><button class="iconBtn avatar" id="logout" title="登出">${escapeHtml(String(session.user.user_metadata?.display_name || session.user.email || 'KS').slice(0, 2))}</button></div></header><div class="status ${quoteStatus}"><i></i><span data-status-text>${quoteStatusCopy()}</span><button id="reload" ${quoteStatus === 'updating' ? 'disabled' : ''}>${quoteStatus === 'updating' ? '更新中' : '更新行情'}</button></div><main class="content">${body}</main>${showAdd ? '<button class="fab" id="add" aria-label="新增財務項目">＋</button>' : ''}<nav class="bottomNav">${tabs.map(item => `<button data-tab="${item[0]}" class="${tab === item[0] ? 'on' : ''}" aria-label="${item[2]}"><span>${item[1]}</span></button>`).join('')}</nav>`;
 
+  bindTrendChart(root.querySelector('[data-trend-chart]'));
   root.querySelector('#logout').onclick = () => sb.auth.signOut();
   root.querySelector('#reload').onclick = () => refreshQuotes({ force: true });
   root.querySelector('#mask').onclick = () => { masked = !masked; render(); };
@@ -992,9 +993,30 @@ function render() {
   else personPage(tab);
 }
 
-root.addEventListener('pointerdown', event => {
-  const chart = event.target.closest('[data-trend-chart]');
-  if (!chart) return;
+// WebKit 會把「有 non-passive pointermove 監聽器」的範圍整塊標成主執行緒捲動區，
+// 捲動前每一個 move 都要先回 JS 問過才交給合成器。這幾個監聽器本來掛在 #root 上，
+// 等於整個 App 都是。改成：平常只有圖表自己有一個 passive 的 pointerdown，
+// move／up／cancel 只在真的在拖曳的那幾百毫秒內存在。
+function bindTrendChart(chart) {
+  if (chart) chart.addEventListener('pointerdown', beginTrendDrag, { passive: true });
+}
+
+function endTrendDrag() {
+  window.removeEventListener('pointermove', moveTrendDrag);
+  window.removeEventListener('pointerup', finishTrendDrag);
+  window.removeEventListener('pointercancel', abortTrendDrag);
+  if (!trendDrag) return;
+  if (trendDrag.frame !== null) cancelAnimationFrame(trendDrag.frame);
+  // 只有確認成橫向手勢時才抓過 capture；沒抓過就放，pointercancel 之後會丟 NotFoundError。
+  if (trendDrag.active) {
+    try { trendDrag.chart.releasePointerCapture?.(trendDrag.pointerId); } catch { /* 指標已經沒了 */ }
+  }
+  trendDrag = null;
+}
+
+function beginTrendDrag(event) {
+  const chart = event.currentTarget;
+  if (trendDrag) endTrendDrag();
   trendDrag = {
     chart,
     pointerId: event.pointerId,
@@ -1005,23 +1027,26 @@ root.addEventListener('pointerdown', event => {
     frame: null,
     clientX: event.clientX,
   };
-  chart.setPointerCapture?.(event.pointerId);
-});
+  // 監聽掛在 window 上：手指滑出圖表外面時還要跟得住。
+  window.addEventListener('pointermove', moveTrendDrag, { passive: true });
+  window.addEventListener('pointerup', finishTrendDrag);
+  window.addEventListener('pointercancel', abortTrendDrag);
+}
 
-root.addEventListener('pointermove', event => {
+function moveTrendDrag(event) {
   if (!trendDrag || trendDrag.pointerId !== event.pointerId) return;
   const deltaX = event.clientX - trendDrag.startX;
   const deltaY = event.clientY - trendDrag.startY;
   if (!trendDrag.active) {
     if (Math.abs(deltaX) < 5 && Math.abs(deltaY) < 5) return;
-    if (Math.abs(deltaY) > Math.abs(deltaX)) {
-      trendDrag.chart.releasePointerCapture?.(event.pointerId);
-      trendDrag = null;
-      return;
-    }
+    // 直的就是要捲頁，把整組監聽收掉讓瀏覽器自己處理。
+    if (Math.abs(deltaY) > Math.abs(deltaX)) return endTrendDrag();
     trendDrag.active = true;
+    // 確定是橫向才抓 pointer capture：還沒判斷出方向就抓，等於先擋住捲動再放掉。
+    trendDrag.chart.setPointerCapture?.(event.pointerId);
   }
-  event.preventDefault();
+  // 這裡不用 preventDefault()：.trendChart 的 touch-action: pan-y 已經擋掉橫向平移，
+  // 而擋了反而讓監聽器變成 non-passive，捲動就得等 JS。
   const drag = trendDrag;
   drag.clientX = event.clientX;
   if (drag.frame === null) {
@@ -1032,21 +1057,19 @@ root.addEventListener('pointermove', event => {
       }
     });
   }
-});
+}
 
-root.addEventListener('pointerup', event => {
+function finishTrendDrag(event) {
   if (!trendDrag || trendDrag.pointerId !== event.pointerId) return;
-  if (trendDrag.frame !== null) cancelAnimationFrame(trendDrag.frame);
-  if (trendDrag.active) showTrendPoint(event, trendDrag.chart);
-  trendDrag.chart.releasePointerCapture?.(event.pointerId);
-  trendDrag = null;
-});
+  const drag = trendDrag;
+  endTrendDrag();
+  if (drag.active) showTrendPoint(event, drag.chart);
+}
 
-root.addEventListener('pointercancel', event => {
+function abortTrendDrag(event) {
   if (!trendDrag || trendDrag.pointerId !== event.pointerId) return;
-  if (trendDrag.frame !== null) cancelAnimationFrame(trendDrag.frame);
-  trendDrag = null;
-});
+  endTrendDrag();
+}
 
 root.addEventListener('click', event => {
   const trendChartElement = event.target.closest('[data-trend-chart]');
