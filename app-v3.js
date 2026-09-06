@@ -81,6 +81,7 @@ let portfolioMarket = 'all';
 let portfolioShowExited = false;
 let openGroups = new Set();
 let trendMode = 'value';
+let currentTrendSeries = [];
 const pageKind = { husband: 'asset', wife: 'asset' };
 const distributionMode = { dashboard: 'asset', husband: 'asset', wife: 'asset' };
 
@@ -133,8 +134,16 @@ function chartDate(value) {
   return `${Number(month)}/${Number(day)}`;
 }
 
+function chartFullDate(value) {
+  const [year, month, day] = String(value).split('-');
+  return `${year}/${Number(month)}/${Number(day)}`;
+}
+
 function trendChart(rows) {
-  if (!rows.length) return '';
+  if (!rows.length) {
+    currentTrendSeries = [];
+    return '';
+  }
   const firstValue = toFiniteNumber(rows[0].total_twd);
   const lastValue = toFiniteNumber(rows.at(-1).total_twd);
   const delta = lastValue - firstValue;
@@ -155,6 +164,11 @@ function trendChart(rows) {
   const high = rawHigh + padding;
   const x = index => 112 + index / Math.max(1, series.length - 1) * 552;
   const y = value => 22 + (high - value) / Math.max(1, high - low) * 164;
+  currentTrendSeries = series.map((row, index) => ({
+    ...row,
+    chartX: x(index),
+    chartY: y(row.plotValue),
+  }));
   const points = series.map((row, index) => `${index ? 'L' : 'M'}${x(index)},${y(row.plotValue)}`).join(' ');
   const axis = [0, 0.25, 0.5, 0.75, 1].map(step => {
     const value = high - (high - low) * step;
@@ -169,7 +183,38 @@ function trendChart(rows) {
     return `<line x1="${tickX}" y1="22" x2="${tickX}" y2="190" stroke="#252c39" stroke-width="1" stroke-dasharray="5 7"/><text x="${tickX}" y="222" text-anchor="middle" fill="#8d96a6" font-size="18">${chartDate(series[index].recorded_on)}</text>`;
   }).join('');
 
-  return `<section class="panel trend scopeTrend"><div class="trendHead"><h2>淨資產趨勢</h2><button class="trendToggle" data-trend-toggle>${trendMode === 'value' ? '%' : 'NT$'}</button></div><div class="trendChange ${tone}"><b>${delta > 0 ? '+' : ''}${formatNumber(delta)}</b><span>${delta > 0 ? '+' : ''}${percent.toFixed(2)}%</span></div><svg viewBox="0 0 680 236" aria-label="淨資產趨勢">${axis}${dateTicks}<path d="${points}" fill="none" stroke="${color}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg></section>`;
+  return `<section class="panel trend scopeTrend"><div class="trendHead"><h2>淨資產趨勢</h2><button class="trendToggle" data-trend-toggle>${trendMode === 'value' ? '%' : 'NT$'}</button></div><div class="trendChange ${tone}"><b>${delta > 0 ? '+' : ''}${formatNumber(delta)}</b><span>${delta > 0 ? '+' : ''}${percent.toFixed(2)}%</span></div><div class="trendPlot"><svg class="trendChart" data-trend-chart viewBox="0 0 680 236" aria-label="淨資產趨勢，點選折線可查看日期與金額">${axis}${dateTicks}<path d="${points}" fill="none" stroke="${color}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><rect class="trendChartHit" x="106" y="8" width="558" height="190" fill="transparent"/><g class="trendSelection" data-trend-selection hidden><line class="trendGuide" data-trend-guide y1="12" y2="190"/><circle class="trendDotHalo" data-trend-dot-halo r="12"/><circle class="trendDot" data-trend-dot r="6"/><g class="trendTooltip" data-trend-tooltip><rect class="trendTooltipBox" x="-105" y="0" width="210" height="56" rx="13"/><text class="trendTooltipDate" data-trend-tooltip-date x="0" y="20" text-anchor="middle"></text><text class="trendTooltipValue" data-trend-tooltip-value x="0" y="43" text-anchor="middle"></text></g></g></svg></div></section>`;
+}
+
+function clearTrendPoint() {
+  root.querySelector('[data-trend-selection]')?.setAttribute('hidden', '');
+}
+
+function showTrendPoint(event, svg) {
+  if (!currentTrendSeries.length) return;
+  const bounds = svg.getBoundingClientRect();
+  if (!bounds.width) return;
+  const svgX = (event.clientX - bounds.left) / bounds.width * 680;
+  const ratio = Math.max(0, Math.min(1, (svgX - 112) / 552));
+  const index = Math.round(ratio * Math.max(0, currentTrendSeries.length - 1));
+  const point = currentTrendSeries[index];
+  const selection = svg.querySelector('[data-trend-selection]');
+  if (!point || !selection) return;
+
+  const tooltipX = Math.max(109, Math.min(571, point.chartX));
+  const tooltipY = point.chartY > 88 ? point.chartY - 68 : point.chartY + 14;
+  selection.removeAttribute('hidden');
+  selection.querySelector('[data-trend-guide]').setAttribute('x1', point.chartX);
+  selection.querySelector('[data-trend-guide]').setAttribute('x2', point.chartX);
+  selection.querySelector('[data-trend-dot-halo]').setAttribute('cx', point.chartX);
+  selection.querySelector('[data-trend-dot-halo]').setAttribute('cy', point.chartY);
+  selection.querySelector('[data-trend-dot]').setAttribute('cx', point.chartX);
+  selection.querySelector('[data-trend-dot]').setAttribute('cy', point.chartY);
+  selection.querySelector('[data-trend-tooltip]').setAttribute('transform', `translate(${tooltipX} ${tooltipY})`);
+  selection.querySelector('[data-trend-tooltip-date]').textContent = chartFullDate(point.recorded_on);
+  selection.querySelector('[data-trend-tooltip-value]').textContent = masked
+    ? 'NT$ ••••••'
+    : `NT$ ${integerFormatter.format(Math.round(toFiniteNumber(point.total_twd)))}`;
 }
 
 function familyTrendRows(currentNetWorth) {
@@ -945,6 +990,12 @@ function render() {
 }
 
 root.addEventListener('click', event => {
+  const trendChartElement = event.target.closest('[data-trend-chart]');
+  if (trendChartElement) {
+    showTrendPoint(event, trendChartElement);
+    return;
+  }
+  clearTrendPoint();
   if (event.target.closest('[data-trend-toggle]')) {
     trendMode = trendMode === 'value' ? 'percent' : 'value';
     render();
