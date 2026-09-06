@@ -82,6 +82,7 @@ let portfolioShowExited = false;
 let openGroups = new Set();
 let trendMode = 'value';
 let currentTrendSeries = [];
+let trendDrag = null;
 const pageKind = { husband: 'asset', wife: 'asset' };
 const distributionMode = { dashboard: 'asset', husband: 'asset', wife: 'asset' };
 
@@ -988,6 +989,48 @@ function render() {
   if (tab === 'dashboard') dashboard();
   else personPage(tab);
 }
+
+root.addEventListener('pointerdown', event => {
+  const chart = event.target.closest('[data-trend-chart]');
+  if (!chart) return;
+  trendDrag = {
+    chart,
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    active: false,
+  };
+  chart.setPointerCapture?.(event.pointerId);
+});
+
+root.addEventListener('pointermove', event => {
+  if (!trendDrag || trendDrag.pointerId !== event.pointerId) return;
+  const deltaX = event.clientX - trendDrag.startX;
+  const deltaY = event.clientY - trendDrag.startY;
+  if (!trendDrag.active) {
+    if (Math.abs(deltaX) < 5 && Math.abs(deltaY) < 5) return;
+    if (Math.abs(deltaY) > Math.abs(deltaX)) {
+      trendDrag.chart.releasePointerCapture?.(event.pointerId);
+      trendDrag = null;
+      return;
+    }
+    trendDrag.active = true;
+  }
+  event.preventDefault();
+  showTrendPoint(event, trendDrag.chart);
+});
+
+root.addEventListener('pointerup', event => {
+  if (!trendDrag || trendDrag.pointerId !== event.pointerId) return;
+  if (trendDrag.active) showTrendPoint(event, trendDrag.chart);
+  trendDrag.chart.releasePointerCapture?.(event.pointerId);
+  trendDrag = null;
+});
+
+root.addEventListener('pointercancel', event => {
+  if (!trendDrag || trendDrag.pointerId !== event.pointerId) return;
+  trendDrag = null;
+});
 
 root.addEventListener('click', event => {
   const trendChartElement = event.target.closest('[data-trend-chart]');
