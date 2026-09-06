@@ -12,8 +12,8 @@
 .trendToggle{min-width:44px;min-height:28px;padding:0 9px;border:1px solid #3a4251;border-radius:10px;background:#1b202b;color:#eef0f5;font-size:11px;font-weight:850}
 .trend svg{overflow:visible}
 .trendPlot{position:relative;-webkit-user-select:none;user-select:none}
-.trendChart{display:block;width:100%;height:auto;touch-action:manipulation}
-.trendChartHit{cursor:crosshair;pointer-events:all}
+.trendChart{display:block;width:100%;height:auto;touch-action:pan-y;-webkit-tap-highlight-color:transparent}
+.trendChartHit{cursor:ew-resize;pointer-events:all}
 .trendSelection{pointer-events:none}
 .trendSelection[hidden]{display:none}
 .trend svg .trendGuide{stroke:#c99545!important;stroke-width:2;stroke-dasharray:5 5;opacity:.72}
