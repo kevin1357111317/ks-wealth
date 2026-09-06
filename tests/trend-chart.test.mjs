@@ -69,6 +69,7 @@ db.net_worth_history = ${JSON.stringify(history)};`;
   });
   const selected = () => page.evaluate(() => {
     const selection = document.querySelector('[data-trend-selection]');
+    if (!selection) return null;
     return selection.hasAttribute('hidden') ? null : Number(selection.dataset.index);
   });
   const listenerTypes = async expression => {
@@ -119,16 +120,61 @@ db.net_worth_history = ${JSON.stringify(history)};`;
     assert.equal(await selected(), before, '沒有按著就不該更新提示框');
   });
 
-  await t.test('直向拖曳交還給瀏覽器捲動，不會被圖表吃掉', async () => {
+  // 手指按下去的第一個取樣幾乎都是斜的。以前只要那一下 |dx| > |dy|，就當成橫向刮動
+  // latch 住並抓走 pointer capture —— 之後不管手指往上滑多遠，WebKit 都收不回這個手勢，
+  // 整頁就被釘住捲不動。而且會不會中招完全看第一個取樣，所以是「有時候會有時候不會」。
+  const swipeUp = async (firstDx, firstDy) => {
     await page.evaluate(() => window.scrollTo(0, 0));
-    await page.waitForTimeout(150);
-    await touch('touchStart', box.x + box.width / 2, midY);
-    for (let step = 1; step <= 16; step += 1) await touch('touchMove', box.x + box.width / 2, midY - step * 12);
-    await touch('touchEnd', box.x + box.width / 2, midY - 192);
+    await page.waitForTimeout(200);
+    const x = box.x + box.width / 2;
+    await touch('touchStart', x, midY);
+    await touch('touchMove', x + firstDx, midY + firstDy);
+    await page.waitForTimeout(30);
+    const latched = await selected() !== null;
+    for (let step = 1; step <= 18; step += 1) await touch('touchMove', x + firstDx, midY + firstDy - step * 14);
+    await touch('touchEnd', x + firstDx, midY + firstDy - 252);
     await page.waitForTimeout(400);
-    assert.ok(await page.evaluate(() => window.scrollY) > 100, '從圖表上往上滑要能捲動頁面');
+    return { latched, scrolled: await page.evaluate(() => window.scrollY) };
+  };
+
+  await t.test('第一個取樣是斜的也不會被誤判成刮動', async () => {
+    for (const [dx, dy] of [[2, -8], [8, -6], [7, -6], [9, -9]]) {
+      await page.evaluate(() => document.querySelector('[data-trend-selection]').setAttribute('hidden', ''));
+      const { latched, scrolled } = await swipeUp(dx, dy);
+      assert.equal(latched, false, `第一個 move (${dx},${dy}) 之後就 latch 住了，往上滑會被釘住`);
+      assert.ok(scrolled > 100, `第一個 move (${dx},${dy}) 的往上滑要捲得動，實際只捲了 ${scrolled}px`);
+    }
+  });
+
+  await t.test('直向拖曳交還給瀏覽器捲動，不會被圖表吃掉', async () => {
+    const { scrolled } = await swipeUp(0, 0);
+    assert.ok(scrolled > 100, `從圖表上往上滑要能捲動頁面，實際 ${scrolled}px`);
     assert.equal((await listenerTypes('window')).filter(type => type.startsWith('pointermove')).length, 0,
       '判斷成直向之後也要把監聽器收掉');
+  });
+
+  await t.test('完全不抓 pointer capture', async () => {
+    // 抓了 capture，瀏覽器就沒辦法在中途收回手勢去捲頁 —— 一旦方向判斷錯，整頁就釘住。
+    // touch-action: pan-y 已經把橫向留給我們、直向留給瀏覽器，不需要 capture。
+    // 前面的測試把頁面捲下去了，圖表已經不在原本那個座標上。
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.waitForTimeout(250);
+    const chartBox = await page.locator('[data-trend-chart]').boundingBox();
+    const chartY = chartBox.y + chartBox.height / 2;
+    await page.evaluate(() => {
+      globalThis.__captured = 0;
+      const original = Element.prototype.setPointerCapture;
+      Element.prototype.setPointerCapture = function patched(...args) {
+        globalThis.__captured += 1;
+        return original.apply(this, args);
+      };
+    });
+    await touch('touchStart', chartBox.x + 20, chartY);
+    for (let step = 1; step <= 10; step += 1) await touch('touchMove', chartBox.x + 20 + step * 25, chartY);
+    await touch('touchEnd', chartBox.x + 270, chartY);
+    await page.waitForTimeout(200);
+    assert.ok(await selected() > 100, '這一下要真的被當成橫向刮動，否則測不到重點');
+    assert.equal(await page.evaluate(() => globalThis.__captured), 0, '刮動全程都不該呼叫 setPointerCapture');
   });
 
   assert.deepEqual(failures, [], '瀏覽器不該有錯誤');
