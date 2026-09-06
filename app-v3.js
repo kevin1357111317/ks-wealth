@@ -997,6 +997,9 @@ function render() {
 // 捲動前每一個 move 都要先回 JS 問過才交給合成器。這幾個監聽器本來掛在 #root 上，
 // 等於整個 App 都是。改成：平常只有圖表自己有一個 passive 的 pointerdown，
 // move／up／cancel 只在真的在拖曳的那幾百毫秒內存在。
+// 判斷方向前至少要移動這麼多像素，一個取樣點不算數。
+const TREND_AXIS_SLOP = 10;
+
 function bindTrendChart(chart) {
   if (chart) chart.addEventListener('pointerdown', beginTrendDrag, { passive: true });
 }
@@ -1007,10 +1010,6 @@ function endTrendDrag() {
   window.removeEventListener('pointercancel', abortTrendDrag);
   if (!trendDrag) return;
   if (trendDrag.frame !== null) cancelAnimationFrame(trendDrag.frame);
-  // 只有確認成橫向手勢時才抓過 capture；沒抓過就放，pointercancel 之後會丟 NotFoundError。
-  if (trendDrag.active) {
-    try { trendDrag.chart.releasePointerCapture?.(trendDrag.pointerId); } catch { /* 指標已經沒了 */ }
-  }
   trendDrag = null;
 }
 
@@ -1038,15 +1037,17 @@ function moveTrendDrag(event) {
   const deltaX = event.clientX - trendDrag.startX;
   const deltaY = event.clientY - trendDrag.startY;
   if (!trendDrag.active) {
-    if (Math.abs(deltaX) < 5 && Math.abs(deltaY) < 5) return;
-    // 直的就是要捲頁，把整組監聽收掉讓瀏覽器自己處理。
-    if (Math.abs(deltaY) > Math.abs(deltaX)) return endTrendDrag();
+    // 直的先跨過門檻，就是要捲頁，把整組監聽收掉讓瀏覽器自己處理。
+    if (Math.abs(deltaY) >= TREND_AXIS_SLOP && Math.abs(deltaY) >= Math.abs(deltaX)) return endTrendDrag();
+    // 橫的要「明顯」贏才算刮動。手指按下去的第一個取樣幾乎都是斜的，拿單一取樣去比
+    // |dx| > |dy| 的話，明明是往上滑也會被判成刮動、整個手勢就被圖表吃掉。
+    // 兩邊都還沒跨過門檻就先不決定，等下一個取樣。
+    if (Math.abs(deltaX) < TREND_AXIS_SLOP || Math.abs(deltaX) <= Math.abs(deltaY) * 1.5) return;
     trendDrag.active = true;
-    // 確定是橫向才抓 pointer capture：還沒判斷出方向就抓，等於先擋住捲動再放掉。
-    trendDrag.chart.setPointerCapture?.(event.pointerId);
   }
-  // 這裡不用 preventDefault()：.trendChart 的 touch-action: pan-y 已經擋掉橫向平移，
-  // 而擋了反而讓監聽器變成 non-passive，捲動就得等 JS。
+  // 不抓 pointer capture、也不 preventDefault()：.trendChart 的 touch-action: pan-y
+  // 已經把橫向留給我們、直向留給瀏覽器。抓了 capture 反而讓瀏覽器沒辦法在中途收回這個
+  // 手勢去捲頁 —— 一旦判斷錯方向，整頁就被釘住捲不動。
   const drag = trendDrag;
   drag.clientX = event.clientX;
   if (drag.frame === null) {
