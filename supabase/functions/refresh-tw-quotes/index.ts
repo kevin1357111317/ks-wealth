@@ -237,6 +237,22 @@ Deno.serve(async (req: Request) => {
     goldError = "twelve_key_missing";
   }
 
+  // financial_items 的 fx_rate_twd 有兩個寫入者：這支函式（一輪只用一個 fxRate），
+  // 以及 sync_klfan_financial_item() 觸發器 —— 它讀的是 klfan_fx_daily 最新那一列。
+  // 兩邊各自取數，同一輪就會在 financial_items 留下兩個不同的匯率：2026-09-07 08:45
+  // 美股是 31.61732、黃金與美元現金是 31.62785，差 0.03%。
+  // 先把這一輪要用的匯率寫進 klfan_fx_daily，觸發器才會跟著同一個數字走。
+  let fxDailyError: string | null = null;
+  if (cache && fxRate !== null) {
+    const taipeiToday = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(new Date());
+    const { error } = await cache
+      .from("klfan_fx_daily")
+      .upsert({ fx_date: taipeiToday, rate: fxRate }, { onConflict: "fx_date" });
+    if (error) fxDailyError = error.message;
+  }
+
   const quotes = new Map([...twEntries, ...usEntries]);
   const results = [];
 
@@ -380,7 +396,7 @@ Deno.serve(async (req: Request) => {
     source: "fugle+twelve_data",
     requestedAt: new Date().toISOString(),
     cache: { read: cachedUs.size + (cachedFx === null ? 0 : 1), write: cacheWrite, error: cacheError },
-    fx: { symbol: "USD/TWD", rate: fxRate, error: fxError },
+    fx: { symbol: "USD/TWD", rate: fxRate, error: fxError, dailyError: fxDailyError },
     gold: { symbol: "XAU/USD", price: xauUsd, error: goldError, cached: goldCached },
     updated: results.filter((x) => x.status === "updated").length,
     priceOnly: results.filter((x) => x.status === "price_only").length,

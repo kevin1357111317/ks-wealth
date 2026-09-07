@@ -59,6 +59,8 @@ async function refresh({ cache, gold = null, twelveBudget = 8 }) {
   let stored = cache;
   let storedGold = gold;   // ks_quote_cache 裡的 XAU/USD，null = 沒有或已過期
   const used = { fugle: 0, twelve: 0 };
+  const written = [];      // 這一輪往 financial_items 寫進去的每一筆
+  let fxDaily = null;      // 寫進 klfan_fx_daily 的那一列
 
   const factory = () => ({
     auth: { getUser: () => Promise.resolve({ data: { user: { id: 'user-1' } }, error: null }) },
@@ -68,9 +70,13 @@ async function refresh({ cache, gold = null, twelveBudget = 8 }) {
         if (table === 'ks_quote_cache') return { eq: () => ({ maybeSingle: () => Promise.resolve({ data: storedGold, error: null }) }) };
         return Promise.resolve({ data: stored, error: null });
       },
-      update: () => ({ eq: () => Promise.resolve({ error: null }) }),
+      update: (patch) => ({ eq: (_column, id) => {
+        if (table === 'financial_items') written.push({ id, ...patch });
+        return Promise.resolve({ error: null });
+      } }),
       upsert: (rows) => {
         if (table === 'ks_quote_cache') storedGold = { ...rows };
+        else if (table === 'klfan_fx_daily') fxDaily = { ...rows };
         else stored = rows.map(r => ({ ...r }));
         return Promise.resolve({ error: null });
       },
@@ -98,7 +104,7 @@ async function refresh({ cache, gold = null, twelveBudget = 8 }) {
   try {
     fn.__stub(factory, ENV);
     const body = await (await fn.handler(new Request('https://x/fn', { method: 'POST', headers: { Authorization: 'Bearer tok' }, body: '{}' }))).json();
-    return { body, used, stored, storedGold };
+    return { body, used, stored, storedGold, written, fxDaily };
   } finally {
     globalThis.fetch = realFetch;
   }
@@ -167,4 +173,28 @@ test('金價快取過期就重抓', async () => {
   assert.equal(used.twelve, 1, '只有 XAU/USD 要重抓');
   assert.equal(body.gold.price, XAU, '不該沿用過期的 4000');
   assert.equal(body.gold.cached, false);
+});
+
+test('一輪只用一個匯率，而且觸發器讀的那張表也跟著同一個數字', async () => {
+  // financial_items 的 fx_rate_twd 有兩個寫入者：這支函式，以及讀 klfan_fx_daily 的
+  // sync_klfan_financial_item() 觸發器。兩邊各自取數的話，同一輪會在資料庫裡留下兩個
+  // 不同的匯率 —— 2026-09-07 08:45 美股 31.61732、黃金與美元現金 31.62785 就是這樣。
+  const { written, fxDaily, body } = await refresh({ cache: cacheRows(60_000) });
+
+  const usdRates = [...new Set(written.filter(row => row.fx_rate_twd > 1).map(row => Number(row.fx_rate_twd)))];
+  assert.equal(usdRates.length, 1, `一輪裡所有 USD 項目要共用一個匯率，實際有 ${usdRates.join('、')}`);
+  assert.equal(usdRates[0], FX);
+  // 美股、美元現金、黃金三種路徑都要走到，不然這條測試沒測到重點
+  assert.ok(written.filter(row => row.fx_rate_twd > 1).length >= 5);
+
+  assert.ok(fxDaily, '要把這一輪的匯率寫進 klfan_fx_daily，觸發器才會跟著走');
+  assert.equal(Number(fxDaily.rate), FX, 'klfan_fx_daily 要跟這一輪用的匯率一致');
+  assert.match(fxDaily.fx_date, /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(body.fx.dailyError, null);
+});
+
+test('匯率抓不到就不要動 klfan_fx_daily', async () => {
+  // 匯率是 null 的時候寫下去會把觸發器的來源弄壞，寧可讓它留著昨天的。
+  const { fxDaily } = await refresh({ cache: [], twelveBudget: 0 });
+  assert.equal(fxDaily, null);
 });
