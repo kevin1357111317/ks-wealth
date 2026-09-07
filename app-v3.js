@@ -1010,6 +1010,10 @@ function endTrendDrag() {
   window.removeEventListener('pointercancel', abortTrendDrag);
   if (!trendDrag) return;
   if (trendDrag.frame !== null) cancelAnimationFrame(trendDrag.frame);
+  // 只有 active 之後才抓過 capture；沒抓過就放、或指標已經消失了，都會丟 NotFoundError。
+  if (trendDrag.active) {
+    try { trendDrag.chart.releasePointerCapture?.(trendDrag.pointerId); } catch { /* 指標已經沒了 */ }
+  }
   trendDrag = null;
 }
 
@@ -1044,10 +1048,14 @@ function moveTrendDrag(event) {
     // 兩邊都還沒跨過門檻就先不決定，等下一個取樣。
     if (Math.abs(deltaX) < TREND_AXIS_SLOP || Math.abs(deltaX) <= Math.abs(deltaY) * 1.5) return;
     trendDrag.active = true;
+    // 確定是刮動了才抓 pointer capture。touch-action: pan-y 是「直向永遠讓給瀏覽器」，
+    // 橫著刮的時候手指一定會上下抖，不抓的話瀏覽器會半路把手勢收去捲頁、丟一個
+    // pointercancel 過來，提示框就停在那裡不動了。
+    // 反過來說也只能等到這裡才抓：還沒確定方向就抓，判斷錯的時候整頁會捲不動。
+    trendDrag.chart.setPointerCapture?.(event.pointerId);
   }
-  // 不抓 pointer capture、也不 preventDefault()：.trendChart 的 touch-action: pan-y
-  // 已經把橫向留給我們、直向留給瀏覽器。抓了 capture 反而讓瀏覽器沒辦法在中途收回這個
-  // 手勢去捲頁 —— 一旦判斷錯方向，整頁就被釘住捲不動。
+  // 不 preventDefault()：橫向本來就被 touch-action: pan-y 擋掉了，擋了只是讓監聽器
+  // 變成 non-passive，整頁捲動就得等 JS。
   const drag = trendDrag;
   drag.clientX = event.clientX;
   if (drag.frame === null) {
