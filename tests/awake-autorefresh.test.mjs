@@ -91,6 +91,17 @@ Object.defineProperty(navigator, 'wakeLock', { configurable: true, value: {
   const counts = () => page.evaluate(() => globalThis.__scopes ?? { tw: 0, all: 0 });
   const lock = () => page.evaluate(() => globalThis.__wakeLock);
 
+  await t.test('開 App 不載台帳', async () => {
+    // 台帳 92 KB，只有股票分析頁與編輯表單的交易紀錄要用。資產列的股數與市值是
+    // 觸發器算好存在 financial_items 的，開 App 根本不需要它。
+    assert.equal(await page.evaluate(() => globalThis.__bootstraps ?? 0), 0);
+    // 入口按鈕在個人頁上，不能因為台帳還沒載就不顯示
+    await page.click('[data-tab="husband"]');
+    await page.clock.runFor(500);
+    assert.ok(await page.isVisible('[data-open-portfolio]'), '按鈕還是要在，點了才去載');
+    assert.equal(await page.evaluate(() => globalThis.__bootstraps ?? 0), 0, '光是切到個人頁也不該載');
+  });
+
   await t.test('只叫 refresh-tw-quotes 這一支', async () => {
     // KLFAN 的 refresh-klfan-quotes 抓的是完全一樣的 8 檔，兩支一起叫等於把
     // Twelve Data 每分鐘 8 credits 的額度用掉一半。
