@@ -230,6 +230,30 @@ Fugle 的每分鐘上限沒有查到明文；4 檔 × 每 5 秒 = 48 次／分�
 `tests/awake-autorefresh.test.mjs` 用 Playwright 的假時鐘把時間快轉掉，守住兩條路徑各自的
 節奏；`tests/quote-cache.test.mjs` 守住 `scope='tw'` 那一輪一個 credit 都不花、也不寫資料庫。
 
+## 更新報價不重載台帳
+
+`klfan_bootstrap()` 回傳 **92 KB，其中 89 KB 是那 1489 筆交易**。報價更新只改價格、交易
+一筆都沒動，所以那一輪**不整包重載**：
+
+- 資產列的金額：Edge Function 已經算好在 `results[].amountTwd`，直接套進 `items`
+- 股票分析的股價：另外去 `klfan_quotes` 撈一次（約 3 KB），重掛到 `portfolioStocks[].quote`
+  再重算 `portfolioModel`
+
+`realtime` 的 `financial_items` 事件也不能整包重載 —— 每一輪報價更新都會寫它，事件會送回來
+給我們自己，照單全收就等於每分鐘重載一次。那一條改成 `reloadItems()`，只重抓 `financial_items`。
+交易真的變了會由 `klfan_transactions` 的事件帶進來，**那一條才走完整重載**。
+
+（試過用時間窗把「自己的寫入」濾掉，但別的裝置剛好在窗口內改東西就會漏，所以改成分流。）
+
+`tests/awake-autorefresh.test.mjs` 會數 `klfan_bootstrap` 被叫了幾次：三輪完整報價更新之後
+必須還是 0 次。
+
+### 還可以再省的
+
+39 檔標的裡只有 8 檔還持有，**53% 的交易屬於已出清的股票**，每次整包重載都會把它們一起拉回來。
+可以只載仍持有的那些、`顯示已出清` 打開時再補 —— 但要注意分析頁的累計損益與 XIRR 是把已出清的
+也算進去的，直接不載會改到畫面上的數字。
+
 ## 行情額度與 klfan_quotes
 
 Twelve Data 免費方案是每分鐘 8 credits、一個 symbol 算一個。這一輪要 `USD/TWD` + 美股
