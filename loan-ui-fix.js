@@ -24,9 +24,9 @@ function formatLoanTerm(totalPeriods) {
   const periods = Math.round(totalPeriods);
   const years = Math.floor(periods / 12);
   const months = periods % 12;
-  if (years > 0 && months > 0) return `${periods} 期（${years} 年 ${months} 個月）`;
-  if (years > 0) return `${periods} 期（${years} 年）`;
-  return `${periods} 期（${months} 個月）`;
+  if (years > 0 && months > 0) return `${years} 年 ${months} 個月`;
+  if (years > 0) return `${years} 年`;
+  return `${months} 個月`;
 }
 
 function metricByLabel(metrics, label) {
@@ -35,13 +35,13 @@ function metricByLabel(metrics, label) {
 
 function simplifyAndReorderLoanMetrics(scope = document) {
   scope.querySelectorAll('.loanDetail .loanCashflowMetrics').forEach(metrics => {
-    // 先從「已繳期數」取得總期數，再移除不需要的欄位。
+    // 先從「已繳期數」取得總期數，再移除不需要或上方已顯示的欄位。
     const paidItem = metricByLabel(metrics, '已繳期數');
     const paidText = paidItem?.querySelector('b')?.textContent?.trim() || '';
     const totalMatch = paidText.match(/\/\s*(\d+)/);
     const totalPeriods = totalMatch ? Number(totalMatch[1]) : NaN;
 
-    ['下次繳款', '金額', '實收金額'].forEach(label => {
+    ['下次繳款', '金額', '實收金額', '全期利息與費用'].forEach(label => {
       metricByLabel(metrics, label)?.remove();
     });
 
@@ -62,40 +62,54 @@ function simplifyAndReorderLoanMetrics(scope = document) {
       if (termValue && termValue.textContent !== termText) termValue.textContent = termText;
     }
 
-    // 展開後只留真正需要快速掌握的摘要，常用資訊優先。
-    const desiredLabels = ['已繳期數', '貸款年限', '剩餘應還', '過往已繳', '其他費用', '全期利息與費用'];
-    const currentLabels = [...metrics.children].map(item => item.querySelector('span')?.textContent?.trim() || '');
+    // 展開後只留真正需要快速掌握的摘要；全期利息與費用在上方卡片只顯示一次。
+    const desiredLabels = ['已繳期數', '貸款年限', '剩餘應還', '過往已繳', '其他費用'];
     const desiredItems = desiredLabels.map(label => metricByLabel(metrics, label)).filter(Boolean);
-    const desiredCurrentLabels = desiredItems.map(item => item.querySelector('span')?.textContent?.trim() || '');
+    const currentItems = [...metrics.children];
+    const unchanged = currentItems.length === desiredItems.length
+      && currentItems.every((item, index) => item === desiredItems[index]);
 
-    if (currentLabels.join('|') !== desiredCurrentLabels.join('|')) {
-      desiredItems.forEach(item => metrics.append(item));
-    }
+    if (!unchanged) desiredItems.forEach(item => metrics.append(item));
   });
 }
 
-function reorderLoanCardFacts(scope = document) {
+function combineAndReorderLoanCardFacts(scope = document) {
   scope.querySelectorAll('.loanCard .loanFacts').forEach(facts => {
-    // 目前本金餘額已經獨立放大顯示；其餘欄位依一般貸款閱讀習慣排序。
+    const items = [...facts.children];
+    const byLabel = label => items.find(item => item.querySelector('span')?.textContent?.trim() === label) || null;
+
+    const statedItem = byLabel('表定利率');
+    const annualItem = byLabel('實際年化成本') || byLabel('實際年化利率');
+    const combinedItem = byLabel('表定利率；實際年化利率');
+
+    if (!combinedItem && statedItem && annualItem) {
+      const statedValue = statedItem.querySelector('b')?.textContent?.trim() || '—';
+      const annualValue = annualItem.querySelector('b')?.textContent?.trim() || '—';
+      const labelNode = statedItem.querySelector('span');
+      const valueNode = statedItem.querySelector('b');
+      if (labelNode) labelNode.textContent = '表定利率；實際年化利率';
+      if (valueNode) valueNode.textContent = `${statedValue} ; ${annualValue}`;
+      annualItem.remove();
+    }
+
     const priorities = new Map([
       ['每月月付', 10],
       ['總還款', 10],
-      ['表定利率', 20],
+      ['表定利率；實際年化利率', 20],
       ['原貸款', 30],
       ['預計到期', 40],
       ['結清日期', 40],
-      ['實際年化成本', 50],
-      ['全期利息與費用', 60],
+      ['全期利息與費用', 50],
     ]);
 
-    const items = [...facts.children];
-    const sorted = [...items].sort((a, b) => {
+    const current = [...facts.children];
+    const sorted = [...current].sort((a, b) => {
       const aLabel = a.querySelector('span')?.textContent?.trim() || '';
       const bLabel = b.querySelector('span')?.textContent?.trim() || '';
       return (priorities.get(aLabel) ?? 999) - (priorities.get(bLabel) ?? 999);
     });
 
-    const unchanged = items.every((item, index) => item === sorted[index]);
+    const unchanged = current.every((item, index) => item === sorted[index]);
     if (!unchanged) sorted.forEach(item => facts.append(item));
   });
 }
@@ -154,7 +168,7 @@ function simplifyLoanRows(scope = document) {
 function applyLoanUiFixes(scope = document) {
   fixLoanSectionCounters(scope);
   simplifyAndReorderLoanMetrics(scope);
-  reorderLoanCardFacts(scope);
+  combineAndReorderLoanCardFacts(scope);
   simplifyLoanRows(scope);
 }
 
