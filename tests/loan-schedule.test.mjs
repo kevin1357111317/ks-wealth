@@ -85,7 +85,7 @@ db.loan_schedule.push(...${JSON.stringify(schedule)});`;
     }
     assert.match(detail, /\/ 120/, '共 120 期');
     // 未來的期數只先列 12 筆，剩下的用一行帶過 —— 全部倒出來會有幾百列
-    assert.equal(await page.locator('.loanPlanRow').count(), 12);
+    assert.equal(await page.locator('.loanFutureSection .loanPlanRow').count(), 12);
     assert.match(detail, /還有 108 期，最後一期 2036-08-07/);
     // 剩餘應還就是未繳的期數乘上金額：10,606 × 120
     assert.match(detail, /剩餘應還NT\$ 1,272,720/);
