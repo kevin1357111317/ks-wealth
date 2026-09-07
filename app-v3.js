@@ -1169,12 +1169,11 @@ function endTrendDrag() {
   window.removeEventListener('pointermove', moveTrendDrag);
   window.removeEventListener('pointerup', finishTrendDrag);
   window.removeEventListener('pointercancel', abortTrendDrag);
+  window.removeEventListener('touchmove', moveTrendTouch);
+  window.removeEventListener('touchend', finishTrendTouch);
+  window.removeEventListener('touchcancel', finishTrendTouch);
   if (!trendDrag) return;
   if (trendDrag.frame !== null) cancelAnimationFrame(trendDrag.frame);
-  // 只有 active 之後才抓過 capture；沒抓過就放、或指標已經消失了，都會丟 NotFoundError。
-  if (trendDrag.active) {
-    try { trendDrag.chart.releasePointerCapture?.(trendDrag.pointerId); } catch { /* 指標已經沒了 */ }
-  }
   trendDrag = null;
 }
 
@@ -1184,6 +1183,7 @@ function beginTrendDrag(event) {
   trendDrag = {
     chart,
     pointerId: event.pointerId,
+    touch: event.pointerType === 'touch',
     startX: event.clientX,
     startY: event.clientY,
     active: false,
@@ -1195,30 +1195,34 @@ function beginTrendDrag(event) {
   window.addEventListener('pointermove', moveTrendDrag, { passive: true });
   window.addEventListener('pointerup', finishTrendDrag);
   window.addEventListener('pointercancel', abortTrendDrag);
+  // touch-action: pan-y 把直向讓給瀏覽器，所以橫著刮的時候手指只要有一點上下位移，
+  // 瀏覽器就會接手捲頁並丟一個 pointercancel 過來 —— 提示框當場停住，就是「被釘住」。
+  // touchmove 不受這件事影響，會一路發到手指離開，所以觸控就多掛一組，靠它把刮動撐完。
+  if (trendDrag.touch) {
+    window.addEventListener('touchmove', moveTrendTouch, { passive: true });
+    window.addEventListener('touchend', finishTrendTouch);
+    window.addEventListener('touchcancel', finishTrendTouch);
+  }
 }
 
-function moveTrendDrag(event) {
-  if (!trendDrag || trendDrag.pointerId !== event.pointerId) return;
-  const deltaX = event.clientX - trendDrag.startX;
-  const deltaY = event.clientY - trendDrag.startY;
+// 座標的來源有兩種（pointer 與 touch），判斷與更新的邏輯只有這一份。
+function trackTrendDrag(clientX, clientY) {
+  if (!trendDrag) return;
+  const deltaX = clientX - trendDrag.startX;
+  const deltaY = clientY - trendDrag.startY;
   if (!trendDrag.active) {
-    // 直的先跨過門檻，就是要捲頁，把整組監聽收掉讓瀏覽器自己處理。
+    // 直的先跨過門檻，就是要捲頁，把整組監聽收掉讓瀏覽器自己處理（連同它的慣性）。
     if (Math.abs(deltaY) >= TREND_AXIS_SLOP && Math.abs(deltaY) >= Math.abs(deltaX)) return endTrendDrag();
     // 橫的要「明顯」贏才算刮動。手指按下去的第一個取樣幾乎都是斜的，拿單一取樣去比
     // |dx| > |dy| 的話，明明是往上滑也會被判成刮動、整個手勢就被圖表吃掉。
     // 兩邊都還沒跨過門檻就先不決定，等下一個取樣。
     if (Math.abs(deltaX) < TREND_AXIS_SLOP || Math.abs(deltaX) <= Math.abs(deltaY) * 1.5) return;
     trendDrag.active = true;
-    // 確定是刮動了才抓 pointer capture。touch-action: pan-y 是「直向永遠讓給瀏覽器」，
-    // 橫著刮的時候手指一定會上下抖，不抓的話瀏覽器會半路把手勢收去捲頁、丟一個
-    // pointercancel 過來，提示框就停在那裡不動了。
-    // 反過來說也只能等到這裡才抓：還沒確定方向就抓，判斷錯的時候整頁會捲不動。
-    trendDrag.chart.setPointerCapture?.(event.pointerId);
+    // 不抓 pointer capture：抓了瀏覽器就沒辦法把判斷錯的手勢收回去捲頁，整頁會被釘住。
+    // 刮動被半路收走的問題改用上面那組 touchmove 解決。
   }
-  // 不 preventDefault()：橫向本來就被 touch-action: pan-y 擋掉了，擋了只是讓監聽器
-  // 變成 non-passive，整頁捲動就得等 JS。
   const drag = trendDrag;
-  drag.clientX = event.clientX;
+  drag.clientX = clientX;
   if (drag.frame === null) {
     drag.frame = requestAnimationFrame(() => {
       drag.frame = null;
@@ -1229,15 +1233,38 @@ function moveTrendDrag(event) {
   }
 }
 
+function moveTrendDrag(event) {
+  if (!trendDrag || trendDrag.pointerId !== event.pointerId) return;
+  trackTrendDrag(event.clientX, event.clientY);
+}
+
+function moveTrendTouch(event) {
+  const touch = event.touches[0];
+  if (touch) trackTrendDrag(touch.clientX, touch.clientY);
+}
+
 function finishTrendDrag(event) {
   if (!trendDrag || trendDrag.pointerId !== event.pointerId) return;
+  // 觸控交給 touchend 收；pointerup 早一步進來的話會把還沒結束的刮動砍掉。
+  if (trendDrag.touch) return;
   const drag = trendDrag;
   endTrendDrag();
   if (drag.active) showTrendPoint(event, drag.chart);
 }
 
+function finishTrendTouch(event) {
+  if (!trendDrag) return;
+  const drag = trendDrag;
+  const touch = event.changedTouches?.[0];
+  endTrendDrag();
+  if (drag.active && touch) showTrendPoint({ clientX: touch.clientX }, drag.chart);
+}
+
 function abortTrendDrag(event) {
   if (!trendDrag || trendDrag.pointerId !== event.pointerId) return;
+  // 觸控時 pointercancel 幾乎都是瀏覽器接手捲頁發出來的，不代表手指離開了。
+  // 這時候收掉就是「刮到一半被釘住」，交給 touchend 決定什麼時候結束。
+  if (trendDrag.touch) return;
   endTrendDrag();
 }
 
