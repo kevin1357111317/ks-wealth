@@ -41,7 +41,7 @@ function simplifyAndReorderLoanMetrics(scope = document) {
     const totalMatch = paidText.match(/\/\s*(\d+)/);
     const totalPeriods = totalMatch ? Number(totalMatch[1]) : NaN;
 
-    ['下次繳款', '金額', '實收金額', '全期利息與費用'].forEach(label => {
+    ['下次繳款', '金額', '實收金額', '全期利息與費用', '剩餘應還', '過往已繳'].forEach(label => {
       metricByLabel(metrics, label)?.remove();
     });
 
@@ -62,8 +62,8 @@ function simplifyAndReorderLoanMetrics(scope = document) {
       if (termValue && termValue.textContent !== termText) termValue.textContent = termText;
     }
 
-    // 展開後只留真正需要快速掌握的摘要；全期利息與費用在上方卡片只顯示一次。
-    const desiredLabels = ['已繳期數', '貸款年限', '剩餘應還', '過往已繳', '其他費用'];
+    // 展開後只保留已繳期數、貸款年限與其他費用。
+    const desiredLabels = ['已繳期數', '貸款年限', '其他費用'];
     const desiredItems = desiredLabels.map(label => metricByLabel(metrics, label)).filter(Boolean);
     const currentItems = [...metrics.children];
     const unchanged = currentItems.length === desiredItems.length
