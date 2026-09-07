@@ -44,3 +44,33 @@ test('沒有實際扣款日的舊資料明確視為已到期排程', () => {
   assert.equal(result.pastPayments.length, 1);
   assert.equal(result.upcoming.length, 1);
 });
+
+test('LINE Bank 實際流水對上 25 次已繳與 72 次未繳', () => {
+  const rows = [
+    { due_date: '2024-08-20', actual_date: '2024-08-20', amount_twd: 3500000, entry_type: 'disbursement' },
+    { due_date: '2024-08-20', actual_date: '2024-08-20', amount_twd: -888, entry_type: 'fee' },
+    { due_date: '2024-09-05', actual_date: '2024-09-05', amount_twd: -20523, entry_type: 'payment', balance_after_twd: 3482822 },
+  ];
+  for (let n = 0; n < 95; n += 1) {
+    const dueDate = new Date(Date.UTC(2024, 9 + n, 5)).toISOString().slice(0, 10);
+    rows.push({
+      due_date: dueDate,
+      actual_date: dueDate <= '2026-09-05' ? dueDate : null,
+      amount_twd: -39763,
+      entry_type: 'payment',
+      balance_after_twd: dueDate === '2026-09-05' ? 2663371 : null,
+    });
+  }
+  rows.push({ due_date: '2032-08-20', amount_twd: -19278, entry_type: 'payment' });
+
+  const result = calculateLoanCashflow(rows, '2026-09-07');
+  assert.equal(result.payments.length, 97);
+  assert.equal(result.pastPayments.length, 25);
+  assert.equal(result.upcoming.length, 72);
+  assert.equal(result.netProceeds, 3499112);
+  assert.equal(result.totalFees, 888);
+  assert.equal(result.next.due_date, '2026-10-05');
+  assert.equal(result.last.due_date, '2032-08-20');
+  assert.equal(result.pastPayments.at(-1).balance_after_twd, 2663371);
+  assert.ok(Math.abs(result.annualCost - 0.022082550246961295) < 1e-10);
+});
