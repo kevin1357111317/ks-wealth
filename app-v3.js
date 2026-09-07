@@ -590,11 +590,10 @@ async function refreshQuotes({ force = false } = {}) {
   updateQuoteStatusUi();
 
   quoteFlight = (async () => {
-    const [wealthQuotes, portfolioQuotes] = await Promise.all([
-      sb.functions.invoke('refresh-tw-quotes', { body: {} }),
-      sb.functions.invoke('refresh-klfan-quotes', { body: {} }),
-    ]);
-    const { data, error } = wealthQuotes;
+    // 以前這裡會連 KLFAN 的 refresh-klfan-quotes 一起叫，但兩支抓的是完全一樣的
+    // 8 檔，等於自己跟自己搶 Twelve Data 每分鐘 8 credits 的額度。klfan_quotes 的
+    // 寫回與修剪已經由 refresh-tw-quotes 接手，這支就不必再叫了。
+    const { data, error } = await sb.functions.invoke('refresh-tw-quotes', { body: {} });
     if (error) {
       quoteStatus = 'error';
       quoteFailureNote = '';
@@ -616,7 +615,7 @@ async function refreshQuotes({ force = false } = {}) {
     quoteFailureNote = failed > 0 ? describeQuoteFailures(data?.results) : '';
     saveQuoteTimestamp(data?.requestedAt || new Date().toISOString());
 
-    if (toFiniteNumber(data?.updated) > 0 || !portfolioQuotes.error) await loadData({ blocking: false });
+    if (toFiniteNumber(data?.updated) > 0) await loadData({ blocking: false });
     else render();
     return data;
   })().catch(() => {

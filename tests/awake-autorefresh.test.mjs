@@ -86,8 +86,14 @@ Object.defineProperty(navigator, 'wakeLock', { configurable: true, value: {
   await page.waitForSelector('#root.app', { timeout: 20_000 });
   await page.clock.runFor(1000);
 
-  // 一次更新會叫 refresh-tw-quotes 與 refresh-klfan-quotes 各一次，數前面那支就好
   const refreshes = () => page.evaluate(() => globalThis.__invokes?.['refresh-tw-quotes'] ?? 0);
+
+  await t.test('一次更新只叫一支函式', async () => {
+    // KLFAN 的 refresh-klfan-quotes 抓的是完全一樣的 8 檔，兩支一起叫等於把
+    // Twelve Data 每分鐘 8 credits 的額度用掉一半。
+    assert.deepEqual(Object.keys(await page.evaluate(() => globalThis.__invokes ?? {})),
+      ['refresh-tw-quotes']);
+  });
   const lock = () => page.evaluate(() => globalThis.__wakeLock);
 
   await t.test('一開起來就要到螢幕恆亮', async () => {
