@@ -153,28 +153,54 @@ db.net_worth_history = ${JSON.stringify(history)};`;
       '判斷成直向之後也要把監聽器收掉');
   });
 
-  await t.test('完全不抓 pointer capture', async () => {
-    // 抓了 capture，瀏覽器就沒辦法在中途收回手勢去捲頁 —— 一旦方向判斷錯，整頁就釘住。
-    // touch-action: pan-y 已經把橫向留給我們、直向留給瀏覽器，不需要 capture。
-    // 前面的測試把頁面捲下去了，圖表已經不在原本那個座標上。
-    await page.evaluate(() => window.scrollTo(0, 0));
-    await page.waitForTimeout(250);
-    const chartBox = await page.locator('[data-trend-chart]').boundingBox();
-    const chartY = chartBox.y + chartBox.height / 2;
+  const countCaptures = async run => {
     await page.evaluate(() => {
       globalThis.__captured = 0;
-      const original = Element.prototype.setPointerCapture;
-      Element.prototype.setPointerCapture = function patched(...args) {
-        globalThis.__captured += 1;
-        return original.apply(this, args);
-      };
+      if (!Element.prototype.__patchedCapture) {
+        const original = Element.prototype.setPointerCapture;
+        Element.prototype.setPointerCapture = function patched(...args) {
+          globalThis.__captured += 1;
+          return original.apply(this, args);
+        };
+        Element.prototype.__patchedCapture = true;
+      }
     });
-    await touch('touchStart', chartBox.x + 20, chartY);
-    for (let step = 1; step <= 10; step += 1) await touch('touchMove', chartBox.x + 20 + step * 25, chartY);
-    await touch('touchEnd', chartBox.x + 270, chartY);
+    await run();
+    return page.evaluate(() => globalThis.__captured);
+  };
+
+  await t.test('垂直滑動全程不抓 pointer capture', async () => {
+    // 抓了 capture，WebKit 就沒辦法把手勢收回去捲頁。方向還沒確定就抓 —— 或是把往上滑
+    // 誤判成刮動 —— 整頁就被釘住捲不動，這是最早那個「滑一下就被釘住」。
+    const captured = await countCaptures(async () => { await swipeUp(8, -6); });
+    assert.equal(captured, 0, '往上滑不該抓 capture');
+  });
+
+  await t.test('確認成橫向刮動之後才抓 capture，抖動也不會半路斷掉', async () => {
+    // 反過來，橫著刮的時候手指一定會上下抖。touch-action: pan-y 讓直向永遠屬於瀏覽器，
+    // 不抓 capture 的話瀏覽器會半路把手勢收走、丟 pointercancel，提示框就停住不動。
+    await page.evaluate(() => window.scrollTo(0, 0));
     await page.waitForTimeout(200);
-    assert.ok(await selected() > 100, '這一下要真的被當成橫向刮動，否則測不到重點');
-    assert.equal(await page.evaluate(() => globalThis.__captured), 0, '刮動全程都不該呼叫 setPointerCapture');
+    const chartBox = await page.locator('[data-trend-chart]').boundingBox();
+    const chartY = chartBox.y + chartBox.height / 2;
+    const seen = [];
+    const captured = await countCaptures(async () => {
+      await page.evaluate(() => document.querySelector('[data-trend-selection]').setAttribute('hidden', ''));
+      await touch('touchStart', chartBox.x + 20, chartY);
+      for (let step = 1; step <= 16; step += 1) {
+        // 帶上下抖動，模擬真的用手指刮
+        await touch('touchMove', chartBox.x + 20 + (chartBox.width - 40) * (step / 16),
+          chartY + Math.sin(step / 2) * 6);
+        await page.waitForTimeout(18);
+        seen.push(await selected());
+      }
+      await touch('touchEnd', chartBox.x + chartBox.width - 20, chartY);
+      await page.waitForTimeout(150);
+    });
+    assert.equal(captured, 1, '確認成刮動時要抓一次 capture，才不會被瀏覽器半路收走');
+    assert.ok(new Set(seen.filter(value => value !== null)).size >= 12,
+      `提示框要一路跟到底，實際只走過 ${new Set(seen.filter(value => value !== null)).size} 個點`);
+    assert.ok(seen.at(-1) > 130, `刮到最右邊要接近最後一個資料點，實際 ${seen.at(-1)}`);
   });
 
   assert.deepEqual(failures, [], '瀏覽器不該有錯誤');
