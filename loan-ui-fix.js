@@ -2,8 +2,12 @@ const root = document.querySelector('#root');
 
 function fixLoanSectionCounters(scope = document) {
   scope.querySelectorAll('.loanFlowSection > .sectionHead').forEach(head => {
-    const label = head.querySelector('span')?.textContent?.trim();
-    if (label !== '開辦費明細') return;
+    const labelNode = head.querySelector('span');
+    const label = labelNode?.textContent?.trim();
+    if (label !== '開辦費明細' && label !== '其他費用') return;
+
+    // 大項統一顯示「其他費用」；細項仍保留實際費用名稱（開辦費、火災險等）。
+    if (labelNode && label !== '其他費用') labelNode.textContent = '其他費用';
 
     const section = head.closest('.loanFlowSection');
     const count = section?.querySelectorAll('.loanPlan > *').length ?? 0;
