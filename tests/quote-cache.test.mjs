@@ -58,7 +58,7 @@ const ENV = {
 // 仍持有的標的，預設就是快取裡那幾檔
 const LIVE = Object.keys(KLFAN_KEYS);
 
-async function refresh({ cache, gold = null, twelveBudget = 8, live = LIVE }) {
+async function refresh({ cache, gold = null, twelveBudget = 8, live = LIVE, requestBody = {} }) {
   let stored = cache;
   const pruned = [];
   let storedGold = gold;   // ks_quote_cache 裡的 XAU/USD，null = 沒有或已過期
@@ -125,7 +125,7 @@ async function refresh({ cache, gold = null, twelveBudget = 8, live = LIVE }) {
 
   try {
     fn.__stub(factory, ENV);
-    const body = await (await fn.handler(new Request('https://x/fn', { method: 'POST', headers: { Authorization: 'Bearer tok' }, body: '{}' }))).json();
+    const body = await (await fn.handler(new Request('https://x/fn', { method: 'POST', headers: { Authorization: 'Bearer tok' }, body: JSON.stringify(requestBody) }))).json();
     return { body, used, stored, storedGold, written, fxDaily, pruned };
   } finally {
     globalThis.fetch = realFetch;
@@ -233,4 +233,23 @@ test('匯率抓不到就不要動 klfan_fx_daily', async () => {
   // 匯率是 null 的時候寫下去會把觸發器的來源弄壞，寧可讓它留著昨天的。
   const { fxDaily } = await refresh({ cache: [], twelveBudget: 0 });
   assert.equal(fxDaily, null);
+});
+
+test('只要台股那一輪完全不碰 Twelve Data，也不寫資料庫', async () => {
+  // 台股每 5 秒抓一次，走的是這條路。Fugle 免費、沒有 credit；但要是順手寫了
+  // financial_items，realtime 訂閱會被自己觸發，每 5 秒重載整本台帳（一千多筆交易）。
+  const { body, used, written, stored, fxDaily } = await refresh({
+    cache: cacheRows(28 * 60_000),   // 快取過期，完整那一輪本來會全部重抓
+    requestBody: { scope: 'tw' },
+  });
+  assert.equal(used.twelve, 0, '一個 credit 都不該花');
+  assert.equal(used.fugle, 4, '四檔台股照抓');
+  assert.equal(body.scope, 'tw');
+  assert.deepEqual(written, [], '不該寫 financial_items');
+  assert.equal(fxDaily, null, '也不該動匯率表');
+  assert.deepEqual(stored.map(r => r.symbol).sort(), [...LIVE, 'USD/TWD'].sort(), 'klfan_quotes 原封不動');
+
+  const prices = body.results.filter(r => r.status === 'quote_only');
+  assert.equal(prices.length, 4);
+  assert.equal(prices.find(r => r.symbol === '2330').price, FUGLE_PRICE['2330']);
 });

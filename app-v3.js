@@ -60,9 +60,14 @@ let quoteFlight = null;
 let quoteStatus = 'idle';
 let quoteFailureNote = '';
 let quoteLastAt = 0;
-// 自動更新的間隔就取 Edge Function 共用快取的 TTL。抓得比這個還勤沒有意義：
-// 10 分鐘內的第二次更新只會讀到同一份快取，行情不會更新，只是白耗電。
-const QUOTE_AUTO_INTERVAL_MS = 10 * 60 * 1000;
+// 兩條更新路徑，快慢差很多是因為成本差很多：
+//   台股：Fugle，免費、沒有 credit 的概念，所以可以每幾秒抓一次。走輕量路徑
+//         （scope='tw'）—— 只拿價格、不寫資料庫，畫面直接套用。
+//   其餘：美股 + 匯率 + 黃金走 Twelve Data，一輪 7 credits、上限每分鐘 8，
+//         所以一分鐘一次就是極限，而且這一輪才是寫進資料庫的權威值。
+const QUOTE_TW_INTERVAL_MS = 5 * 1000;
+const QUOTE_FULL_INTERVAL_MS = 60 * 1000;
+let quoteTwTimer = null;
 let quoteTimer = null;
 let wakeLock = null;
 let quoteLastUpdatedAt = null;
@@ -388,22 +393,53 @@ async function keepScreenAwake() {
 
 function startQuoteAutoRefresh() {
   stopQuoteAutoRefresh();
+  quoteTwTimer = setInterval(() => {
+    if (document.visibilityState !== 'visible') return;
+    void refreshTwQuotes();
+  }, QUOTE_TW_INTERVAL_MS);
   quoteTimer = setInterval(() => {
     if (document.visibilityState !== 'visible') return;
     void refreshQuotes({ reason: 'auto' });
-  }, QUOTE_AUTO_INTERVAL_MS);
+  }, QUOTE_FULL_INTERVAL_MS);
 }
 
 function stopQuoteAutoRefresh() {
+  if (quoteTwTimer !== null) clearInterval(quoteTwTimer);
   if (quoteTimer !== null) clearInterval(quoteTimer);
+  quoteTwTimer = null;
   quoteTimer = null;
+}
+
+// 台股的輕量更新：只拿價格套進畫面，不寫資料庫、不重載、不動狀態列。
+// 狀態列每五秒閃一次「更新中」比不更新還糟。
+let twFlight = null;
+async function refreshTwQuotes() {
+  if (!session || !member || twFlight || quoteFlight) return null;
+  twFlight = (async () => {
+    const { data, error } = await sb.functions.invoke('refresh-tw-quotes', { body: { scope: 'tw' } });
+    if (error || !data) return null;
+    let changed = false;
+    for (const result of data.results ?? []) {
+      const price = toFiniteNumber(result.price);
+      const item = price > 0 ? items.find(row => row.id === result.id) : null;
+      const quantity = toFiniteNumber(item?.quantity);
+      if (!item || !(quantity > 0)) continue;
+      const amountTwd = Math.round(price * quantity);
+      if (amountTwd === item.amount_twd) continue;
+      item.amount_twd = amountTwd;
+      changed = true;
+    }
+    if (changed) render();
+    return data;
+  })().catch(() => null).finally(() => { twFlight = null; });
+  return twFlight;
 }
 
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
   void keepScreenAwake();
   // 螢幕關著的那段時間計時器是停的，回來時先補一次。
-  if (session && member && Date.now() - quoteLastAt >= QUOTE_AUTO_INTERVAL_MS) {
+  if (session && member && Date.now() - quoteLastAt >= QUOTE_FULL_INTERVAL_MS) {
     void refreshQuotes({ reason: 'visible' });
   }
 });
@@ -584,7 +620,8 @@ function updateQuoteStatusUi() {
 async function refreshQuotes({ force = false } = {}) {
   if (!session || !member) return null;
   if (quoteFlight) return quoteFlight;
-  if (!force && Date.now() - quoteLastAt < 60_000) return null;
+  // 節流的門檻要低於整輪的間隔，不然計時器早個幾毫秒觸發就會被自己擋掉。
+  if (!force && Date.now() - quoteLastAt < QUOTE_FULL_INTERVAL_MS / 2) return null;
   quoteLastAt = Date.now();
   quoteStatus = 'updating';
   updateQuoteStatusUi();
