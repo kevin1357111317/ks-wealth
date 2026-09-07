@@ -19,31 +19,46 @@ function fixLoanSectionCounters(scope = document) {
   });
 }
 
-function simplifyPastPaymentRows(scope = document) {
-  scope.querySelectorAll('.loanFlowSection').forEach(section => {
-    const sectionLabel = section.querySelector(':scope > .sectionHead span')?.textContent?.trim();
-    if (sectionLabel !== '過往實際繳款') return;
+function setSimpleRowLabel(row, label) {
+  const left = row.children[0];
+  const right = row.children[1];
+  if (!left || !right) return;
 
-    section.querySelectorAll('.loanPlan > .loanPlanRow').forEach((row, index) => {
-      const left = row.children[0];
-      const right = row.children[1];
-      if (!left || !right) return;
+  // 日期欄只保留實際顯示日期，不再顯示應繳日、假日順延等附註。
+  left.querySelectorAll('small').forEach(node => node.remove());
 
-      // 左側只保留實際繳款日期，不再顯示應繳日／假日順延等說明。
-      left.querySelectorAll('small').forEach(node => node.remove());
+  // 右側只保留簡短標籤與金額，移除核對、順延、繳後本金等說明。
+  const amount = right.querySelector('b');
+  right.querySelectorAll('small').forEach(node => node.remove());
 
-      // 右側只保留「第 N 期」與實際繳款金額，不顯示核對備註、順延原因、繳後本金等資訊。
-      const expected = `第 ${index + 1} 期`;
-      const amount = right.querySelector('b');
-      const notes = [...right.querySelectorAll('small')];
-      const alreadySimple = notes.length === 1 && notes[0].textContent?.trim() === expected;
+  const note = document.createElement('small');
+  note.textContent = label;
+  if (amount) right.insertBefore(note, amount);
+  else right.prepend(note);
+}
 
-      if (!alreadySimple) {
-        notes.forEach(node => node.remove());
-        const period = document.createElement('small');
-        period.textContent = expected;
-        if (amount) right.insertBefore(period, amount);
-        else right.prepend(period);
+function simplifyLoanRows(scope = document) {
+  scope.querySelectorAll('.loanDetail').forEach(detail => {
+    const sections = [...detail.querySelectorAll(':scope > .loanFlowSection')];
+    const pastSection = sections.find(section => section.querySelector(':scope > .sectionHead span')?.textContent?.trim() === '過往實際繳款');
+    const pastCount = pastSection?.querySelectorAll('.loanPlan > .loanPlanRow').length ?? 0;
+
+    sections.forEach(section => {
+      const sectionLabel = section.querySelector(':scope > .sectionHead span')?.textContent?.trim();
+      const rows = [...section.querySelectorAll('.loanPlan > .loanPlanRow')];
+
+      if (sectionLabel === '過往實際繳款') {
+        rows.forEach((row, index) => setSimpleRowLabel(row, `第 ${index + 1} 期`));
+        return;
+      }
+
+      if (sectionLabel === '未來還款排程') {
+        rows.forEach((row, index) => setSimpleRowLabel(row, `第 ${pastCount + index + 1} 期`));
+        return;
+      }
+
+      if (sectionLabel === '撥款／資金流入') {
+        rows.forEach(row => setSimpleRowLabel(row, '撥款'));
       }
     });
   });
@@ -51,7 +66,7 @@ function simplifyPastPaymentRows(scope = document) {
 
 function applyLoanUiFixes(scope = document) {
   fixLoanSectionCounters(scope);
-  simplifyPastPaymentRows(scope);
+  simplifyLoanRows(scope);
 }
 
 applyLoanUiFixes();
