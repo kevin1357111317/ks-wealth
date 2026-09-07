@@ -217,34 +217,43 @@ App 開著的時候會用 Screen Wake Lock 讓螢幕不要自己關掉，行情�
 `tests/awake-autorefresh.test.mjs` 用 Playwright 的假時鐘把 10 分鐘快轉掉，守住：開起來就恆亮、
 每 10 分鐘更新一次、不到 10 分鐘不更新、切背景完全停手、回前景補一次並重新要恆亮。
 
-## 行情額度與共用快取
+## 行情額度與 klfan_quotes
 
-這個 Supabase 專案同時服務兩個 App：本專案與 KLFAN（`KLFAN-stock-tracker`），兩邊共用同一把
-`TWELVE_DATA_API_KEY`。Twelve Data 免費方案是每分鐘 8 credits、一個 symbol 算一個，而兩邊各自
-抓一輪剛好是 9 個：本專案 `USD/TWD` + 三檔美股 + `XAU/USD`，KLFAN 三檔美股 + `USD/TWD`。
-超額的那一個會被 429 擋掉，而且必然是排在最後的 `XAU/USD` —— 症狀就是首頁出現
-「部分行情更新失敗，沿用上一筆價格」，而且只有黃金沒更新。
+Twelve Data 免費方案是每分鐘 8 credits、一個 symbol 算一個。這一輪要 `USD/TWD` + 美股
++ `XAU/USD`，全抓就快貼著上限，所以 `refresh-tw-quotes` 把 `klfan_quotes` 當快取：
 
-`refresh-tw-quotes` 因此把 KLFAN 的 `klfan_quotes` 當共用快取：
+- **讀**：美股與匯率在 10 分鐘內抓過就直接沿用，只有真的缺的才打 API。台股走 Fugle、
+  沒有額度問題，一律重抓
+- **寫**：仍持有的標的這一輪全部都真的重抓到，才整批寫回。只補一半的話，最新的
+  `updated_at` 會讓沒更新的那幾檔看起來也很新
+- **修剪**：寫回之後把不在「仍持有」名單裡的列刪掉
+- 讀寫都走 service role，不必為了這張表放寬 RLS
 
-- **讀**：美股與匯率在 10 分鐘內抓過就直接沿用，只有真的缺的才打 API。台股走 Fugle、沒有額度問題，一律重抓。
-- **寫**：這一輪每一檔都真的重抓到、而且涵蓋 `klfan_quotes` 現有的每一個代碼時，才把結果寫回去。
-  KLFAN 是用整張表最新的 `updated_at` 決定要不要重抓，只補一半會讓它把沒更新的那幾檔也當成新的。
-- 讀寫都走 service role，不必為了快取放寬 `klfan_quotes` 的 RLS。
+### 為什麼追蹤名單要看 `klfan_live_symbols`
 
-`XAU/USD` 是例外，它進不了 `klfan_quotes`：KLFAN 沒在追黃金、會把不認得的代碼 prune 掉，而且多一個
-它不認得又一直被更新的代碼會弄壞它「整張表最新的 `updated_at`」那個新鮮度判斷。所以金價走自己的
-`ks_quote_cache`（同樣 10 分鐘、同樣只有 service role 進得來）。少了這層，金價每一輪都得重抓，而它
-又是最後才發出的請求 —— 前端那個 60 秒節流是存在記憶體裡的，換 App 回來或頁面重載就歸零，同一分鐘
-跑兩輪就是 10 credits，被擋掉的必然是它。
+`klfan_quotes` 原本由 KLFAN（`KLFAN-stock-tracker`）那支 `refresh-klfan-quotes` 維護，
+本專案以前每次更新會**連它一起呼叫**。但兩支抓的是完全一樣的 8 檔，等於自己跟自己搶額度
+（2026-09-07 核對過，兩邊的標的一模一樣），所以那個呼叫已經拿掉，整張表由這裡接手。
 
-結果是不論哪一個 App 先開、同一分鐘跑幾輪，都不會再超過額度。回應裡的 `cache` 欄位（`read` /
-`write` / `error`）與 `gold.cached` 可以看出這一輪沿用了幾筆、有沒有寫回。前端狀態列也會把失敗的
-標的名字與原因寫出來（例如「黃金：行情商額度用完了」），不必再去翻資料庫的 `updated_at` 才知道是
-誰沒更新。
+接手的關鍵是名單要跟著 `klfan_live_symbols`（仍持有的標的）走，**不能**看「`klfan_quotes`
+現在有哪些列」：
 
-`tests/quote-cache.test.mjs` 直接跑 Edge Function 原始碼、把 fetch 換成假的來數 credit，改動這一段
-時請先跑它。
+- 剛買進的股票表裡還沒有它 → 永遠不會被寫進去
+- 已出清的舊列還在 → 涵蓋率永遠不滿 → **整個寫回停擺，所有報價一起凍住**
+
+修剪也是同樣的原因：舊價留著會被當成即時價顯示，一個看起來很新、其實早就過期的價格比沒有
+價格更糟。
+
+`XAU/USD` 不在仍持有名單裡（會被修剪掉），所以金價走自己的 `ks_quote_cache`，同樣 10 分鐘、
+同樣只有 service role 進得來。少了這層，金價每一輪都得重抓，而它又是最後才發出的請求 ——
+前端那個 60 秒節流是存在記憶體裡的，換 App 回來或頁面重載就歸零，同一分鐘跑兩輪必定壓死它。
+
+回應裡的 `cache`（`read` / `write` / `error`）與 `gold.cached` 可以看出這一輪沿用了幾筆、
+有沒有寫回、修剪成不成功。前端狀態列也會把失敗的標的名字與原因寫出來（例如「黃金：行情商
+額度用完了」）。
+
+`tests/quote-cache.test.mjs` 直接跑 Edge Function 原始碼、把 fetch 換成假的來數 credit，
+改動這一段時請先跑它。
 
 ## 部署
 

@@ -53,17 +53,15 @@ Deno.serve(async (req: Request) => {
   const twSymbols = [...new Set(marketItems.filter((x) => x.market === "TW").map((x) => String(x.symbol).toUpperCase()))].filter(validSymbol);
   const usSymbols = [...new Set(marketItems.filter((x) => x.market === "US").map((x) => String(x.symbol).toUpperCase()))].filter(validSymbol);
 
-  // ── 共用報價快取 ───────────────────────────────────────────────────────────
-  // 這個 Supabase 專案同時服務兩個 App（本專案與 KLFAN），兩邊共用同一把
-  // TWELVE_DATA_API_KEY。免費方案是每分鐘 8 credits、一個 symbol 算一個，
-  // 而各自抓一輪剛好是 9 個：這裡 USD/TWD + 三檔美股 + XAU/USD，KLFAN 三檔
-  // 美股 + USD/TWD。超額的那一個被 429 擋掉，而且必然是排在最後的 XAU/USD
-  // —— 2026-09-04 08:25 只有黃金沒更新就是這樣來的。
+  // ── 報價表 klfan_quotes ────────────────────────────────────────────────────
+  // Twelve Data 免費方案是每分鐘 8 credits、一個 symbol 算一個。這一輪要 USD/TWD
+  // + 美股 + XAU/USD，全抓就快貼著上限，所以 10 分鐘內抓過的直接沿用，只有真的
+  // 缺的才打 API。台股走 Fugle、沒有額度問題，一律重抓。
   //
-  // KLFAN 的 klfan_quotes 已經是一張現成的報價表，它要的美股與匯率跟這裡完全
-  // 重疊，所以：夠新就直接沿用，只有真的缺的才去打 API。台股走 Fugle、沒有額度
-  // 問題，一律重抓，只記下 KLFAN 追哪幾檔（決定能不能寫回，見下方）。
-  // 讀寫走 service role，不必為了快取放寬 klfan_quotes 的 RLS。
+  // klfan_quotes 原本是 KLFAN 那支 refresh-klfan-quotes 在維護，這裡只是共用它的
+  // 結果。KS Wealth 已經不再呼叫那一支（同樣 8 檔抓兩次是純粹的重複，還把額度用掉
+  // 一半），所以整張表的寫回與修剪都由這裡接手，見下方。
+  // 讀寫走 service role，不必為了這張表放寬 RLS。
   const QUOTE_CACHE_TTL_MS = 10 * 60 * 1000;
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
   const cache = serviceRoleKey
@@ -72,8 +70,6 @@ Deno.serve(async (req: Request) => {
 
   type CachedQuote = { price: number; change: number; changePercent: number; quotedAt: string | null };
   const cachedUs = new Map<string, CachedQuote>();  // 'QQQ' -> 夠新、可直接沿用的報價
-  const cacheKeyFor = new Map<string, string>();    // 'QQQ' -> 'NASDAQ:QQQ'（KLFAN 的原始 key）
-  const cachedTwCodes = new Set<string>();          // KLFAN 追蹤的台股代碼
   let cachedFx: number | null = null;
   let cacheError: string | null = null;
 
@@ -92,13 +88,10 @@ Deno.serve(async (req: Request) => {
         if (fresh) cachedFx = price;
         continue;
       }
+      // 台股走 Fugle、沒有額度問題，一律重抓，所以不必沿用快取。
+      if (raw.startsWith("TPE:") || raw.startsWith("TWO:")) continue;
       const code = raw.slice(raw.lastIndexOf(":") + 1).toUpperCase();
       if (!code) continue;
-      cacheKeyFor.set(code, raw);
-      if (raw.startsWith("TPE:") || raw.startsWith("TWO:")) {
-        cachedTwCodes.add(code);
-        continue;
-      }
       if (fresh) cachedUs.set(code, { price, change: Number(row.change ?? 0), changePercent: Number(row.change_percent ?? 0), quotedAt: row.quoted_at ?? null });
     }
   }
@@ -346,10 +339,14 @@ Deno.serve(async (req: Request) => {
       : { id: item.id, name: item.name, market: "GOLD", status: "updated", grams, amountTwd, currency: "USD", price: xauUsd, fxRate });
   }
 
-  // 寫回共用快取。只有在這一輪「每一檔都真的重抓到」、而且涵蓋 klfan_quotes
-  // 現有的每一個代碼時才寫 —— KLFAN 是用整張表最新的 updated_at 判斷要不要重抓，
-  // 只補一半會讓它把沒更新的那幾檔也當成新的，看起來很新其實是舊價。
-  // 沒寫回也沒關係：那代表這一輪本來就是沿用快取，KLFAN 那邊也還夠新。
+  // 寫回 klfan_quotes。以前這張表由 KLFAN 的 refresh-klfan-quotes 負責維護，這裡只是
+  // 順手把抓到的價補回去給它用；KS Wealth 現在不再呼叫那一支了（同樣 8 檔抓兩次是純粹
+  // 的重複，還把 Twelve Data 每分鐘 8 credits 的額度用掉一半），所以整張表由這裡接手。
+  //
+  // 追蹤名單改成跟著 klfan_live_symbols 走，而不是「klfan_quotes 現在有哪些列」——
+  // 後者會讓一檔剛買進的股票永遠進不了表（表裡沒有它就不會去寫），而已出清的舊列又
+  // 會讓涵蓋率永遠不滿、整個寫回停擺。修剪也一起接手：舊價留著會被當成即時價顯示，
+  // 一個看起來很新、其實早就過期的價格比沒有價格更糟。
   let cacheWrite: string | null = null;
   if (cache && fxFetched && fxRate !== null) {
     const freshUs = new Map<string, { price: number; change: number; changePercent: number }>();
@@ -362,33 +359,57 @@ Deno.serve(async (req: Request) => {
       if ("error" in quote) continue;
       freshTw.set(key.slice(3), quote);
     }
-    const covered = [...cacheKeyFor.keys()].every((code) =>
-      cachedTwCodes.has(code) ? freshTw.has(code) : freshUs.has(code));
 
-    if (covered && (freshUs.size > 0 || freshTw.size > 0)) {
-      const now = new Date().toISOString();
-      const rows: Record<string, unknown>[] = [
-        { symbol: "USD/TWD", price: fxRate, currency: "TWD", change: null, change_percent: null, source: "twelve_data", quoted_at: now, updated_at: now },
-      ];
-      for (const [code, key] of cacheKeyFor) {
-        const tw = cachedTwCodes.has(code);
-        const quote = tw ? freshTw.get(code) : freshUs.get(code);
-        if (!quote) continue;
-        rows.push({
-          symbol: key,
-          price: quote.price,
-          currency: tw ? "TWD" : "USD",
-          change: quote.change,
-          change_percent: quote.changePercent,
-          source: tw ? "fugle" : "twelve_data",
-          quoted_at: now,
-          updated_at: now,
-        });
-      }
-      const { error } = await cache.from("klfan_quotes").upsert(rows, { onConflict: "symbol" });
-      cacheWrite = error ? error.message : `wrote_${rows.length}`;
+    const { data: liveRows, error: liveError } = await cache
+      .from("klfan_live_symbols")
+      .select("symbol");
+    if (liveError) {
+      cacheWrite = liveError.message;
     } else {
-      cacheWrite = "skipped_partial_coverage";
+      // 'NASDAQ:QQQ' -> 'QQQ'，價格是照裸代號抓的，但寫回要用原本帶前綴的 key。
+      const live = new Map<string, string>();
+      for (const row of liveRows ?? []) {
+        const raw = String(row.symbol ?? "").trim();
+        if (raw) live.set(raw.slice(raw.lastIndexOf(":") + 1).toUpperCase(), raw);
+      }
+      const quoteOf = (code: string) => freshTw.get(code) ?? freshUs.get(code);
+      const covered = [...live.keys()].every((code) => quoteOf(code) !== undefined);
+
+      if (!covered) {
+        // 有標的這一輪沒抓到就整批不寫。只補一半的話，最新的 updated_at 會讓沒更新的
+        // 那幾檔也看起來很新。
+        cacheWrite = "skipped_partial_coverage";
+      } else {
+        const now = new Date().toISOString();
+        const rows: Record<string, unknown>[] = [
+          { symbol: "USD/TWD", price: fxRate, currency: "TWD", change: null, change_percent: null, source: "twelve_data", quoted_at: now, updated_at: now },
+        ];
+        for (const [code, key] of live) {
+          const tw = freshTw.has(code);
+          const quote = quoteOf(code)!;
+          rows.push({
+            symbol: key,
+            price: quote.price,
+            currency: tw ? "TWD" : "USD",
+            change: quote.change,
+            change_percent: quote.changePercent,
+            source: tw ? "fugle" : "twelve_data",
+            quoted_at: now,
+            updated_at: now,
+          });
+        }
+        const { error } = await cache.from("klfan_quotes").upsert(rows, { onConflict: "symbol" });
+        if (error) {
+          cacheWrite = error.message;
+        } else {
+          const keep = rows.map((row) => `"${row.symbol}"`).join(",");
+          const { error: pruneError } = await cache
+            .from("klfan_quotes")
+            .delete()
+            .not("symbol", "in", `(${keep})`);
+          cacheWrite = pruneError ? `wrote_${rows.length}_prune_failed` : `wrote_${rows.length}`;
+        }
+      }
     }
   }
 

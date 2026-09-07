@@ -55,8 +55,12 @@ const ENV = {
   FUGLE_MARKETDATA_API_KEY: 'FUGLE', TWELVE_DATA_API_KEY: 'TWELVE',
 };
 
-async function refresh({ cache, gold = null, twelveBudget = 8 }) {
+// 仍持有的標的，預設就是快取裡那幾檔
+const LIVE = Object.keys(KLFAN_KEYS);
+
+async function refresh({ cache, gold = null, twelveBudget = 8, live = LIVE }) {
   let stored = cache;
+  const pruned = [];
   let storedGold = gold;   // ks_quote_cache 裡的 XAU/USD，null = 沒有或已過期
   const used = { fugle: 0, twelve: 0 };
   const written = [];      // 這一輪往 financial_items 寫進去的每一筆
@@ -68,6 +72,8 @@ async function refresh({ cache, gold = null, twelveBudget = 8 }) {
       select: () => {
         if (table === 'financial_items') return { eq: () => Promise.resolve({ data: ITEMS, error: null }) };
         if (table === 'ks_quote_cache') return { eq: () => ({ maybeSingle: () => Promise.resolve({ data: storedGold, error: null }) }) };
+        // 仍持有的標的。KLFAN 的函式讀的也是這個 view，現在寫回與修剪都照它走。
+        if (table === 'klfan_live_symbols') return Promise.resolve({ data: live.map(symbol => ({ symbol })), error: null });
         return Promise.resolve({ data: stored, error: null });
       },
       update: (patch) => ({ eq: (_column, id) => {
@@ -77,9 +83,25 @@ async function refresh({ cache, gold = null, twelveBudget = 8 }) {
       upsert: (rows) => {
         if (table === 'ks_quote_cache') storedGold = { ...rows };
         else if (table === 'klfan_fx_daily') fxDaily = { ...rows };
-        else stored = rows.map(r => ({ ...r }));
+        else {
+          // 真的 upsert 是照主鍵合併，不是整張表換掉 —— 換掉的話就看不出修剪有沒有做事
+          const next = stored.map(row => ({ ...row }));
+          for (const row of rows) {
+            const at = next.findIndex(existing => existing.symbol === row.symbol);
+            if (at >= 0) next[at] = { ...next[at], ...row };
+            else next.push({ ...row });
+          }
+          stored = next;
+        }
         return Promise.resolve({ error: null });
       },
+      delete: () => ({ not: (column, operator, list) => {
+        // 只實作 .not('symbol','in','("a","b")')，修剪就是靠這一招
+        const keep = new Set(String(list).slice(1, -1).split(',').map(v => v.replace(/^"|"$/g, '')));
+        pruned.push(...stored.filter(row => !keep.has(row[column])).map(row => row.symbol));
+        stored = stored.filter(row => keep.has(row[column]));
+        return Promise.resolve({ error: null });
+      } }),
     }),
   });
 
@@ -104,7 +126,7 @@ async function refresh({ cache, gold = null, twelveBudget = 8 }) {
   try {
     fn.__stub(factory, ENV);
     const body = await (await fn.handler(new Request('https://x/fn', { method: 'POST', headers: { Authorization: 'Bearer tok' }, body: '{}' }))).json();
-    return { body, used, stored, storedGold, written, fxDaily };
+    return { body, used, stored, storedGold, written, fxDaily, pruned };
   } finally {
     globalThis.fetch = realFetch;
   }
@@ -118,13 +140,13 @@ test('快取夠新時只花 1 個 credit，黃金以外都沿用', async () => {
   assert.equal(body.cache.write, null, '沿用快取的那一輪不該寫回');
 });
 
-test('快取過期就重抓全部，並寫回給 KLFAN 用', async () => {
+test('快取過期就重抓全部並寫回 klfan_quotes', async () => {
   const { body, used, stored } = await refresh({ cache: cacheRows(28 * 60_000) });
   assert.equal(used.twelve, 5, '匯率 + 三檔美股 + XAU/USD');
   assert.equal(body.failed, 0);
   assert.match(body.cache.write, /^wrote_/);
   assert.deepEqual(stored.map(r => r.symbol).sort(), [...Object.keys(KLFAN_KEYS), 'USD/TWD'].sort());
-  // 寫回要沿用 KLFAN 自己的 key 與來源標記，否則它下一輪會把這些列 prune 掉。
+  // 寫回要沿用帶交易所前綴的 key 與來源標記，股票分析那邊是照這個 key 對報價的。
   assert.deepEqual(
     stored.find(r => r.symbol === 'NYSEARCA:VOO'),
     { symbol: 'NYSEARCA:VOO', price: US_PRICE.VOO, currency: 'USD', change: 1, change_percent: 0.2, source: 'twelve_data', quoted_at: stored[0].updated_at, updated_at: stored[0].updated_at },
@@ -132,13 +154,27 @@ test('快取過期就重抓全部，並寫回給 KLFAN 用', async () => {
   assert.equal(stored.find(r => r.symbol === 'TPE:2330').source, 'fugle');
 });
 
-test('只涵蓋一部分就不寫回，免得 KLFAN 把舊價當成新的', async () => {
-  // KLFAN 多追一檔本專案沒有的台股。KLFAN 是看整張表最新的 updated_at 決定要不要重抓，
-  // 這時候寫回會讓 2317 的舊價看起來是新的。
-  const extra = [{ symbol: 'TPE:2317', price: 200, change: 0, change_percent: 0, quoted_at: 'x' }];
-  const { body, stored } = await refresh({ cache: cacheRows(28 * 60_000, extra) });
+test('已出清標的的舊報價要修剪掉，不能一直留在表裡', async () => {
+  // 這件事以前是 KLFAN 的 refresh-klfan-quotes 在做。KS Wealth 不再呼叫它之後，
+  // 沒有人修剪的話：舊價會被當成即時價顯示，而且它永遠不在「仍持有」名單裡，
+  // 涵蓋率永遠不滿，整個寫回就此停擺 —— 所有報價一起凍住。
+  const sold = [{ symbol: 'TPE:2317', price: 200, change: 0, change_percent: 0, quoted_at: 'x' }];
+  const { body, stored, pruned } = await refresh({ cache: cacheRows(28 * 60_000, sold) });
+  assert.match(body.cache.write, /^wrote_/, '出清的那一檔不該擋住寫回');
+  assert.deepEqual(pruned, ['TPE:2317']);
+  assert.ok(!stored.some(r => r.symbol === 'TPE:2317'), '出清的舊價要被清掉');
+  assert.deepEqual(stored.map(r => r.symbol).sort(), [...LIVE, 'USD/TWD'].sort());
+});
+
+test('仍持有的標的少抓到一檔就整批不寫', async () => {
+  // 只補一半的話，最新的 updated_at 會讓沒更新的那幾檔看起來也很新。
+  const { body, stored, pruned } = await refresh({
+    cache: cacheRows(28 * 60_000),
+    live: [...LIVE, 'TPE:9999'],   // 名單裡有一檔這一輪抓不到價
+  });
   assert.equal(body.cache.write, 'skipped_partial_coverage');
-  assert.ok(stored.some(r => r.symbol === 'TPE:2317'), '快取應該原封不動');
+  assert.deepEqual(pruned, [], '不寫的時候也不該修剪');
+  assert.deepEqual(stored.map(r => r.symbol).sort(), [...LIVE, 'USD/TWD'].sort(), '快取應該原封不動');
 });
 
 test('額度真的被吃光時，失敗的是黃金而且不會寫壞既有金額', async () => {
