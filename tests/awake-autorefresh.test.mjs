@@ -26,9 +26,10 @@ const BROWSER = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 const skip = !chromium ? 'playwright 未安裝'
   : !existsSync(BROWSER) ? '找不到 Chromium'
   : false;
-const TEN_MINUTES = 10 * 60 * 1000;
+const TW_TICK = 5 * 1000;
+const FULL_TICK = 60 * 1000;
 
-test('開著就恆亮，行情每 10 分鐘自己更新', { skip }, async t => {
+test('開著就恆亮，台股每 5 秒、其餘每分鐘自己更新', { skip }, async t => {
   const types = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html', '.png': 'image/png' };
   // 記下每次 functions.invoke，並且假裝有 Wake Lock API（headless Chromium 沒有）
   const stub = `${await readFile(new URL('./support/fake-supabase.js', import.meta.url), 'utf8')}
@@ -86,15 +87,16 @@ Object.defineProperty(navigator, 'wakeLock', { configurable: true, value: {
   await page.waitForSelector('#root.app', { timeout: 20_000 });
   await page.clock.runFor(1000);
 
-  const refreshes = () => page.evaluate(() => globalThis.__invokes?.['refresh-tw-quotes'] ?? 0);
+  // 兩條路徑都叫同一支函式，靠 body 的 scope 分：'tw' 是只打 Fugle 的輕量路徑
+  const counts = () => page.evaluate(() => globalThis.__scopes ?? { tw: 0, all: 0 });
+  const lock = () => page.evaluate(() => globalThis.__wakeLock);
 
-  await t.test('一次更新只叫一支函式', async () => {
+  await t.test('只叫 refresh-tw-quotes 這一支', async () => {
     // KLFAN 的 refresh-klfan-quotes 抓的是完全一樣的 8 檔，兩支一起叫等於把
     // Twelve Data 每分鐘 8 credits 的額度用掉一半。
     assert.deepEqual(Object.keys(await page.evaluate(() => globalThis.__invokes ?? {})),
       ['refresh-tw-quotes']);
   });
-  const lock = () => page.evaluate(() => globalThis.__wakeLock);
 
   await t.test('一開起來就要到螢幕恆亮', async () => {
     const state = await lock();
@@ -102,43 +104,46 @@ Object.defineProperty(navigator, 'wakeLock', { configurable: true, value: {
     assert.equal(state.active, true);
   });
 
-  await t.test('開著不動，每 10 分鐘會自己更新一次行情', async () => {
-    const before = await refreshes();
-    await page.clock.runFor(TEN_MINUTES);
-    const once = await refreshes();
-    assert.equal(once, before + 1, `10 分鐘要更新一次，實際 ${once - before} 次`);
-    await page.clock.runFor(TEN_MINUTES);
-    assert.equal(await refreshes(), before + 2, '第二個 10 分鐘再一次');
+  await t.test('台股每 5 秒抓一次，走不寫資料庫的輕量路徑', async () => {
+    // Fugle 免費、沒有 credit 的概念，所以台股可以抓得很勤。
+    const before = await counts();
+    await page.clock.runFor(TW_TICK * 6);
+    const after = await counts();
+    assert.equal(after.tw, before.tw + 6, `6 個 5 秒要抓 6 次，實際 ${after.tw - before.tw} 次`);
+    assert.equal(after.all, before.all, '這 30 秒內不該動到吃 credit 的那一輪');
   });
 
-  await t.test('抓得比快取 TTL 還勤沒有意義，所以不會提早更新', async () => {
-    const before = await refreshes();
-    await page.clock.runFor(TEN_MINUTES - 30_000);
-    assert.equal(await refreshes(), before, '不到 10 分鐘不該更新');
+  await t.test('美股與匯率每分鐘一次，那一輪才吃 Twelve Data 的額度', async () => {
+    // 一輪 7 credits、上限每分鐘 8，一分鐘超過一次就會爆。
+    const before = await counts();
+    await page.clock.runFor(FULL_TICK * 5);
+    const after = await counts();
+    assert.equal(after.all - before.all, 5, `五分鐘要剛好跑五次，實際 ${after.all - before.all} 次`);
+    assert.equal(after.tw - before.tw, 60, `同一段時間台股要跑 60 次，實際 ${after.tw - before.tw} 次`);
   });
 
-  await t.test('切到背景就停手，不在沒人看的時候耗電跟吃額度', async () => {
+  await t.test('切到背景就兩條都停手', async () => {
     await page.evaluate(() => {
       Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
       document.dispatchEvent(new Event('visibilitychange'));
     });
-    const before = await refreshes();
-    await page.clock.runFor(TEN_MINUTES * 3);
-    assert.equal(await refreshes(), before, '背景時不該更新');
+    const before = await counts();
+    await page.clock.runFor(FULL_TICK * 5);
+    assert.deepEqual(await counts(), before, '背景時兩條都不該更新');
   });
 
-  await t.test('回到前景要補一次更新，而且重新要一次恆亮', async () => {
+  await t.test('回到前景要補一次完整更新，而且重新要一次恆亮', async () => {
     // 系統在切背景時會自己收回 wake lock，並且發 release 事件
     await page.evaluate(() => { globalThis.__wakeLock.last.__systemRelease(); });
     assert.equal((await lock()).active, false, '收回之後就不是恆亮了');
-    const before = await refreshes();
+    const before = await counts();
     const locksBefore = (await lock()).requests;
     await page.evaluate(() => {
       Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
       document.dispatchEvent(new Event('visibilitychange'));
     });
     await page.clock.runFor(1000);
-    assert.equal(await refreshes(), before + 1, '離開超過 10 分鐘，回來要先補一次');
+    assert.equal((await counts()).all, before.all + 1, '離開超過一分鐘，回來要先補一次');
     assert.equal((await lock()).requests, locksBefore + 1, '回前景要重新要一次 wake lock');
   });
 

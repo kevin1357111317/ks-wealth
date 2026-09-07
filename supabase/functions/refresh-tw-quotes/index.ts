@@ -39,6 +39,16 @@ Deno.serve(async (req: Request) => {
   const { data: userData, error: userError } = await client.auth.getUser(token);
   if (userError || !userData.user) return json({ error: "unauthorized" }, 401);
 
+  // scope='tw' 是給前端每幾秒跑一次的輕量路徑：只打 Fugle（免費、沒有 credit），
+  // 只把價格回傳，完全不碰資料庫。碰了的話 financial_items 的 realtime 訂閱會被自己
+  // 觸發，每一輪都重載整本台帳（一千多筆交易）—— 那不是報價快，是把 App 拖垮。
+  // 資料庫的權威值由 scope='all' 那一輪負責寫。
+  let scope = "all";
+  try {
+    const body = await req.json();
+    if (body?.scope === "tw") scope = "tw";
+  } catch { /* 沒有 body 就當成 all */ }
+
   const { data: items, error: itemError } = await client
     .from("financial_items")
     .select("id,name,symbol,market,quantity,amount_twd,native_currency,native_amount")
@@ -96,7 +106,7 @@ Deno.serve(async (req: Request) => {
     }
   }
 
-  const twEntries = await Promise.all(twSymbols.map(async (symbol) => {
+  const fetchTw = async (symbol: string) => {
     if (!fugleKey) return [`TW:${symbol}`, { error: "fugle_key_missing" }] as const;
     try {
       const response = await fetch(
@@ -119,7 +129,26 @@ Deno.serve(async (req: Request) => {
     } catch {
       return [`TW:${symbol}`, { error: "fugle_unreachable" }] as const;
     }
-  }));
+  };
+
+  // 只要台股的話，抓完就直接回，下面 Twelve Data 那一整段都跳過。
+  if (scope === "tw") {
+    const entries = await Promise.all(twSymbols.map(fetchTw));
+    const bySymbol = new Map(entries);
+    return json({
+      scope: "tw",
+      source: "fugle",
+      requestedAt: new Date().toISOString(),
+      results: marketItems.filter((item) => item.market === "TW").map((item) => {
+        const quote = bySymbol.get(`TW:${String(item.symbol).toUpperCase()}`);
+        return !quote || "error" in quote
+          ? { id: item.id, name: item.name, symbol: item.symbol, market: "TW", status: "error", error: quote?.error ?? "invalid_symbol" }
+          : { id: item.id, name: item.name, symbol: item.symbol, market: "TW", status: "quote_only", ...quote };
+      }),
+    });
+  }
+
+  const twEntries = await Promise.all(twSymbols.map(fetchTw));
 
   let fxRate: number | null = cachedFx;
   let fxError: string | null = null;

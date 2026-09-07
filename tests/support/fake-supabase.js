@@ -72,10 +72,14 @@ export function makeClient() {
     },
     channel: () => ({ on() { return this; }, subscribe() { return this; } }),
     removeChannel: () => {},
-    functions: { invoke: async name => {
-      // 自動更新的測試靠這個計數。一次更新會叫兩支函式，所以照名字分開記。
+    functions: { invoke: async (name, options) => {
+      // 自動更新的測試靠這個計數。台股走 scope='tw' 的輕量路徑，跟完整那一輪分開記。
+      const scope = options?.body?.scope === 'tw' ? 'tw' : 'all';
       globalThis.__invokes = globalThis.__invokes ?? {};
       globalThis.__invokes[name] = (globalThis.__invokes[name] ?? 0) + 1;
+      globalThis.__scopes = globalThis.__scopes ?? { tw: 0, all: 0 };
+      globalThis.__scopes[scope] += 1;
+      if (scope === 'tw') return { data: { scope: 'tw', results: [] }, error: null };
       return { data: { results: [], updated: 0, priceOnly: 0, failed: 0, fx: {}, gold: {} }, error: null };
     } },
     rpc: async name => {
