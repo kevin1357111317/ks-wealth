@@ -15,6 +15,9 @@ export const db = {
   klfan_stocks: [],
   klfan_transactions: [],
   usd_transactions: [],
+  loan_accounts: [],
+  loan_schedule: [],
+  loan_events: [],
 };
 export const calls = [];
 let txSeq = 1000;

@@ -21,3 +21,10 @@
 .loanEvent time,.loanEvent small{color:#75837f;font-size:.7rem}.loanEvent div{min-width:0}.loanEvent b,.loanEvent small{display:block}
 .loanEvent span{font-size:.76rem;font-weight:800;white-space:nowrap}
 @media(max-width:420px){.analysisEntry button{padding:0 10px;font-size:.84rem}.loanEvent{grid-template-columns:68px minmax(0,1fr)}.loanEvent>span{grid-column:2}}
+.loanCardTap{display:block;width:100%;padding:0;border:0;background:transparent;color:inherit;text-align:left}
+.loanCard.open{box-shadow:0 10px 24px #527b7326}
+.loanDetail{display:grid;gap:12px;margin-top:14px;padding-top:14px;border-top:1px solid #eef4f2}
+.loanPlan{display:grid;gap:6px}
+.loanPlanRow{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#f4f8f7;border-radius:12px;padding:9px 12px}
+.loanPlanRow time{color:#7a8884;font-size:.76rem}
+.loanPlanRow b{font-size:.86rem;white-space:nowrap}
