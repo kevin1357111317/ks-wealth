@@ -83,7 +83,9 @@ let ledgerLoaded = false;
 let ledgerFlight = null;
 // 美金部位自己一本帳，跟 financial_items 沒有連動：買賣只在美金分析頁裡進出。
 let usdTransactions = [];
-let analysisScreen = null;   // 'stocks'｜'usd'，null 就是一般的資產頁
+let loanAccounts = [];
+let loanEvents = [];
+let analysisScreen = null;   // 'stocks'｜'usd'｜'loans'，null 就是一般的資產頁
 let analysisOwner = 'husband';   // 分析頁看的是誰的部位
 let expandedStock = null;   // 台帳清單裡就地展開的那一檔，一次只開一個
 // 分析頁是狀態切換不是換頁，返回手勢預設不會有反應。進去時推一筆歷史，
@@ -529,12 +531,14 @@ async function loadData({ blocking = false } = {}) {
   if (loadFlight) return loadFlight;
   const householdId = member.household_id;
   loadFlight = (async () => {
-    const [itemResult, familyHistoryResult, householdResult, scopeHistoryResult, usdResult] = await Promise.all([
+    const [itemResult, familyHistoryResult, householdResult, scopeHistoryResult, usdResult, loanResult, loanEventResult] = await Promise.all([
       sb.from('financial_items').select('*').eq('household_id', householdId).order('sort_order'),
       sb.from('net_worth_history').select('*').eq('household_id', householdId).order('recorded_on').range(0, 9999),
       sb.from('households').select('name').eq('id', householdId).single(),
       sb.from('financial_scope_history').select('*').eq('household_id', householdId).order('recorded_on').range(0, 9999),
       sb.from('usd_transactions').select('*').eq('household_id', householdId).order('trade_date').order('id').range(0, 9999),
+      sb.from('loan_accounts').select('*').eq('household_id', householdId).order('start_date'),
+      sb.from('loan_events').select('*').eq('household_id', householdId).order('event_date').order('sort_order'),
     ]);
     const failure = [itemResult.error, familyHistoryResult.error, householdResult.error, scopeHistoryResult.error].find(Boolean);
     if (failure) throw failure;
@@ -546,6 +550,8 @@ async function loadData({ blocking = false } = {}) {
     householdName = householdResult.data?.name || '布布一二的家';
     fxRate = items.find(item => item.fx_rate_twd > 1 && item.quote_currency === 'USD')?.fx_rate_twd ?? fxRate;
     if (!usdResult.error) usdTransactions = usdResult.data ?? [];
+    if (!loanResult.error) loanAccounts = loanResult.data ?? [];
+    if (!loanEventResult.error) loanEvents = loanEventResult.data ?? [];
     // 已經載過才重載 —— 完整重載的觸發時機是交易真的變了。
     if (ledgerLoaded) {
       ledgerLoaded = false;
@@ -608,6 +614,12 @@ function subscribeRealtime() {
     }, scheduleRealtimeReload)
     .on('postgres_changes', {
       event: '*', schema: 'public', table: 'klfan_transactions',
+    }, scheduleRealtimeReload)
+    .on('postgres_changes', {
+      event: '*', schema: 'public', table: 'loan_accounts', filter: `household_id=eq.${householdId}`,
+    }, scheduleRealtimeReload)
+    .on('postgres_changes', {
+      event: '*', schema: 'public', table: 'loan_events', filter: `household_id=eq.${householdId}`,
     }, scheduleRealtimeReload)
     .subscribe(status => {
       if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
@@ -834,7 +846,7 @@ function groupedCards(list, ownerScope, kind) {
 
 // 資產頁上只放入口，數字留在分析頁裡面講。
 function analysisEntry() {
-  return `<div class="analysisEntry"><button data-open-portfolio>股票分析<i>›</i></button><button data-open-usd>美金分析<i>›</i></button></div>`;
+  return `<div class="analysisEntry"><button data-open-portfolio>股票分析<i>›</i></button><button data-open-usd>美金分析<i>›</i></button><button data-open-loans>信貸分析<i>›</i></button></div>`;
 }
 
 // 分析頁只看單一個人的部位。全部合起來的 portfolioModel 還是要留著 ——
@@ -942,12 +954,58 @@ async function syncPortfolioFinancialItem(stockKey, { ownerScope, notes } = {}) 
 
 function analysisPage() {
   if (analysisScreen === 'usd') return usdPage();
+  if (analysisScreen === 'loans') return loanPage();
   // 點進來才去載台帳，載好會再 render 一次。
   if (!portfolioModel) {
     return shell('<div class="portfolioView"><div class="portfolioEmpty">載入交易紀錄…</div></div>',
       `${ownerName(analysisOwner)}股票分析`);
   }
   portfolioListPage();
+}
+
+function ownerLoanRows(ownerScope) {
+  return loanAccounts
+    .filter(account => account.owner_scope === ownerScope)
+    .map(account => {
+      const linked = items.find(item => item.id === account.financial_item_id);
+      return {
+        ...account,
+        currentBalance: account.status === 'active' ? toFiniteNumber(linked?.amount_twd) : 0,
+        monthlyPayment: toFiniteNumber(linked?.monthly_payment_twd ?? account.contractual_monthly_payment_twd),
+        annualRate: toFiniteNumber(linked?.interest_rate ?? account.nominal_annual_rate),
+      };
+    });
+}
+
+function loanAccountCard(account) {
+  const active = account.status === 'active';
+  const original = toFiniteNumber(account.original_principal_twd);
+  const paidPrincipal = Math.max(0, original - account.currentBalance);
+  const progress = original > 0 ? Math.min(100, paidPrincipal / original * 100) : 0;
+  const totalRepayment = toFiniteNumber(account.projected_total_repayment_twd);
+  const borrowingCost = totalRepayment > original ? totalRepayment - original : 0;
+  const dateLabel = active ? '預計到期' : '結清日期';
+  const dateValue = active ? account.maturity_date : account.closed_on;
+  return `<article class="loanCard"><div class="loanCardHead"><div><b>${escapeHtml(account.name)}</b><small>${escapeHtml(account.lender)} · ${escapeHtml(account.loan_type === 'topup' ? '增貸' : '信貸')}</small></div><span class="loanStatus ${active ? 'active' : ''}">${active ? '進行中' : '已結清'}</span></div><div class="loanBalance"><span>${active ? '目前本金餘額' : '原貸款金額'}</span><b>NT$ ${formatNumber(active ? account.currentBalance : original)}</b></div><div class="loanProgress"><i style="--progress:${progress}%"></i></div><div class="loanFacts"><div><span>原貸款</span><b>NT$ ${formatNumber(original)}</b></div><div><span>年利率</span><b>${account.annualRate > 0 ? account.annualRate.toFixed(2) + '%' : '—'}</b></div><div><span>${active ? '每月月付' : '總還款'}</span><b>${active ? 'NT$ ' + formatNumber(account.monthlyPayment) : totalRepayment ? 'NT$ ' + formatNumber(totalRepayment) : '—'}</b></div><div><span>${dateLabel}</span><b>${dateValue ? escapeHtml(dateValue) : '—'}</b></div></div>${active ? `<small class="loanFoot">已償還本金約 NT$ ${formatNumber(paidPrincipal)} · ${progress.toFixed(1)}%</small>` : `<small class="loanFoot">利息與費用 NT$ ${formatNumber(borrowingCost)}${account.effective_annual_cost ? ` · 有效年成本 ${(toFiniteNumber(account.effective_annual_cost) * 100).toFixed(2)}%` : ''}</small>`}</article>`;
+}
+
+function loanEventTimeline(rows) {
+  if (!rows.length) return '';
+  return `<section class="loanTimeline"><div class="sectionHead"><span>夫妻信貸結清紀錄</span><b>已結清</b></div>${rows.map(row => `<div class="loanEvent"><time>${escapeHtml(row.event_date)}</time><div><b>${escapeHtml(row.title)}</b><small>${escapeHtml(row.note || '')}</small></div><span>NT$ ${formatNumber(row.amount_twd)}</span></div>`).join('')}</section>`;
+}
+
+function loanPage() {
+  const rows = ownerLoanRows(analysisOwner);
+  const active = rows.filter(account => account.status === 'active');
+  const closed = rows.filter(account => account.status === 'closed');
+  const totalBalance = active.reduce((sum, account) => sum + account.currentBalance, 0);
+  const totalMonthly = active.reduce((sum, account) => sum + account.monthlyPayment, 0);
+  const weightedRate = totalBalance
+    ? active.reduce((sum, account) => sum + account.currentBalance * account.annualRate, 0) / totalBalance
+    : 0;
+  const accountIds = new Set(rows.map(account => account.id));
+  const events = loanEvents.filter(event => accountIds.has(event.loan_account_id));
+  shell(`<div class="portfolioView"><div class="portfolioSummary loanSummary"><div class="portfolioMetric"><span>目前信貸餘額</span><b>NT$ ${formatNumber(totalBalance)}</b><small>${active.length} 筆進行中</small></div><div class="portfolioMetric"><span>每月還款</span><b>NT$ ${formatNumber(totalMonthly)}</b><small>依目前負債資料</small></div><div class="portfolioMetric"><span>加權平均利率</span><b>${weightedRate.toFixed(2)}%</b><small>按目前本金加權</small></div><div class="portfolioMetric"><span>已結清</span><b>${closed.length} 筆</b><small>保留 KLFAN 紀錄</small></div></div><div class="sectionHead"><span>進行中信貸</span><b>${active.length} 筆</b></div><div class="loanList">${active.length ? active.map(loanAccountCard).join('') : '<div class="portfolioEmpty">目前沒有進行中的信貸。</div>'}</div>${closed.length ? `<div class="sectionHead"><span>已結清信貸</span><b>${closed.length} 筆</b></div><div class="loanList">${closed.map(loanAccountCard).join('')}</div>` : ''}${loanEventTimeline(events)}</div>`, `${ownerName(analysisOwner)}信貸分析`);
 }
 
 const usdFormat = value => masked
@@ -1065,6 +1123,8 @@ function personPage(ownerScope) {
   if (portfolioButton) portfolioButton.onclick = () => openAnalysis('stocks', ownerScope);
   const usdButton = root.querySelector('[data-open-usd]');
   if (usdButton) usdButton.onclick = () => openAnalysis('usd', ownerScope);
+  const loanButton = root.querySelector('[data-open-loans]');
+  if (loanButton) loanButton.onclick = () => openAnalysis('loans', ownerScope);
   root.querySelector('.categoryList').onclick = event => {
     const group = event.target.closest('[data-group]');
     if (group) {
