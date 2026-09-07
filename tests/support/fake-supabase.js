@@ -80,7 +80,7 @@ export function makeClient() {
       globalThis.__scopes = globalThis.__scopes ?? { tw: 0, all: 0 };
       globalThis.__scopes[scope] += 1;
       if (scope === 'tw') return { data: { scope: 'tw', results: [] }, error: null };
-      return { data: { results: [], updated: 1, priceOnly: 0, failed: 0, fx: {}, gold: {} }, error: null };
+      return { data: { results: [], updated: 1, priceOnly: 0, failed: 0, fx: { symbol: 'USD/TWD', rate: FX }, gold: {} }, error: null };
     } },
     rpc: async name => {
       // 每次整包重載都會叫一次。台帳有一千多筆交易（92 KB），報價更新不該碰它。
@@ -102,7 +102,9 @@ export function makeClient() {
         insert(payload) {
           const list = Array.isArray(payload) ? payload : [payload];
           list.forEach(row => {
+            // Postgres 會給 id，沒給的話點卡片時 items.find(id) 會找不到那一列
             if (table === 'klfan_transactions' || table === 'usd_transactions') row = { id: txSeq++, ...row };
+            else if (table === 'financial_items' && row.id === undefined) row = { id: `fi-new-${txSeq++}`, ...row };
             rows.push(row);
             calls.push({ op: 'insert', table, row });
             if (table === 'klfan_transactions') syncTrigger(row.stock_key);

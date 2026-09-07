@@ -1298,6 +1298,10 @@ function modeForItem(item, kind) {
   return currency === 'USD' ? 'manual-usd' : 'manual-twd';
 }
 
+// 這幾類沒有行情可抓，金額是手打的，但可能是美金計價 —— 給它們一個幣別選單，
+// 選 USD 就跟現金那條一樣走 manual-usd（存原幣金額與當下匯率，之後跟著匯率重算）。
+const CURRENCY_CHOICE_ATTRIBUTES = new Set(['insurance', 'other']);
+
 const assetAttributes = [
   { value: 'cash-twd', label: '台幣', category: '現金及存款', mode: 'manual-twd' },
   { value: 'cash-usd', label: '美金', category: '現金及存款', mode: 'manual-usd' },
@@ -1333,12 +1337,13 @@ async function editItem(item, defaultOwner, defaultKind) {
   let kind = item?.kind || defaultKind || 'asset';
   let mode = modeForItem(item, kind);
   let assetAttribute = assetAttributeForItem(item);
-  let insuranceCurrency = item?.category === '保險' && (item?.native_currency ?? item?.original_currency) === 'USD' ? 'USD' : 'TWD';
+  let manualCurrency = ['保險', '其他'].includes(item?.category)
+    && (item?.native_currency ?? item?.original_currency) === 'USD' ? 'USD' : 'TWD';
   let saving = false;
   const initialNativeAmount = item?.native_amount ?? item?.original_amount ?? item?.amount_twd ?? '';
   const backdrop = document.createElement('div');
   backdrop.className = 'backdrop';
-  backdrop.innerHTML = `<section class="sheet"><div class="handle"></div><div class="sheetHead"><div><h2>${item ? '編輯' : '新增'}財務項目</h2></div>${item ? '<button id="del" class="trash">刪除</button>' : ''}</div><form id="editform" class="form" novalidate><label>歸屬<select id="owner"><option value="husband">老公</option><option value="wife">老婆</option></select></label><div class="seg"><button type="button" data-kind="asset">資產</button><button type="button" data-kind="liability">負債</button></div><label><span id="categoryLabel">資產屬性</span><select id="cat"></select></label><label id="nameBox">名稱<input id="nm" required value="${escapeHtml(item?.name || '')}"></label><label id="insuranceCurrencyBox" class="hide">保險幣別<select id="insuranceCurrency"><option value="TWD">台幣（TWD）</option><option value="USD">美金（USD）</option></select></label><label id="modeBox">資料型態<select id="mode"><option value="manual-twd">手動台幣資產</option><option value="manual-usd">手動美元資產</option><option value="stock-tw">台股</option><option value="stock-us">美股</option><option value="gold">黃金（自動行情）</option></select><small id="modeHint" class="quoteHint"></small></label><div id="manualFields"><label id="amountLabel">台幣金額<input id="amt" inputmode="decimal" value="${initialNativeAmount}"></label><div id="usdFields" class="two hide"><label>USD/TWD 匯率<input id="fx" inputmode="decimal" readonly></label><label>自動換算台幣<input id="converted" readonly></label></div></div><div id="stockFields" class="hide"><div class="two"><label>代號或名稱<input id="symbol" value="${escapeHtml(ledgerStock ? ledgerStock.display : item?.symbol || '')}" placeholder="2330 或 台積電" autocapitalize="characters"></label><label id="qtyBox">持有股數<input id="qty" inputmode="decimal" value="${item?.quantity ?? ''}"></label><label id="txActionBox" class="hide">類型<select id="txAction"><option value="buy">買進</option><option value="sell">賣出</option><option value="dividend">股息</option></select></label></div><div class="quoteHint hide" id="stockHint"></div><div id="ledgerFields" class="hide"><div class="two"><label id="txAmountBox">總金額<input id="txAmount" inputmode="decimal"></label><label id="txSharesBox">股數<input id="txShares" inputmode="decimal"></label></div><div class="two"><label>日期<input id="txDate" type="date" value="${taipeiDate()}"></label><label>銀行／券商<input id="txBank"></label></div><div id="txHistoryBox" class="hide"><div class="sectionHead"><b>交易紀錄</b><span id="txCount"></span></div><div class="portfolioTxList" id="txHistory"></div></div></div></div><div id="goldFields" class="hide"><div class="two"><label>持有重量<input id="goldWeight" inputmode="decimal" value="${item?.market === 'GOLD' ? item.quantity ?? '' : ''}"></label><label>單位<select disabled><option>g 公克</option></select></label></div></div><div id="loanFields" class="hide"><label>剩餘本金（TWD）<input id="principal" inputmode="decimal" value="${item?.amount_twd ?? ''}"></label><div class="two"><label>年利率 %<input id="rate" inputmode="decimal" value="${item?.interest_rate ?? ''}"></label><label>每月月付（TWD）<input id="pay" inputmode="decimal" value="${item?.monthly_payment_twd ?? ''}"></label></div></div><label>備註（選填）<input id="note" value="${escapeHtml(item?.notes || '')}"></label><div id="emsg"></div><button id="save" class="primary">儲存並同步</button></form></section>`;
+  backdrop.innerHTML = `<section class="sheet"><div class="handle"></div><div class="sheetHead"><div><h2>${item ? '編輯' : '新增'}財務項目</h2></div>${item ? '<button id="del" class="trash">刪除</button>' : ''}</div><form id="editform" class="form" novalidate><label>歸屬<select id="owner"><option value="husband">老公</option><option value="wife">老婆</option></select></label><div class="seg"><button type="button" data-kind="asset">資產</button><button type="button" data-kind="liability">負債</button></div><label><span id="categoryLabel">資產屬性</span><select id="cat"></select></label><label id="nameBox">名稱<input id="nm" required value="${escapeHtml(item?.name || '')}"></label><label id="currencyBox" class="hide">幣別<select id="manualCurrency"><option value="TWD">台幣（TWD）</option><option value="USD">美金（USD）</option></select></label><label id="modeBox">資料型態<select id="mode"><option value="manual-twd">手動台幣資產</option><option value="manual-usd">手動美元資產</option><option value="stock-tw">台股</option><option value="stock-us">美股</option><option value="gold">黃金（自動行情）</option></select><small id="modeHint" class="quoteHint"></small></label><div id="manualFields"><label id="amountLabel">台幣金額<input id="amt" inputmode="decimal" value="${initialNativeAmount}"></label><div id="usdFields" class="two hide"><label>USD/TWD 匯率<input id="fx" inputmode="decimal" readonly></label><label>自動換算台幣<input id="converted" readonly></label></div></div><div id="stockFields" class="hide"><div class="two"><label>代號或名稱<input id="symbol" value="${escapeHtml(ledgerStock ? ledgerStock.display : item?.symbol || '')}" placeholder="2330 或 台積電" autocapitalize="characters"></label><label id="qtyBox">持有股數<input id="qty" inputmode="decimal" value="${item?.quantity ?? ''}"></label><label id="txActionBox" class="hide">類型<select id="txAction"><option value="buy">買進</option><option value="sell">賣出</option><option value="dividend">股息</option></select></label></div><div class="quoteHint hide" id="stockHint"></div><div id="ledgerFields" class="hide"><div class="two"><label id="txAmountBox">總金額<input id="txAmount" inputmode="decimal"></label><label id="txSharesBox">股數<input id="txShares" inputmode="decimal"></label></div><div class="two"><label>日期<input id="txDate" type="date" value="${taipeiDate()}"></label><label>銀行／券商<input id="txBank"></label></div><div id="txHistoryBox" class="hide"><div class="sectionHead"><b>交易紀錄</b><span id="txCount"></span></div><div class="portfolioTxList" id="txHistory"></div></div></div></div><div id="goldFields" class="hide"><div class="two"><label>持有重量<input id="goldWeight" inputmode="decimal" value="${item?.market === 'GOLD' ? item.quantity ?? '' : ''}"></label><label>單位<select disabled><option>g 公克</option></select></label></div></div><div id="loanFields" class="hide"><label>剩餘本金（TWD）<input id="principal" inputmode="decimal" value="${item?.amount_twd ?? ''}"></label><div class="two"><label>年利率 %<input id="rate" inputmode="decimal" value="${item?.interest_rate ?? ''}"></label><label>每月月付（TWD）<input id="pay" inputmode="decimal" value="${item?.monthly_payment_twd ?? ''}"></label></div></div><label>備註（選填）<input id="note" value="${escapeHtml(item?.notes || '')}"></label><div id="emsg"></div><button id="save" class="primary">儲存並同步</button></form></section>`;
   document.body.append(backdrop);
 
   const form = backdrop.querySelector('#editform');
@@ -1347,8 +1352,8 @@ async function editItem(item, defaultOwner, defaultKind) {
   const nameInput = backdrop.querySelector('#nm');
   const categoryInput = backdrop.querySelector('#cat');
   const categoryLabel = backdrop.querySelector('#categoryLabel');
-  const insuranceCurrencyBox = backdrop.querySelector('#insuranceCurrencyBox');
-  const insuranceCurrencyInput = backdrop.querySelector('#insuranceCurrency');
+  const currencyBox = backdrop.querySelector('#currencyBox');
+  const currencyInput = backdrop.querySelector('#manualCurrency');
   const modeBox = backdrop.querySelector('#modeBox');
   const modeInput = backdrop.querySelector('#mode');
   const modeHint = backdrop.querySelector('#modeHint');
@@ -1385,7 +1390,7 @@ async function editItem(item, defaultOwner, defaultKind) {
   const message = backdrop.querySelector('#emsg');
   const saveButton = backdrop.querySelector('#save');
   ownerInput.value = owner;
-  insuranceCurrencyInput.value = insuranceCurrency;
+  currencyInput.value = manualCurrency;
   modeInput.value = mode;
   if (ledgerStock?.display) nameInput.value = ledgerStock.display;
 
@@ -1487,9 +1492,9 @@ async function editItem(item, defaultOwner, defaultKind) {
   const selectedCategory = () => kind === 'asset' ? selectedAssetAttribute().category : categoryInput.value;
   const updateFields = () => {
     if (kind === 'liability') mode = 'liability';
-    else if (assetAttribute === 'insurance') mode = insuranceCurrency === 'USD' ? 'manual-usd' : 'manual-twd';
+    else if (CURRENCY_CHOICE_ATTRIBUTES.has(assetAttribute)) mode = manualCurrency === 'USD' ? 'manual-usd' : 'manual-twd';
     else mode = selectedAssetAttribute().mode;
-    insuranceCurrencyInput.value = insuranceCurrency;
+    currencyInput.value = manualCurrency;
     modeInput.value = mode;
     const manual = kind === 'asset' && mode.startsWith('manual-');
     const stock = kind === 'asset' && mode.startsWith('stock-');
@@ -1501,7 +1506,7 @@ async function editItem(item, defaultOwner, defaultKind) {
     categoryInput.disabled = false;
     modeHint.textContent = '';
     modeBox.classList.add('hide');
-    insuranceCurrencyBox.classList.toggle('hide', kind !== 'asset' || assetAttribute !== 'insurance');
+    currencyBox.classList.toggle('hide', kind !== 'asset' || !CURRENCY_CHOICE_ATTRIBUTES.has(assetAttribute));
     manualFields.classList.toggle('hide', !manual);
     stockFields.classList.toggle('hide', !stock);
     ledgerFields.classList.toggle('hide', !ledger);
@@ -1521,8 +1526,8 @@ async function editItem(item, defaultOwner, defaultKind) {
   fillCategories();
   updateFields();
   modeInput.onchange = updateFields;
-  insuranceCurrencyInput.onchange = () => {
-    insuranceCurrency = insuranceCurrencyInput.value;
+  currencyInput.onchange = () => {
+    manualCurrency = currencyInput.value;
     updateFields();
   };
   categoryInput.onchange = () => {

@@ -491,5 +491,56 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
   });
 
 
+  await t.test('其他跟保險一樣可以用美金輸入', async () => {
+    // 這兩類沒有行情可抓、金額是手打的，但可能是美金計價。選 USD 就跟現金那條一樣
+    // 存原幣金額與當下匯率，之後匯率一動 refresh-tw-quotes 會跟著重算台幣。
+    await page.click('.fab');
+    await page.waitForSelector('#editform');
+
+    const hasPicker = async value => {
+      await page.selectOption('#cat', value);
+      await page.waitForTimeout(80);
+      return page.isVisible('#currencyBox');
+    };
+    assert.equal(await hasPicker('other'), true, '其他要有幣別選單');
+    assert.equal(await hasPicker('insurance'), true, '保險本來就有，不能弄丟');
+    assert.equal(await hasPicker('real-estate'), false, '不動產沒有美金計價的問題');
+    assert.equal(await hasPicker('cash-twd'), false, '現金是靠台幣／美金兩個屬性分的');
+
+    await page.selectOption('#cat', 'other');
+    await page.selectOption('#manualCurrency', 'USD');
+    await page.waitForTimeout(120);
+    assert.match(await page.textContent('#amountLabel'), /美元金額/);
+    assert.ok(await page.isVisible('#usdFields'), '要看得到匯率與自動換算');
+
+    await page.fill('#nm', '寶可夢卡牌');
+    await page.fill('#amt', '1000');
+    await page.waitForTimeout(150);
+    const rate = Number(await page.inputValue('#fx'));
+    assert.ok(rate > 1, '匯率要帶進來，否則存不了');
+    await save();
+
+    const row = (await db()).financial_items.find(item => item.name === '寶可夢卡牌');
+    assert.equal(row.category, '其他');
+    assert.equal(row.native_currency, 'USD', '要存成美金計價，不是換算完就丟掉原幣');
+    assert.equal(Number(row.native_amount), 1000);
+    assert.equal(Number(row.fx_rate_twd), rate);
+    assert.equal(Number(row.amount_twd), Math.round(1000 * rate));
+
+    // 重開要記得它是美金，不能又跳回台幣
+    await page.click('.categoryGroup:has-text("其他") .categoryHead').catch(() => {});
+    await page.waitForTimeout(200);
+    const card = page.locator('.itemCard', { hasText: '寶可夢卡牌' });
+    if (await card.count()) {
+      await card.first().click();
+      await page.waitForSelector('#editform');
+      assert.equal(await page.inputValue('#manualCurrency'), 'USD', '重開要記得是美金');
+      assert.equal(await page.inputValue('#amt'), '1000', '欄位要放原幣金額');
+      await page.click('.backdrop', { position: { x: 5, y: 5 } });
+      await page.waitForTimeout(200);
+    }
+  });
+
+
   assert.deepEqual(failures, [], '瀏覽器不該有錯誤');
 });

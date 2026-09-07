@@ -197,6 +197,18 @@ USD/TWD，最後寫的那個就是當下的匯率，這正是我們要的「兩�
 `tests/quote-cache.test.mjs` 守兩件事：一輪裡所有 USD 項目的 `fx_rate_twd` 只能有一個值，
 而且 `klfan_fx_daily` 要拿到同一個值；匯率抓不到時則完全不動那張表（寫 null 會弄壞觸發器的來源）。
 
+## 手動項目的幣別
+
+**保險**與**其他**這兩類沒有行情可抓、金額是手打的，但可能是美金計價，所以表單上有一個
+幣別選單（`CURRENCY_CHOICE_ATTRIBUTES`）。選 USD 就走跟現金一樣的 `manual-usd`：存
+`native_currency` / `native_amount` 與當下的 `fx_rate_twd`，之後 `refresh-tw-quotes` 會
+跟著匯率把 `amount_twd` 重算。
+
+現金及存款不在這個名單裡 —— 它是靠「台幣」「美金」兩個資產屬性分的，多一個選單只會打架。
+
+要新增別的類別到這個名單，只要把 value 加進 `CURRENCY_CHOICE_ATTRIBUTES`；儲存那段是照
+`mode` 分支的，不必動。
+
 ## 螢幕恆亮與自動更新
 
 App 開著的時候會用 Screen Wake Lock 讓螢幕不要自己關掉，行情分成**兩條快慢不同的路徑**，
