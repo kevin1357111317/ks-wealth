@@ -122,6 +122,15 @@ Object.defineProperty(navigator, 'wakeLock', { configurable: true, value: {
     assert.equal(after.tw - before.tw, 60, `同一段時間台股要跑 60 次，實際 ${after.tw - before.tw} 次`);
   });
 
+  await t.test('更新報價不該重載整本台帳', async () => {
+    // 台帳是 92 KB，其中 89 KB 是那 1489 筆交易。報價只改價格、交易一筆都沒動，
+    // 以前卻每分鐘整包重拉一次 —— 開著一小時就是 5.5 MB，只為了拿幾個股價。
+    const before = await page.evaluate(() => globalThis.__bootstraps ?? 0);
+    await page.clock.runFor(FULL_TICK * 3);
+    const after = await page.evaluate(() => globalThis.__bootstraps ?? 0);
+    assert.equal(after, before, `三輪完整更新不該重載台帳，實際重載了 ${after - before} 次`);
+  });
+
   await t.test('切到背景就兩條都停手', async () => {
     await page.evaluate(() => {
       Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });

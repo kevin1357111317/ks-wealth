@@ -55,6 +55,7 @@ let tab = 'dashboard';
 let masked = false;
 let channel = null;
 let realtimeReloadTimer = null;
+let itemReloadTimer = null;
 let loadFlight = null;
 let quoteFlight = null;
 let quoteStatus = 'idle';
@@ -410,6 +411,32 @@ function stopQuoteAutoRefresh() {
   quoteTimer = null;
 }
 
+// 報價更新之後要跟上的只有兩樣：資產列的金額，以及股票分析用的那一份股價。
+// 金額 Edge Function 已經算好回傳了，股價再去 klfan_quotes 撈一次就好 —— 交易
+// 歷史沒有變，沒有理由重載。
+async function applyQuoteRefresh(data) {
+  for (const result of data?.results ?? []) {
+    const item = items.find(row => row.id === result.id);
+    const amountTwd = toFiniteNumber(result.amountTwd);
+    if (item && result.status === 'updated' && amountTwd > 0) item.amount_twd = amountTwd;
+  }
+  const { data: rows, error } = await sb.from('klfan_quotes')
+    .select('symbol,price,currency,source,quoted_at,updated_at');
+  if (error || !rows) return;
+  const bySymbol = new Map(rows.map(row => [String(row.symbol ?? '').toUpperCase(), {
+    price: toFiniteNumber(row.price),
+    currency: row.currency,
+    source: row.source,
+    quotedAt: row.quoted_at,
+    updatedAt: Date.parse(String(row.updated_at ?? '')) || 0,
+  }]));
+  for (const stock of portfolioStocks) {
+    const quote = bySymbol.get(String(stock.symbol ?? '').toUpperCase());
+    if (quote) stock.quote = quote;
+  }
+  portfolioModel = calculatePortfolio(portfolioStocks, fxRate);
+}
+
 // 台股的輕量更新：只拿價格套進畫面，不寫資料庫、不重載、不動狀態列。
 // 狀態列每五秒閃一次「更新中」比不更新還糟。
 let twFlight = null;
@@ -514,6 +541,30 @@ async function loadData({ blocking = false } = {}) {
   return loadFlight;
 }
 
+// financial_items 變動不代表台帳變動 —— 每一輪報價更新都會寫它，realtime 再把事件
+// 送回來給我們自己。照單全收就是每分鐘整包重載一次（92 KB，其中 89 KB 是交易）。
+// 這裡只重抓 financial_items 本身；交易真的變了會由 klfan_transactions 的事件帶進來，
+// 那一條才走完整重載。用時間窗把自己的寫入濾掉也行，但別的裝置剛好在窗口內改東西就漏了。
+function scheduleItemReload() {
+  if (!member) return;
+  clearTimeout(itemReloadTimer);
+  itemReloadTimer = setTimeout(() => {
+    itemReloadTimer = null;
+    void reloadItems();
+  }, 300);
+}
+
+async function reloadItems() {
+  if (!member) return;
+  const householdId = member.household_id;
+  const { data, error } = await sb.from('financial_items')
+    .select('*').eq('household_id', householdId).order('sort_order');
+  if (error || !member || member.household_id !== householdId) return;
+  items = (data ?? []).map(normalizeFinancialItem);
+  fxRate = items.find(item => item.fx_rate_twd > 1 && item.quote_currency === 'USD')?.fx_rate_twd ?? fxRate;
+  render();
+}
+
 function scheduleRealtimeReload() {
   if (!member) return;
   clearTimeout(realtimeReloadTimer);
@@ -529,7 +580,7 @@ function subscribeRealtime() {
   channel = sb.channel(`ks-v3:${householdId}`)
     .on('postgres_changes', {
       event: '*', schema: 'public', table: 'financial_items', filter: `household_id=eq.${householdId}`,
-    }, scheduleRealtimeReload)
+    }, scheduleItemReload)
     .on('postgres_changes', {
       event: '*', schema: 'public', table: 'net_worth_history', filter: `household_id=eq.${householdId}`,
     }, scheduleRealtimeReload)
@@ -545,7 +596,9 @@ function subscribeRealtime() {
 
 function clearRealtime() {
   clearTimeout(realtimeReloadTimer);
+  clearTimeout(itemReloadTimer);
   realtimeReloadTimer = null;
+  itemReloadTimer = null;
   if (channel) void sb.removeChannel(channel);
   channel = null;
 }
@@ -652,8 +705,10 @@ async function refreshQuotes({ force = false } = {}) {
     quoteFailureNote = failed > 0 ? describeQuoteFailures(data?.results) : '';
     saveQuoteTimestamp(data?.requestedAt || new Date().toISOString());
 
-    if (toFiniteNumber(data?.updated) > 0) await loadData({ blocking: false });
-    else render();
+    // 報價更新只改價格，交易一筆都沒動 —— 以前這裡整包重載，等於每分鐘為了幾個股價
+    // 把 1489 筆交易（92 KB，其中 89 KB 是交易）再拉一次。改成只補報價那 3 KB。
+    if (toFiniteNumber(data?.updated) > 0) await applyQuoteRefresh(data);
+    render();
     return data;
   })().catch(() => {
     quoteStatus = 'error';

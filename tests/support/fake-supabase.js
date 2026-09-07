@@ -80,9 +80,11 @@ export function makeClient() {
       globalThis.__scopes = globalThis.__scopes ?? { tw: 0, all: 0 };
       globalThis.__scopes[scope] += 1;
       if (scope === 'tw') return { data: { scope: 'tw', results: [] }, error: null };
-      return { data: { results: [], updated: 0, priceOnly: 0, failed: 0, fx: {}, gold: {} }, error: null };
+      return { data: { results: [], updated: 1, priceOnly: 0, failed: 0, fx: {}, gold: {} }, error: null };
     } },
     rpc: async name => {
+      // 每次整包重載都會叫一次。台帳有一千多筆交易（92 KB），報價更新不該碰它。
+      globalThis.__bootstraps = (globalThis.__bootstraps ?? 0) + 1;
       if (name !== 'klfan_bootstrap') return { data: null, error: null };
       const stocks = db.klfan_stocks;
       const index = new Map(stocks.map((s, i) => [s.key, i]));
