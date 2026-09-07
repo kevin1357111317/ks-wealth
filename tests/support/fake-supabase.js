@@ -72,7 +72,12 @@ export function makeClient() {
     },
     channel: () => ({ on() { return this; }, subscribe() { return this; } }),
     removeChannel: () => {},
-    functions: { invoke: async () => ({ data: { results: [], updated: 0, priceOnly: 0, failed: 0, fx: {}, gold: {} }, error: null }) },
+    functions: { invoke: async name => {
+      // 自動更新的測試靠這個計數。一次更新會叫兩支函式，所以照名字分開記。
+      globalThis.__invokes = globalThis.__invokes ?? {};
+      globalThis.__invokes[name] = (globalThis.__invokes[name] ?? 0) + 1;
+      return { data: { results: [], updated: 0, priceOnly: 0, failed: 0, fx: {}, gold: {} }, error: null };
+    } },
     rpc: async name => {
       if (name !== 'klfan_bootstrap') return { data: null, error: null };
       const stocks = db.klfan_stocks;

@@ -60,6 +60,11 @@ let quoteFlight = null;
 let quoteStatus = 'idle';
 let quoteFailureNote = '';
 let quoteLastAt = 0;
+// 自動更新的間隔就取 Edge Function 共用快取的 TTL。抓得比這個還勤沒有意義：
+// 10 分鐘內的第二次更新只會讀到同一份快取，行情不會更新，只是白耗電。
+const QUOTE_AUTO_INTERVAL_MS = 10 * 60 * 1000;
+let quoteTimer = null;
+let wakeLock = null;
 let quoteLastUpdatedAt = null;
 let quoteData = {};
 let fxRate = null;
@@ -365,7 +370,45 @@ async function resolveMembership() {
   lifecycle = 'ready';
   subscribeRealtime();
   void refreshQuotes({ reason: 'startup' });
+  startQuoteAutoRefresh();
 }
+
+// ── 螢幕恆亮與自動更新 ──────────────────────────────────────────────────────
+// 兩件事都綁在「畫面看得到」這個條件上：Wake Lock 本來就會在切到背景時被系統收回，
+// 而背景分頁的計時器會被瀏覽器降頻，更新了也沒人看，只是耗電跟吃 API 額度。
+async function keepScreenAwake() {
+  if (!('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
+  if (wakeLock && !wakeLock.released) return;
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+    // 系統自己收回時（低電量、切背景）把它清掉，回前景才會重新要一次。
+    wakeLock.addEventListener?.('release', () => { wakeLock = null; });
+  } catch { /* 低電量模式或使用者不給，就照一般的螢幕逾時走 */ }
+}
+
+function startQuoteAutoRefresh() {
+  stopQuoteAutoRefresh();
+  quoteTimer = setInterval(() => {
+    if (document.visibilityState !== 'visible') return;
+    void refreshQuotes({ reason: 'auto' });
+  }, QUOTE_AUTO_INTERVAL_MS);
+}
+
+function stopQuoteAutoRefresh() {
+  if (quoteTimer !== null) clearInterval(quoteTimer);
+  quoteTimer = null;
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  void keepScreenAwake();
+  // 螢幕關著的那段時間計時器是停的，回來時先補一次。
+  if (session && member && Date.now() - quoteLastAt >= QUOTE_AUTO_INTERVAL_MS) {
+    void refreshQuotes({ reason: 'visible' });
+  }
+});
+
+void keepScreenAwake();
 
 async function applySession(nextSession) {
   const previousUserId = session?.user?.id ?? null;
@@ -373,6 +416,7 @@ async function applySession(nextSession) {
   if (previousUserId === nextUserId && member && lifecycle === 'ready') return;
 
   clearRealtime();
+  stopQuoteAutoRefresh();   // 換人或登出就先停，登入完成後 bootstrap 會重開
   session = nextSession;
   member = null;
   items = [];

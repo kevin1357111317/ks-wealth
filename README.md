@@ -195,6 +195,28 @@ USD/TWD，最後寫的那個就是當下的匯率，這正是我們要的「兩�
 `tests/quote-cache.test.mjs` 守兩件事：一輪裡所有 USD 項目的 `fx_rate_twd` 只能有一個值，
 而且 `klfan_fx_daily` 要拿到同一個值；匯率抓不到時則完全不動那張表（寫 null 會弄壞觸發器的來源）。
 
+## 螢幕恆亮與自動更新
+
+App 開著的時候會用 Screen Wake Lock 讓螢幕不要自己關掉，行情也每 **10 分鐘**自己更新一次。
+
+間隔取的是 Edge Function 共用快取的 TTL（`QUOTE_CACHE_TTL_MS`）。抓得比這個勤沒有意義 ——
+10 分鐘內的第二次更新只會讀到同一份快取，行情不會變，只是白耗電。反過來說，快取還新的那幾輪
+是 0 credit，真正會打 API 的是每 10 分鐘那一次。
+
+兩件事都綁在「畫面看得到」這個條件上：
+
+- Wake Lock 本來就會在切到背景時被系統收回，所以 `visibilitychange` 回到前景要**重新要一次**
+  （並且掛 `release` 事件把 `wakeLock` 清成 null，不然下次會以為還握著）
+- 背景分頁的計時器會被瀏覽器降頻，更新了也沒人看，只是耗電跟吃額度，所以計時器裡先檢查
+  `visibilityState`
+- 螢幕關著那段時間計時器是停的，所以回前景時如果距離上次更新已經超過 10 分鐘，先補一次
+
+`navigator.wakeLock` 拿不到（低電量模式、使用者不給、瀏覽器沒支援）就安靜跳過，照系統原本的
+螢幕逾時走。
+
+`tests/awake-autorefresh.test.mjs` 用 Playwright 的假時鐘把 10 分鐘快轉掉，守住：開起來就恆亮、
+每 10 分鐘更新一次、不到 10 分鐘不更新、切背景完全停手、回前景補一次並重新要恆亮。
+
 ## 行情額度與共用快取
 
 這個 Supabase 專案同時服務兩個 App：本專案與 KLFAN（`KLFAN-stock-tracker`），兩邊共用同一把
