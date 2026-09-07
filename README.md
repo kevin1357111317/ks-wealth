@@ -135,6 +135,20 @@ FIFO 與加權平均會給出不同答案的案例，改回平均成本就會被
 這是公開市場資料，登入後可讀；寫入的函式對 `public` / `anon` / `authenticated` 都撤銷執行權限
 （否則任何登入者都能觸發對外抓取），要更新清單時用管理連線手動 `select refresh_tw_stock_names();`。
 
+## 狀態列那一條的顏色
+
+iOS 的 `apple-mobile-web-app-status-bar-style: default` 不會讓網頁蓋到狀態列底下 ——
+網頁從安全區下面才開始，狀態列那一條是拿 **`html` 的背景色**去填的。所以只要 `html` 的
+背景跟畫面最上緣畫出來的顏色不一樣，那條就會跟畫面接出一條硬邊。
+
+三個畫面最上緣的顏色不一樣，`html` 要跟著走：
+
+- App 畫面：`body::before` 的漸層起頭 `#d9f5f1` → `html{background:#d9f5f1}`
+- 載入／登入畫面：`.center,.auth` 的漸層起頭 `#9fe4df` → `html:has(#root.center),html:has(#root.auth)`
+
+改任何一邊的漸層起頭，`html` 那邊要一起改。`tests/status-bar-strip.test.mjs` 會把
+`html` 的 computed 背景色跟畫面最上緣的實際像素對起來比，對不上就失敗。
+
 ## 趨勢圖的手勢
 
 刮動趨勢圖的監聽器**不掛在 `#root` 上**。WebKit 會把「有 non-passive `pointermove` 監聽器」
