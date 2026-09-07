@@ -527,7 +527,7 @@ async function ensureLoanSchedule() {
   if (loanScheduleFlight) return loanScheduleFlight;
   loanScheduleFlight = (async () => {
     const { data, error } = await sb.from('loan_schedule')
-      .select('id,loan_account_id,due_date,actual_date,amount_twd,entry_type,note').order('due_date').order('id').range(0, 9999);
+      .select('id,loan_account_id,due_date,actual_date,amount_twd,balance_after_twd,entry_type,note').order('due_date').order('id').range(0, 9999);
     if (error) return false;
     loanSchedule = data ?? [];
     loanScheduleLoaded = true;
@@ -1001,8 +1001,8 @@ function ownerLoanRows(ownerScope) {
     });
 }
 
-// 排程分成已繳與未繳兩段。「已繳」是照日期切的 —— 排程是合約上的預定表，
-// 實際有沒有繳看的是 financial_items 的餘額，這裡不混在一起講。
+// 有 actual_date 的列才是銀行 App 已核對的實際繳款；舊資料若沒有實際日，
+// 到期後仍會列在歷史區，但明確標成排程，不冒充實際扣款。
 function loanScheduleFor(accountId, today = taipeiDate()) {
   return calculateLoanCashflow(
     loanSchedule.filter(row => row.loan_account_id === accountId),
@@ -1013,7 +1013,8 @@ function loanScheduleFor(accountId, today = taipeiDate()) {
 function loanCashflowRow(row, fallback) {
   const shownDate = row.actual_date || row.due_date;
   const dueNote = row.actual_date && row.actual_date !== row.due_date ? `應繳 ${row.due_date}` : '';
-  return `<div class="loanPlanRow"><div><time>${escapeHtml(shownDate)}</time>${dueNote ? `<small>${escapeHtml(dueNote)}</small>` : ''}</div><div><small>${escapeHtml(row.note || fallback)}</small><b>NT$ ${formatNumber(Math.abs(row.amount))}</b></div></div>`;
+  const balanceNote = toFiniteNumber(row.balance_after_twd) > 0 ? `繳後本金 NT$ ${formatNumber(row.balance_after_twd)}` : '';
+  return `<div class="loanPlanRow"><div><time>${escapeHtml(shownDate)}</time>${dueNote ? `<small>${escapeHtml(dueNote)}</small>` : ''}</div><div><small>${escapeHtml(row.note || fallback)}</small><b>NT$ ${formatNumber(Math.abs(row.amount))}</b>${balanceNote ? `<small>${escapeHtml(balanceNote)}</small>` : ''}</div></div>`;
 }
 
 function loanScheduleDetail(account) {
