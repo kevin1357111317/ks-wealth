@@ -162,11 +162,13 @@ iOS 的 `apple-mobile-web-app-status-bar-style: default` 不會讓網頁蓋到�
   放開、或判斷成直向手勢，就整組收掉
 - `pointermove` 裡**不呼叫 `preventDefault()`**：`.trendChart` 的 `touch-action: pan-y`
   已經擋掉橫向平移，擋了反而讓監聽器變成 non-passive
-- `setPointerCapture()` **只在確認成橫向刮動的那一刻抓**，前後兩種釘住都跟它有關：
-  - 太早抓（方向還沒確定、或把往上滑誤判成刮動）→ 瀏覽器收不回手勢，**整頁捲不動**
-  - 完全不抓 → `touch-action: pan-y` 讓直向永遠屬於瀏覽器，橫著刮時手指的上下抖動會讓
-    瀏覽器半路把手勢收走並丟 `pointercancel`，**提示框停在半路不動**
-  代價：一個真的從橫向起頭、後來轉成直向的手勢，那一下不會捲頁 —— 放開再滑一次就好
+- **完全不抓 `setPointerCapture()`**。抓了瀏覽器就沒辦法把判斷錯的手勢收回去捲頁，整頁會被釘住
+- 刮動被半路收走則是另一件事，用 **`touchmove`** 解決：`touch-action: pan-y` 把直向永遠讓給
+  瀏覽器，橫著刮時手指只要有一點上下位移，瀏覽器就會接手捲頁並丟一個 `pointercancel` 過來 ——
+  提示框當場停住。`touchmove` 不受這件事影響，會一路發到手指離開，所以觸控時多掛一組
+  `touchmove`／`touchend`／`touchcancel`，並且**忽略 `pointercancel`**（觸控的 pointercancel
+  幾乎都是瀏覽器接手捲頁發的，不代表手指離開了），由 `touchend` 決定什麼時候結束。
+  座標來源有兩種，判斷與更新的邏輯只有 `trackTrendDrag()` 那一份
 - 方向要**明顯**才算數：至少移動 10px，而且橫向要贏過直向 1.5 倍才當成刮動；直向先跨過
   10px 就直接放手。手指按下去的第一個取樣幾乎都是斜的，拿單一取樣比 `|dx| > |dy|` 的話，
   明明是往上滑也會被判成刮動 —— 而且中不中招看那一下的抖動，所以症狀是「有時候會有時候不會」
