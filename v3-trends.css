@@ -122,7 +122,11 @@ button:disabled{cursor:wait;opacity:.62}
   --orange:#e5ae4f;
   --cyan:#72cfc8;
 }
-html{background:#dff5f1;color-scheme:light}
+html{background:#d9f5f1;color-scheme:light}
+/* iOS 的 default 狀態列不會蓋在網頁上，那一條是拿 html 的背景色去填的。
+   載入／登入畫面的漸層從 #9fe4df 起頭，html 卻是 #dff5f1，狀態列那條就會跟畫面
+   接出一條硬邊。把 html 跟著當下畫面的第一個色停走，接縫就沒了。 */
+html:has(#root.center),html:has(#root.auth){background:#9fe4df}
 body{
   background:transparent;
   color:var(--text);
