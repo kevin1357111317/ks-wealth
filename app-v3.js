@@ -74,8 +74,13 @@ let wakeLock = null;
 let quoteLastUpdatedAt = null;
 let quoteData = {};
 let fxRate = null;
+// 台帳（39 檔標的、1489 筆交易、92 KB）只有股票分析頁與編輯表單的交易紀錄要用。
+// 資產列的股數與市值是觸發器算好存在 financial_items 的，開 App 根本不需要台帳，
+// 所以改成第一次真的要用時才載。
 let portfolioStocks = [];
 let portfolioModel = null;
+let ledgerLoaded = false;
+let ledgerFlight = null;
 // 美金部位自己一本帳，跟 financial_items 沒有連動：買賣只在美金分析頁裡進出。
 let usdTransactions = [];
 let analysisScreen = null;   // 'stocks'｜'usd'，null 就是一般的資產頁
@@ -430,6 +435,7 @@ async function applyQuoteRefresh(data) {
     quotedAt: row.quoted_at,
     updatedAt: Date.parse(String(row.updated_at ?? '')) || 0,
   }]));
+  if (!ledgerLoaded) return;
   for (const stock of portfolioStocks) {
     const quote = bySymbol.get(String(stock.symbol ?? '').toUpperCase());
     if (quote) stock.quote = quote;
@@ -487,6 +493,8 @@ async function applySession(nextSession) {
   scopeHistory = [];
   portfolioStocks = [];
   portfolioModel = null;
+  ledgerLoaded = false;
+  ledgerFlight = null;
   analysisScreen = null;
   analysisOwner = 'husband';
   usdTransactions = [];
@@ -502,17 +510,30 @@ async function applySession(nextSession) {
 
 // Data loading / Realtime ----------------------------------------------------
 
+async function ensureLedger() {
+  if (ledgerLoaded) return true;
+  if (ledgerFlight) return ledgerFlight;
+  ledgerFlight = (async () => {
+    const { data, error } = await sb.rpc('klfan_bootstrap');
+    if (error || !data) return false;
+    portfolioStocks = decodePortfolioBootstrap(data);
+    portfolioModel = calculatePortfolio(portfolioStocks, fxRate);
+    ledgerLoaded = true;
+    return true;
+  })().catch(() => false).finally(() => { ledgerFlight = null; });
+  return ledgerFlight;
+}
+
 async function loadData({ blocking = false } = {}) {
   if (!member) return false;
   if (loadFlight) return loadFlight;
   const householdId = member.household_id;
   loadFlight = (async () => {
-    const [itemResult, familyHistoryResult, householdResult, scopeHistoryResult, portfolioResult, usdResult] = await Promise.all([
+    const [itemResult, familyHistoryResult, householdResult, scopeHistoryResult, usdResult] = await Promise.all([
       sb.from('financial_items').select('*').eq('household_id', householdId).order('sort_order'),
       sb.from('net_worth_history').select('*').eq('household_id', householdId).order('recorded_on').range(0, 9999),
       sb.from('households').select('name').eq('id', householdId).single(),
       sb.from('financial_scope_history').select('*').eq('household_id', householdId).order('recorded_on').range(0, 9999),
-      sb.rpc('klfan_bootstrap'),
       sb.from('usd_transactions').select('*').eq('household_id', householdId).order('trade_date').order('id').range(0, 9999),
     ]);
     const failure = [itemResult.error, familyHistoryResult.error, householdResult.error, scopeHistoryResult.error].find(Boolean);
@@ -524,11 +545,12 @@ async function loadData({ blocking = false } = {}) {
     scopeHistory = (scopeHistoryResult.data ?? []).map(row => ({ ...row, total_twd: toFiniteNumber(row.total_twd) }));
     householdName = householdResult.data?.name || '布布一二的家';
     fxRate = items.find(item => item.fx_rate_twd > 1 && item.quote_currency === 'USD')?.fx_rate_twd ?? fxRate;
-    if (!portfolioResult.error && portfolioResult.data) {
-      portfolioStocks = decodePortfolioBootstrap(portfolioResult.data);
-      portfolioModel = calculatePortfolio(portfolioStocks, fxRate);
-    }
     if (!usdResult.error) usdTransactions = usdResult.data ?? [];
+    // 已經載過才重載 —— 完整重載的觸發時機是交易真的變了。
+    if (ledgerLoaded) {
+      ledgerLoaded = false;
+      await ensureLedger();
+    }
     render();
     return true;
   })().catch(error => {
@@ -812,7 +834,6 @@ function groupedCards(list, ownerScope, kind) {
 
 // 資產頁上只放入口，數字留在分析頁裡面講。
 function analysisEntry() {
-  if (!portfolioModel) return '';
   return `<div class="analysisEntry"><button data-open-portfolio>股票分析<i>›</i></button><button data-open-usd>美金分析<i>›</i></button></div>`;
 }
 
@@ -921,7 +942,11 @@ async function syncPortfolioFinancialItem(stockKey, { ownerScope, notes } = {}) 
 
 function analysisPage() {
   if (analysisScreen === 'usd') return usdPage();
-  if (!portfolioModel) { analysisScreen = null; return personPage(analysisOwner); }
+  // 點進來才去載台帳，載好會再 render 一次。
+  if (!portfolioModel) {
+    return shell('<div class="portfolioView"><div class="portfolioEmpty">載入交易紀錄…</div></div>',
+      `${ownerName(analysisOwner)}股票分析`);
+  }
   portfolioListPage();
 }
 
@@ -1035,7 +1060,7 @@ function personPage(ownerScope) {
     pageKind[ownerScope] = button.dataset.kind;
     render();
   };
-  root.querySelector('#add').onclick = () => editItem(null, ownerScope, kind);
+  root.querySelector('#add').onclick = () => void editItem(null, ownerScope, kind);
   const portfolioButton = root.querySelector('[data-open-portfolio]');
   if (portfolioButton) portfolioButton.onclick = () => openAnalysis('stocks', ownerScope);
   const usdButton = root.querySelector('[data-open-usd]');
@@ -1052,7 +1077,7 @@ function personPage(ownerScope) {
     if (item) {
       // 台股／美股以前會跳到「股票投資」的明細頁，現在交易就記在編輯表單裡，
       // 所以一律開表單；完整的交易歷史還是從上面的台帳卡片進去看。
-      editItem(items.find(row => row.id === item.dataset.id), ownerScope, kind);
+      void editItem(items.find(row => row.id === item.dataset.id), ownerScope, kind);
     }
   };
 }
@@ -1101,6 +1126,7 @@ function renderKeepingAnchor(attribute, value) {
 }
 
 function openAnalysis(screen, ownerScope) {
+  if (screen === 'stocks') void ensureLedger().then(ok => { if (ok && analysisScreen === 'stocks') render(); });
   analysisOwner = ownerScope;
   expandedStock = null;   // 換人看就把展開的那張收掉，免得停在另一個人的標的上
   analysisReturnScroll = window.scrollY;
@@ -1267,7 +1293,9 @@ function assetAttributeForItem(item) {
   return 'cash-twd';
 }
 
-function editItem(item, defaultOwner, defaultKind) {
+async function editItem(item, defaultOwner, defaultKind) {
+  // 這一列是台帳連動的股票的話，表單要列出它的交易紀錄，得先把台帳載進來。
+  if (item?.portfolio_stock_key) await ensureLedger();
   // 台股／美股的股數與市值是從交易推算出來的（klfan_transactions 一動，
   // sync_klfan_financial_item 觸發器就會把結果寫回 financial_items），所以這種
   // 項目在這張表單裡直接編台帳、記買賣，而不是手打股數。
@@ -1509,6 +1537,8 @@ function editItem(item, defaultOwner, defaultKind) {
   };
 
   const saveLedgerStock = async ({ ownerScope }) => {
+    // 台帳是延遲載入的。沒載好就往下走，下面比對不到既有標的，同一檔會被開成第二筆。
+    await ensureLedger();
     const marketLabel = mode === 'stock-us' ? '美股' : '台股';
     const currency = mode === 'stock-us' ? 'USD' : 'TWD';
     // 台股查得到就用證交所的代號與正式名稱，查不到才照使用者輸入的存。美股一律英文代號。

@@ -248,11 +248,21 @@ Fugle 的每分鐘上限沒有查到明文；4 檔 × 每 5 秒 = 48 次／分�
 `tests/awake-autorefresh.test.mjs` 會數 `klfan_bootstrap` 被叫了幾次：三輪完整報價更新之後
 必須還是 0 次。
 
-### 還可以再省的
+### 台帳是延遲載入的
 
-39 檔標的裡只有 8 檔還持有，**53% 的交易屬於已出清的股票**，每次整包重載都會把它們一起拉回來。
-可以只載仍持有的那些、`顯示已出清` 打開時再補 —— 但要注意分析頁的累計損益與 XIRR 是把已出清的
-也算進去的，直接不載會改到畫面上的數字。
+開 App **完全不載台帳**。資產列的股數與市值是 `sync_klfan_financial_item()` 觸發器算好存在
+`financial_items` 的，那 92 KB 只有兩個地方要用：
+
+- 股票分析頁 → `openAnalysis('stocks')` 時 `ensureLedger()`，載好再 render 一次
+- 編輯表單的交易紀錄 → `editItem()` 在 `item.portfolio_stock_key` 有值時才等
+
+**`saveLedgerStock()` 一定要先 `await ensureLedger()`**：它要靠 `portfolioStocks` 比對有沒有
+同一檔，沒載好就會把已經有的標的再開一筆。這是這個改動唯一真的會壞資料的地方。
+
+`ensureLedger()` 是單飛行的，載過就不再載；`loadData()` 只有在**已經載過**的情況下才重載它。
+
+`tests/awake-autorefresh.test.mjs` 守住「開 App 跟切到個人頁都不該叫 `klfan_bootstrap`，
+但入口按鈕還是要在」。
 
 ## 行情額度與 klfan_quotes
 
