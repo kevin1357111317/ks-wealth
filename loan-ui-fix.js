@@ -24,13 +24,21 @@ function setSimpleRowLabel(row, label) {
   const right = row.children[1];
   if (!left || !right) return;
 
+  const leftNotes = [...left.querySelectorAll('small')];
+  const rightNotes = [...right.querySelectorAll('small')];
+  const amount = right.querySelector('b');
+
+  // 已經是目標狀態就完全不碰 DOM，避免 MutationObserver 自己觸發自己造成無限重繪。
+  const alreadySimple = leftNotes.length === 0
+    && rightNotes.length === 1
+    && rightNotes[0].textContent?.trim() === label;
+  if (alreadySimple) return;
+
   // 日期欄只保留實際顯示日期，不再顯示應繳日、假日順延等附註。
-  left.querySelectorAll('small').forEach(node => node.remove());
+  leftNotes.forEach(node => node.remove());
 
   // 右側只保留簡短標籤與金額，移除核對、順延、繳後本金等說明。
-  const amount = right.querySelector('b');
-  right.querySelectorAll('small').forEach(node => node.remove());
-
+  rightNotes.forEach(node => node.remove());
   const note = document.createElement('small');
   note.textContent = label;
   if (amount) right.insertBefore(note, amount);
@@ -72,6 +80,14 @@ function applyLoanUiFixes(scope = document) {
 applyLoanUiFixes();
 
 if (root) {
-  const observer = new MutationObserver(() => applyLoanUiFixes(root));
+  let queued = false;
+  const observer = new MutationObserver(() => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => {
+      queued = false;
+      applyLoanUiFixes(root);
+    });
+  });
   observer.observe(root, { childList: true, subtree: true });
 }
