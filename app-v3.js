@@ -13,6 +13,7 @@ import {
 } from './financial-core.js?v=hide-sold-out-1';
 import { calculatePortfolio, decodePortfolioBootstrap } from './portfolio-core.js?v=owner-scope-1';
 import { calculateUsd } from './usd-core.js?v=usd-1';
+import { calculateLoanCashflow } from './loan-core.js?v=cashflow-1';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -526,7 +527,7 @@ async function ensureLoanSchedule() {
   if (loanScheduleFlight) return loanScheduleFlight;
   loanScheduleFlight = (async () => {
     const { data, error } = await sb.from('loan_schedule')
-      .select('loan_account_id,due_date,amount_twd').order('due_date').order('id').range(0, 9999);
+      .select('id,loan_account_id,due_date,actual_date,amount_twd,entry_type,note').order('due_date').order('id').range(0, 9999);
     if (error) return false;
     loanSchedule = data ?? [];
     loanScheduleLoaded = true;
@@ -1003,26 +1004,26 @@ function ownerLoanRows(ownerScope) {
 // 排程分成已繳與未繳兩段。「已繳」是照日期切的 —— 排程是合約上的預定表，
 // 實際有沒有繳看的是 financial_items 的餘額，這裡不混在一起講。
 function loanScheduleFor(accountId, today = taipeiDate()) {
-  const rows = loanSchedule
-    .filter(row => row.loan_account_id === accountId && toFiniteNumber(row.amount_twd) < 0)
-    .map(row => ({ date: String(row.due_date), amount: Math.abs(toFiniteNumber(row.amount_twd)) }));
-  const upcoming = rows.filter(row => row.date >= today);
-  return {
-    rows,
-    paid: rows.length - upcoming.length,
-    upcoming,
-    remaining: upcoming.reduce((sum, row) => sum + row.amount, 0),
-    next: upcoming[0] ?? null,
-    last: rows[rows.length - 1] ?? null,
-  };
+  return calculateLoanCashflow(
+    loanSchedule.filter(row => row.loan_account_id === accountId),
+    today,
+  );
+}
+
+function loanCashflowRow(row, fallback) {
+  const shownDate = row.actual_date || row.due_date;
+  const dueNote = row.actual_date && row.actual_date !== row.due_date ? `應繳 ${row.due_date}` : '';
+  return `<div class="loanPlanRow"><div><time>${escapeHtml(shownDate)}</time>${dueNote ? `<small>${escapeHtml(dueNote)}</small>` : ''}</div><div><small>${escapeHtml(row.note || fallback)}</small><b>NT$ ${formatNumber(Math.abs(row.amount))}</b></div></div>`;
 }
 
 function loanScheduleDetail(account) {
   const plan = loanScheduleFor(account.id);
-  if (!plan.rows.length) return '<div class="loanDetail"><small>這一筆沒有排程資料。</small></div>';
+  if (!plan.entries.length) return '<div class="loanDetail"><small>這一筆沒有現金流資料。</small></div>';
   const shown = plan.upcoming.slice(0, 12);
   const rest = plan.upcoming.length - shown.length;
-  return `<div class="loanDetail"><div class="portfolioPair"><div><span>下次繳款</span><b>${plan.next ? escapeHtml(plan.next.date) : '已繳完'}</b></div><div><span>金額</span><b>${plan.next ? 'NT$ ' + formatNumber(plan.next.amount) : '—'}</b></div><div><span>已繳期數</span><b>${plan.paid} / ${plan.rows.length}</b></div><div><span>剩餘應還</span><b>NT$ ${formatNumber(plan.remaining)}</b></div></div>${shown.length ? `<div class="loanPlan">${shown.map(row => `<div class="loanPlanRow"><time>${escapeHtml(row.date)}</time><b>NT$ ${formatNumber(row.amount)}</b></div>`).join('')}</div>${rest > 0 ? `<small class="loanFoot">還有 ${rest} 期，最後一期 ${escapeHtml(plan.last.date)}</small>` : ''}` : ''}</div>`;
+  const actualCount = plan.pastPayments.filter(row => row.actual_date).length;
+  const historyLabel = actualCount === plan.pastPayments.length ? '過往實際繳款' : '過往繳款／已到期排程';
+  return `<div class="loanDetail"><div class="portfolioPair loanCashflowMetrics"><div><span>下次繳款</span><b>${plan.next ? escapeHtml(plan.next.due_date) : '已繳完'}</b></div><div><span>金額</span><b>${plan.next ? 'NT$ ' + formatNumber(Math.abs(plan.next.amount)) : '—'}</b></div><div><span>實收金額</span><b>NT$ ${formatNumber(plan.netProceeds)}</b></div><div><span>手續費／開辦費</span><b>NT$ ${formatNumber(plan.totalFees)}</b></div><div><span>已繳期數</span><b>${plan.pastPayments.length} / ${plan.payments.length}</b></div><div><span>過往已繳</span><b>NT$ ${formatNumber(plan.paidPayments)}</b></div><div><span>剩餘應還</span><b>NT$ ${formatNumber(plan.remaining)}</b></div><div><span>全期利息與費用</span><b>NT$ ${formatNumber(plan.totalInterestAndFees)}</b></div></div>${plan.inflows.length ? `<section class="loanFlowSection"><div class="sectionHead"><span>撥款／資金流入</span><b>${plan.inflows.length} 筆</b></div><div class="loanPlan">${plan.inflows.map(row => loanCashflowRow(row, '撥款／資金流入')).join('')}</div></section>` : ''}${plan.fees.length ? `<section class="loanFlowSection"><div class="sectionHead"><span>費用明細</span><b>NT$ ${formatNumber(plan.totalFees)}</b></div><div class="loanPlan">${plan.fees.map(row => loanCashflowRow(row, '手續費／開辦費')).join('')}</div></section>` : ''}${plan.pastPayments.length ? `<section class="loanFlowSection"><div class="sectionHead"><span>${historyLabel}</span><b>${plan.pastPayments.length} 期</b></div><div class="loanPlan">${plan.pastPayments.map(row => loanCashflowRow(row, row.actual_date ? '實際繳款' : '歷史還款排程')).join('')}</div></section>` : ''}${shown.length ? `<section class="loanFlowSection loanFutureSection"><div class="sectionHead"><span>未來還款排程</span><b>${plan.upcoming.length} 期</b></div><div class="loanPlan">${shown.map(row => loanCashflowRow(row, '預計繳款')).join('')}</div>${rest > 0 ? `<small class="loanFoot">還有 ${rest} 期，最後一期 ${escapeHtml(plan.last.due_date)}</small>` : ''}</section>` : ''}</div>`;
 }
 
 function loanAccountCard(account, expanded = false) {
@@ -1032,9 +1033,11 @@ function loanAccountCard(account, expanded = false) {
   const progress = original > 0 ? Math.min(100, paidPrincipal / original * 100) : 0;
   const totalRepayment = toFiniteNumber(account.projected_total_repayment_twd);
   const borrowingCost = totalRepayment > original ? totalRepayment - original : 0;
+  const plan = loanScheduleFor(account.id);
+  const annualCost = plan.annualCost ?? toFiniteNumber(account.effective_annual_cost);
   const dateLabel = active ? '預計到期' : '結清日期';
   const dateValue = active ? account.maturity_date : account.closed_on;
-  return `<article class="loanCard ${expanded ? 'open' : ''}"><button type="button" class="loanCardTap" data-loan-account="${escapeHtml(account.id)}"><div class="loanCardHead"><div><b>${escapeHtml(account.name)}</b><small>${escapeHtml(account.lender)} · ${escapeHtml(account.loan_type === 'topup' ? '增貸' : '信貸')}</small></div><span class="loanStatus ${active ? 'active' : ''}">${active ? '進行中' : '已結清'}</span></div><div class="loanBalance"><span>${active ? '目前本金餘額' : '原貸款金額'}</span><b>NT$ ${formatNumber(active ? account.currentBalance : original)}</b></div><div class="loanProgress"><i style="--progress:${progress}%"></i></div><div class="loanFacts"><div><span>原貸款</span><b>NT$ ${formatNumber(original)}</b></div><div><span>年利率</span><b>${account.annualRate > 0 ? account.annualRate.toFixed(2) + '%' : '—'}</b></div><div><span>${active ? '每月月付' : '總還款'}</span><b>${active ? 'NT$ ' + formatNumber(account.monthlyPayment) : totalRepayment ? 'NT$ ' + formatNumber(totalRepayment) : '—'}</b></div><div><span>${dateLabel}</span><b>${dateValue ? escapeHtml(dateValue) : '—'}</b></div></div>${active ? `<small class="loanFoot">已償還本金約 NT$ ${formatNumber(paidPrincipal)} · ${progress.toFixed(1)}%</small>` : `<small class="loanFoot">利息與費用 NT$ ${formatNumber(borrowingCost)}${account.effective_annual_cost ? ` · 有效年成本 ${(toFiniteNumber(account.effective_annual_cost) * 100).toFixed(2)}%` : ''}</small>`}</button>${expanded ? loanScheduleDetail(account) : ''}</article>`;
+  return `<article class="loanCard ${expanded ? 'open' : ''}"><button type="button" class="loanCardTap" data-loan-account="${escapeHtml(account.id)}"><div class="loanCardHead"><div><b>${escapeHtml(account.name)}</b><small>${escapeHtml(account.lender)} · ${escapeHtml(account.loan_type === 'topup' ? '增貸' : '信貸')}</small></div><span class="loanStatus ${active ? 'active' : ''}">${active ? '進行中' : '已結清'}</span></div><div class="loanBalance"><span>${active ? '目前本金餘額' : '原貸款金額'}</span><b>NT$ ${formatNumber(active ? account.currentBalance : original)}</b></div><div class="loanProgress"><i style="--progress:${progress}%"></i></div><div class="loanFacts"><div><span>原貸款</span><b>NT$ ${formatNumber(original)}</b></div><div><span>表定利率</span><b>${account.annualRate > 0 ? account.annualRate.toFixed(2) + '%' : '—'}</b></div><div><span>${active ? '每月月付' : '總還款'}</span><b>${active ? 'NT$ ' + formatNumber(account.monthlyPayment) : totalRepayment ? 'NT$ ' + formatNumber(totalRepayment) : '—'}</b></div><div><span>實際年化成本</span><b>${annualCost !== null && Number.isFinite(annualCost) ? (annualCost * 100).toFixed(2) + '%' : '—'}</b></div><div><span>${dateLabel}</span><b>${dateValue ? escapeHtml(dateValue) : '—'}</b></div><div><span>全期利息與費用</span><b>NT$ ${formatNumber(plan.totalInterestAndFees || borrowingCost)}</b></div></div>${active ? `<small class="loanFoot">已償還本金約 NT$ ${formatNumber(paidPrincipal)} · ${progress.toFixed(1)}%</small>` : `<small class="loanFoot">實際年化成本已納入手續費、提前清償與每筆現金流日期</small>`}</button>${expanded ? loanScheduleDetail(account) : ''}</article>`;
 }
 
 function loanEventTimeline(rows) {
