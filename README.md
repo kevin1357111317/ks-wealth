@@ -174,6 +174,27 @@ iOS 的 `apple-mobile-web-app-status-bar-style: default` 不會讓網頁蓋到�
 `tests/trend-chart.test.mjs` 會直接用 CDP 讀 `window` / `#root` / 圖表上的監聽器來守這件事，
 順便確認刮動本身、以及從圖表上往上滑還捲得動頁面。
 
+## 匯率一輪只有一個
+
+`financial_items.fx_rate_twd` 有**兩個寫入者**：
+
+1. `refresh-tw-quotes` Edge Function —— 一輪只用一個 `fxRate`（快取夠新就沿用 `klfan_quotes`
+   的 `USD/TWD`，否則打 Twelve Data），美股、美元現金、黃金三條路徑都吃它
+2. `sync_klfan_financial_item()` 觸發器 —— 讀的是 **`klfan_fx_daily` 最新那一列**
+
+兩邊各自取數，同一輪就會在資料庫裡留下兩個不同的匯率。2026-09-07 08:45 美股是 31.61732、
+黃金與美元現金是 31.62785，差 0.03%；而 App 是拿 `sort_order` 最前面那一列的匯率，
+剛好落在黃金那一組。
+
+修法是**讓觸發器的來源跟著這一輪走**：Edge Function 在更新任何一列之前，先把這一輪要用的
+匯率 upsert 進 `klfan_fx_daily`（台北日期當 key）。之後兩邊讀到的是同一個數字。
+
+`klfan_fx_daily` 是跟 KLFAN 共用的表，KLFAN 自己也會寫；兩邊寫的都是 Twelve Data 的
+USD/TWD，最後寫的那個就是當下的匯率，這正是我們要的「兩個 App 對得起來」。
+
+`tests/quote-cache.test.mjs` 守兩件事：一輪裡所有 USD 項目的 `fx_rate_twd` 只能有一個值，
+而且 `klfan_fx_daily` 要拿到同一個值；匯率抓不到時則完全不動那張表（寫 null 會弄壞觸發器的來源）。
+
 ## 行情額度與共用快取
 
 這個 Supabase 專案同時服務兩個 App：本專案與 KLFAN（`KLFAN-stock-tracker`），兩邊共用同一把
