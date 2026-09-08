@@ -65,3 +65,7 @@ test('已結清信貸不保存也不顯示不確定的表定利率', () => {
   assert.ok(app.includes("? `<div><span>表定利率</span><b>${account.annualRate"));
   assert.ok(!app.includes("? `${nominalRateFact}`"));
 });
+
+test('已結清貸款的奇數筆明細維持雙欄左側對齊', () => {
+  assert.match(css, /\.loanCashflowMetrics>div:last-child:nth-child\(odd\)\{text-align:left\}/);
+});
