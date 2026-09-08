@@ -52,7 +52,7 @@ test('繳款日到了自己扣款，卡片收合不重繪整頁', { skip }, asyn
   }
   // 另外兩筆下個月才開始繳，今天沒有到期的期數 —— 順便讓清單有三張卡片，
   // 收合之後頁面仍然夠長，瀏覽器不會把捲動量夾掉（那是正常行為，不是這裡要測的）。
-  for (const id of ['L2', 'L3']) {
+  for (const id of ['L2', 'L3', 'L4', 'L5']) {
     for (let i = 1; i <= 60; i += 1) {
       schedule.push({ loan_account_id: id, due_date: addMonths(today, i), amount_twd: -5000, entry_type: 'payment' });
     }
@@ -90,6 +90,16 @@ db.loan_accounts.push({ id: 'L3', household_id: 'H1', owner_scope: 'husband', fi
   source_key: 'third', lender: '台北富邦', name: '第三筆信貸', loan_type: 'personal',
   original_principal_twd: 400000, nominal_annual_rate: 2.18, contractual_monthly_payment_twd: 5000,
   start_date: '${today}', status: 'active', autopay: true, last_payment_applied_on: null });
+// 第三張下面還要有東西，收合之後頁面才不會矮到讓瀏覽器夾住捲動量 —— 夾住的話捲動
+// 也跟著少掉同樣的高度，卡片的位置反而「剛好」對上，測不出東西。
+db.financial_items.push(
+  { id: 'fi-loan4', household_id: 'H1', kind: 'liability', category: '信貸', name: '第四筆信貸', owner_scope: 'husband', amount_twd: 500000, monthly_payment_twd: 5000, interest_rate: 2.18, sort_order: 4 },
+  { id: 'fi-loan5', household_id: 'H1', kind: 'liability', category: '信貸', name: '第五筆信貸', owner_scope: 'husband', amount_twd: 600000, monthly_payment_twd: 5000, interest_rate: 2.18, sort_order: 5 },
+);
+db.loan_accounts.push(
+  { id: 'L4', household_id: 'H1', owner_scope: 'husband', financial_item_id: 'fi-loan4', source_key: 'fourth', lender: '玉山銀行', name: '第四筆信貸', loan_type: 'personal', original_principal_twd: 500000, nominal_annual_rate: 2.18, contractual_monthly_payment_twd: 5000, start_date: '${today}', status: 'active', autopay: true, last_payment_applied_on: null },
+  { id: 'L5', household_id: 'H1', owner_scope: 'husband', financial_item_id: 'fi-loan5', source_key: 'fifth', lender: '國泰世華', name: '第五筆信貸', loan_type: 'personal', original_principal_twd: 600000, nominal_annual_rate: 2.18, contractual_monthly_payment_twd: 5000, start_date: '${today}', status: 'active', autopay: true, last_payment_applied_on: null },
+);
 db.loan_schedule.push(...${JSON.stringify(schedule)});`;
 
   const types = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html', '.png': 'image/png' };
@@ -147,20 +157,28 @@ db.loan_schedule.push(...${JSON.stringify(schedule)});`;
     assert.doesNotMatch(card, /下次 /, '信用卡沒有還款排程，不該冒出下次繳款');
   });
 
-  await t.test('收合是就地收，不重繪整頁也不動捲動位置', async () => {
+  await t.test('收合是就地收，不重繪整頁，卡片也留在原地', async () => {
     await page.click('[data-open-loans]');
     await page.waitForSelector('.loanCard');
     await page.click('[data-loan-account]');
     await page.waitForSelector('.loanCard.open');
     // 在卡片外面做個記號：重繪整頁的話這個記號會不見
     await page.evaluate(() => { document.querySelector('.loanList').dataset.probe = 'kept'; });
-    await page.evaluate(() => window.scrollTo(0, 120));
-    const before = await page.evaluate(() => window.scrollY);
-    await page.click('[data-loan-account]');
+    // 一樣用 DOM 的 click()，Playwright 的會先把元素捲進畫面
+    const topBefore = await page.evaluate(() => {
+      window.scrollTo(0, 120);
+      const card = document.querySelector('.loanCard');
+      const top = card.getBoundingClientRect().top;
+      card.querySelector('[data-loan-account]').click();
+      return top;
+    });
     await page.waitForFunction(() => document.querySelector('.loanCard.open') === null);
+    await page.waitForTimeout(400);
     assert.equal(await page.evaluate(() => document.querySelector('.loanList').dataset.probe), 'kept',
-      '收合只該換那一張卡片 —— 重繪整頁時捲動量會被夾到新的底部，看起來就是跳一下');
-    assert.equal(await page.evaluate(() => window.scrollY), before, '捲動位置不動');
+      '收合只該換那一張卡片 —— 重繪整頁的話這個記號會不見');
+    const topAfter = await page.evaluate(() => document.querySelector('.loanCard').getBoundingClientRect().top);
+    assert.ok(Math.abs(topAfter - topBefore) <= 2,
+      `收合後卡片應該留在原地，卻從 ${topBefore} 移到 ${topAfter}`);
     assert.equal(await page.locator('.loanDetail').count(), 0);
   });
 
@@ -168,6 +186,35 @@ db.loan_schedule.push(...${JSON.stringify(schedule)});`;
     await page.click('[data-loan-account]');
     await page.waitForSelector('.loanCard.open');
     assert.equal(await page.locator('.loanDetail').count(), 1);
+  });
+
+  await t.test('開著上面那張再點下面看得到的那張，被點的那張留在原地', async () => {
+    // 一次只開一張，所以點下面那張時上面那張會同時收起來。收掉的高度差會把下面的
+    // 內容整個往上拉 —— 這就是「偶爾點開卻跳走」的來源。
+    // 挑一張現在畫面上看得到、而且在展開那張下面的卡片，就是屋主實際會點的情況。
+    const picked = await page.evaluate(() => {
+      window.scrollTo(0, 1200);
+      const cards = [...document.querySelectorAll('.loanCard')];
+      const openIndex = cards.findIndex(card => card.classList.contains('open'));
+      const index = cards.findIndex((card, i) => {
+        const top = card.getBoundingClientRect().top;
+        return i > openIndex && top > 0 && top < window.innerHeight - 120;
+      });
+      return { index, top: index < 0 ? null : cards[index].getBoundingClientRect().top };
+    });
+    assert.ok(picked.index > 0, '應該要有一張在展開那張下面、又看得到的卡片');
+    // 用 DOM 的 click()，不要用 Playwright 的 —— 它會先把元素捲進畫面，量出來的
+    // 起始位置就不是真的了。
+    await page.evaluate(index => {
+      document.querySelectorAll('.loanCard')[index].querySelector('[data-loan-account]').click();
+    }, picked.index);
+    await page.waitForFunction(index =>
+      document.querySelectorAll('.loanCard')[index].classList.contains('open'), picked.index);
+    await page.waitForTimeout(400);   // 等 loan-ui-fix.js 後面幾個 frame 的 DOM 調整
+    const topAfter = await page.evaluate(index =>
+      document.querySelectorAll('.loanCard')[index].getBoundingClientRect().top, picked.index);
+    assert.ok(Math.abs(topAfter - picked.top) <= 2,
+      `被點的卡片應該留在原地，卻從 ${picked.top} 移到 ${topAfter}`);
   });
 
   assert.deepEqual(failures, [], '瀏覽器不該有錯誤');
