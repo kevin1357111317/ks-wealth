@@ -16,6 +16,7 @@ test('loan analysis is a third per-owner analysis destination', () => {
   assert.match(app, /data-loan-type="topup"/);
   assert.match(app, /data-loan-type="mortgage"/);
   assert.match(app, /normalizedLoanType\(account\) === loanTypeFilter/);
+  assert.match(app, /\.sort\(\(a, b\) => a\.currentBalance - b\.currentBalance/);
   assert.match(app, /openAnalysis\('loans', ownerScope\)/);
   assert.match(app, /analysisScreen === 'loans'/);
   assert.match(css, /grid-template-columns:repeat\(3,1fr\)/);
