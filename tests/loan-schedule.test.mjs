@@ -36,11 +36,21 @@ test('貸款卡片點開看得到還款排程', { skip }, async t => {
 db.financial_items.push({ id: 'fi-loan', household_id: 'H1', kind: 'liability', category: '信貸',
   name: '元大銀行信貸', owner_scope: 'husband', amount_twd: 1030000, monthly_payment_twd: 10606,
   interest_rate: 3.75, sort_order: 0 });
+db.financial_items.push(
+  { id: 'fi-topup', household_id: 'H1', kind: 'liability', category: '增貸', name: '測試增貸', owner_scope: 'husband', amount_twd: 700000, monthly_payment_twd: 7000, interest_rate: 2.5, sort_order: 1 },
+  { id: 'fi-mortgage', household_id: 'H1', kind: 'liability', category: '房貸', name: '測試房貸', owner_scope: 'husband', amount_twd: 9000000, monthly_payment_twd: 40000, interest_rate: 2.1, sort_order: 2 },
+);
 db.loan_accounts.push({ id: 'L1', household_id: 'H1', owner_scope: 'husband', financial_item_id: 'fi-loan',
   source_key: 'yuanta', lender: '元大銀行', name: '元大銀行信貸', loan_type: 'personal',
   original_principal_twd: 1060000, nominal_annual_rate: 3.75, contractual_monthly_payment_twd: 10606,
   start_date: '2026-08-07', maturity_date: '2036-08-07', projected_total_repayment_twd: 1275608,
   status: 'active' });
+db.loan_accounts.push(
+  { id: 'L2', household_id: 'H1', owner_scope: 'husband', financial_item_id: 'fi-topup', source_key: 'topup', lender: '中國信託', name: '測試增貸', loan_type: 'topup', original_principal_twd: 1000000, nominal_annual_rate: 2.5, contractual_monthly_payment_twd: 7000, status: 'active' },
+  { id: 'L3', household_id: 'H1', owner_scope: 'husband', financial_item_id: 'fi-mortgage', source_key: 'mortgage', lender: '中國信託', name: '測試房貸', loan_type: 'mortgage', original_principal_twd: 10000000, nominal_annual_rate: 2.1, contractual_monthly_payment_twd: 40000, status: 'active' },
+  { id: 'L4', household_id: 'H1', owner_scope: 'husband', source_key: 'closed-1', lender: 'LINE Bank', name: '舊信貸一', loan_type: 'personal', original_principal_twd: 500000, nominal_annual_rate: 2.18, status: 'closed' },
+  { id: 'L5', household_id: 'H1', owner_scope: 'husband', source_key: 'closed-2', lender: '中國信託', name: '舊信貸二', loan_type: 'personal', original_principal_twd: 600000, nominal_annual_rate: 2.18, status: 'closed' },
+);
 db.loan_schedule.push(...${JSON.stringify(schedule)});`;
 
   const types = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html', '.png': 'image/png' };
@@ -74,6 +84,25 @@ db.loan_schedule.push(...${JSON.stringify(schedule)});`;
     await page.click('[data-open-loans]');
     await page.waitForSelector('.loanCard');
     assert.equal(await page.locator('.loanDetail').count(), 0, '一開始是收合的');
+  });
+
+  await t.test('預設顯示信貸，切換後摘要與清單只留下同類貸款', async () => {
+    assert.equal(await page.locator('[data-loan-type]').count(), 3);
+    assert.equal(await page.locator('[data-loan-type="personal"].on').count(), 1);
+    assert.match(await page.textContent('.loanSummary'), /目前貸款餘額NT\$ 1,030,000.*已結清2 筆/s);
+    assert.match(await page.textContent('.portfolioView'), /進行中信貸1 筆/);
+    assert.equal(await page.locator('.loanCard').count(), 3, '一筆進行中與兩筆已結清信貸');
+
+    await page.click('[data-loan-type="topup"]');
+    assert.match(await page.textContent('.loanSummary'), /NT\$ 700,000.*NT\$ 7,000/s);
+    assert.match(await page.textContent('.loanList'), /測試增貸/);
+    assert.doesNotMatch(await page.textContent('.loanList'), /元大銀行信貸/);
+
+    await page.click('[data-loan-type="mortgage"]');
+    assert.match(await page.textContent('.loanSummary'), /NT\$ 9,000,000.*NT\$ 40,000/s);
+    assert.match(await page.textContent('.loanList'), /測試房貸/);
+
+    await page.click('[data-loan-type="personal"]');
   });
 
   await t.test('點開看得到下次繳款、已繳期數與剩餘應還', async () => {
