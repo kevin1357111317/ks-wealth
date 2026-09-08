@@ -71,7 +71,11 @@ export function applyDueLoanPayments(today) {
       .sort((a, b) => String(a.due_date).localeCompare(String(b.due_date)));
     for (const row of due) {
       const days = Math.round((Date.parse(row.due_date) - Date.parse(prev)) / 86400000);
-      const interest = Math.round(balance * rate / 100 * days / 365);
+      // 各家銀行的算法不一樣：玉山房貸是年利率 ÷ 12（每個月固定同一個數字），
+      // 其他信貸是 actual/365（照兩次繳款日相隔幾天算）。
+      const interest = acct.interest_day_count === 'month12'
+        ? Math.round(balance * rate / 100 / 12)
+        : Math.round(balance * rate / 100 * days / 365);
       const grace = acct.grace_until && String(row.due_date) <= String(acct.grace_until);
       const principal = grace
         ? 0
