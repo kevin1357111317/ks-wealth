@@ -396,7 +396,7 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     assert.match(await page.textContent('[data-open-usd]'), /^\s*美金分析/);
     // 入口只留按鈕，數字都收進分析頁裡
     const entry = (await page.textContent('.analysisEntry')).replace(/[\s›]+/g, '');
-    assert.equal(entry, '股票分析美金分析信貸分析');
+    assert.equal(entry, '股票分析美金分析貸款分析');
 
     await page.click('[data-open-usd]');
     await page.waitForSelector('.portfolioSummary');
@@ -448,7 +448,7 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     await page.waitForSelector('.fab');
     assert.equal(await page.locator('[data-open-portfolio]').count(), 1, '老婆頁也要有股票分析');
     assert.equal(await page.locator('[data-open-usd]').count(), 1, '老婆頁也要有美金分析');
-    assert.equal(await page.locator('[data-open-loans]').count(), 1, '老婆頁也要有信貸分析');
+    assert.equal(await page.locator('[data-open-loans]').count(), 1, '老婆頁也要有貸款分析');
 
     // 目前所有標的都掛在老公名下，老婆進去應該是空的、不是看到老公的
     await page.click('[data-open-portfolio]');
