@@ -85,7 +85,6 @@ let ledgerFlight = null;
 // 美金部位自己一本帳，跟 financial_items 沒有連動：買賣只在美金分析頁裡進出。
 let usdTransactions = [];
 let loanAccounts = [];
-let loanEvents = [];
 // 還款排程有 837 列，只有貸款分析頁要用，跟台帳一樣點進去才載。
 let loanSchedule = [];
 let loanScheduleLoaded = false;
@@ -557,14 +556,13 @@ async function loadData({ blocking = false } = {}) {
   if (loadFlight) return loadFlight;
   const householdId = member.household_id;
   loadFlight = (async () => {
-    const [itemResult, familyHistoryResult, householdResult, scopeHistoryResult, usdResult, loanResult, loanEventResult] = await Promise.all([
+    const [itemResult, familyHistoryResult, householdResult, scopeHistoryResult, usdResult, loanResult] = await Promise.all([
       sb.from('financial_items').select('*').eq('household_id', householdId).order('sort_order'),
       sb.from('net_worth_history').select('*').eq('household_id', householdId).order('recorded_on').range(0, 9999),
       sb.from('households').select('name').eq('id', householdId).single(),
       sb.from('financial_scope_history').select('*').eq('household_id', householdId).order('recorded_on').range(0, 9999),
       sb.from('usd_transactions').select('*').eq('household_id', householdId).order('trade_date').order('id').range(0, 9999),
       sb.from('loan_accounts').select('*').eq('household_id', householdId).order('start_date'),
-      sb.from('loan_events').select('*').eq('household_id', householdId).order('event_date').order('sort_order'),
     ]);
     const failure = [itemResult.error, familyHistoryResult.error, householdResult.error, scopeHistoryResult.error].find(Boolean);
     if (failure) throw failure;
@@ -577,7 +575,6 @@ async function loadData({ blocking = false } = {}) {
     fxRate = items.find(item => item.fx_rate_twd > 1 && item.quote_currency === 'USD')?.fx_rate_twd ?? fxRate;
     if (!usdResult.error) usdTransactions = usdResult.data ?? [];
     if (!loanResult.error) loanAccounts = loanResult.data ?? [];
-    if (!loanEventResult.error) loanEvents = loanEventResult.data ?? [];
     // 已經載過才重載 —— 完整重載的觸發時機是交易真的變了。
     if (ledgerLoaded) {
       ledgerLoaded = false;
@@ -643,9 +640,6 @@ function subscribeRealtime() {
     }, scheduleRealtimeReload)
     .on('postgres_changes', {
       event: '*', schema: 'public', table: 'loan_accounts', filter: `household_id=eq.${householdId}`,
-    }, scheduleRealtimeReload)
-    .on('postgres_changes', {
-      event: '*', schema: 'public', table: 'loan_events', filter: `household_id=eq.${householdId}`,
     }, scheduleRealtimeReload)
     .subscribe(status => {
       if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
@@ -1050,11 +1044,6 @@ function loanAccountCard(account, expanded = false) {
   return `<article class="loanCard ${expanded ? 'open' : ''}"><button type="button" class="loanCardTap" data-loan-account="${escapeHtml(account.id)}"><div class="loanCardHead"><div><b>${escapeHtml(account.name)}</b><small>${escapeHtml(account.lender)} · ${escapeHtml(loanTypeLabel)}</small></div><span class="loanStatus ${active ? 'active' : ''}">${active ? '進行中' : '已結清'}</span></div><div class="loanBalance"><span>${active ? '目前本金餘額' : '原貸款金額'}</span><b>NT$ ${formatNumber(active ? account.currentBalance : original)}</b></div><div class="loanProgress"><i style="--progress:${progress}%"></i></div><div class="loanFacts"><div><span>原貸款</span><b>NT$ ${formatNumber(original)}</b></div><div><span>表定利率</span><b>${account.annualRate > 0 ? account.annualRate.toFixed(2) + '%' : '—'}</b></div><div><span>${active ? '每月月付' : '總還款'}</span><b>${active ? 'NT$ ' + formatNumber(account.monthlyPayment) : totalRepayment ? 'NT$ ' + formatNumber(totalRepayment) : '—'}</b></div><div><span>實際年化成本</span><b>${annualCost !== null && Number.isFinite(annualCost) ? (annualCost * 100).toFixed(2) + '%' : '—'}</b></div><div><span>${dateLabel}</span><b>${dateValue ? escapeHtml(dateValue) : '—'}</b></div><div><span>全期利息與費用</span><b>NT$ ${formatNumber(plan.totalInterestAndFees || borrowingCost)}</b></div></div>${active ? `<small class="loanFoot">已償還本金約 NT$ ${formatNumber(paidPrincipal)} · ${progress.toFixed(1)}%</small>` : `<small class="loanFoot">實際年化成本已納入開辦費、提前清償與每筆現金流日期</small>`}</button>${expanded ? loanScheduleDetail(account) : ''}</article>`;
 }
 
-function loanEventTimeline(rows) {
-  if (!rows.length) return '';
-  return `<section class="loanTimeline"><div class="sectionHead"><span>夫妻貸款結清紀錄</span><b>已結清</b></div>${rows.map(row => `<div class="loanEvent"><time>${escapeHtml(row.event_date)}</time><div><b>${escapeHtml(row.title)}</b><small>${escapeHtml(row.note || '')}</small></div><span>NT$ ${formatNumber(row.amount_twd)}</span></div>`).join('')}</section>`;
-}
-
 function loanPage() {
   const rows = ownerLoanRows(analysisOwner)
     .filter(account => normalizedLoanType(account) === loanTypeFilter);
@@ -1065,11 +1054,9 @@ function loanPage() {
   const weightedRate = totalBalance
     ? active.reduce((sum, account) => sum + account.currentBalance * account.annualRate, 0) / totalBalance
     : 0;
-  const accountIds = new Set(rows.map(account => account.id));
-  const events = loanEvents.filter(event => accountIds.has(event.loan_account_id));
   const daily = totalMonthly * 12 / 365;
   const typeName = loanTypeName(loanTypeFilter);
-  shell(`<div class="portfolioView"><div class="seg loanTypeSeg"><button data-loan-type="personal" class="${loanTypeFilter === 'personal' ? 'on' : ''}">信貸</button><button data-loan-type="topup" class="${loanTypeFilter === 'topup' ? 'on' : ''}">增貸</button><button data-loan-type="mortgage" class="${loanTypeFilter === 'mortgage' ? 'on' : ''}">房貸</button></div><div class="portfolioSummary loanSummary"><div class="portfolioMetric"><span>目前貸款餘額</span><b>NT$ ${formatNumber(totalBalance)}</b><small>${active.length} 筆進行中</small></div><div class="portfolioMetric"><span>每月還款</span><b>NT$ ${formatNumber(totalMonthly)}</b><small>平均每天 NT$ ${formatNumber(daily)}</small></div><div class="portfolioMetric"><span>加權平均利率</span><b>${weightedRate.toFixed(2)}%</b><small>按目前本金加權</small></div><div class="portfolioMetric"><span>已結清</span><b>${closed.length} 筆</b><small>保留 KLFAN 紀錄</small></div></div><div class="sectionHead"><span>進行中${typeName}</span><b>${active.length} 筆</b></div><div class="loanList">${active.length ? active.map(account => loanAccountCard(account, account.id === expandedLoan)).join('') : `<div class="portfolioEmpty">目前沒有進行中的${typeName}。</div>`}</div>${closed.length ? `<div class="sectionHead"><span>已結清${typeName}</span><b>${closed.length} 筆</b></div><div class="loanList">${closed.map(account => loanAccountCard(account, account.id === expandedLoan)).join('')}</div>` : ''}${loanEventTimeline(events)}</div>`, `${ownerName(analysisOwner)}貸款分析`);
+  shell(`<div class="portfolioView"><div class="seg loanTypeSeg"><button data-loan-type="personal" class="${loanTypeFilter === 'personal' ? 'on' : ''}">信貸</button><button data-loan-type="topup" class="${loanTypeFilter === 'topup' ? 'on' : ''}">增貸</button><button data-loan-type="mortgage" class="${loanTypeFilter === 'mortgage' ? 'on' : ''}">房貸</button></div><div class="portfolioSummary loanSummary"><div class="portfolioMetric"><span>目前貸款餘額</span><b>NT$ ${formatNumber(totalBalance)}</b><small>${active.length} 筆進行中</small></div><div class="portfolioMetric"><span>每月還款</span><b>NT$ ${formatNumber(totalMonthly)}</b><small>平均每天 NT$ ${formatNumber(daily)}</small></div><div class="portfolioMetric"><span>加權平均利率</span><b>${weightedRate.toFixed(2)}%</b><small>按目前本金加權</small></div><div class="portfolioMetric"><span>已結清</span><b>${closed.length} 筆</b><small>保留 KLFAN 紀錄</small></div></div><div class="sectionHead"><span>進行中${typeName}</span><b>${active.length} 筆</b></div><div class="loanList">${active.length ? active.map(account => loanAccountCard(account, account.id === expandedLoan)).join('') : `<div class="portfolioEmpty">目前沒有進行中的${typeName}。</div>`}</div>${closed.length ? `<div class="sectionHead"><span>已結清${typeName}</span><b>${closed.length} 筆</b></div><div class="loanList">${closed.map(account => loanAccountCard(account, account.id === expandedLoan)).join('')}</div>` : ''}</div>`, `${ownerName(analysisOwner)}貸款分析`);
 
   root.querySelectorAll('[data-loan-type]').forEach(button => { button.onclick = () => {
     loanTypeFilter = button.dataset.loanType;
