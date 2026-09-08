@@ -106,6 +106,20 @@ db.loan_schedule.push(...${JSON.stringify(schedule)});`;
     await page.click('[data-loan-type="personal"]');
   });
 
+  // 測試增貸與測試房貸都沒有排程列，主檔也沒存 effective_annual_cost，所以年化成本
+  // 是真的算不出來。以前 toFiniteNumber 的預設值會把「沒有」變成 0，卡片就寫
+  // 「實際年化成本 0.00%」—— 一筆 2.5% 的貸款顯示 0%，而且等排程載進來又會自己跳掉。
+  await t.test('算不出年化成本就顯示破折號，不是 0.00%', async () => {
+    for (const type of ['topup', 'mortgage']) {
+      await page.click(`[data-loan-type="${type}"]`);
+      await page.waitForSelector('.loanCard');
+      const card = await page.textContent('.loanCard');
+      assert.doesNotMatch(card, /0\.00%/, `${type} 卡片不該出現 0.00% 的年化成本：${card}`);
+      assert.match(card, /—/, `${type} 卡片應該顯示破折號`);
+    }
+    await page.click('[data-loan-type="personal"]');
+  });
+
   await t.test('點開看得到貸款條件、已繳期數與未來排程', async () => {
     await page.click('[data-loan-account]');
     await page.waitForSelector('.loanDetail');

@@ -1075,7 +1075,10 @@ function loanAccountCard(account, expanded = false) {
   const borrowingCost = totalRepayment > original ? totalRepayment - original : 0;
   const plan = loanScheduleFor(account.id);
   const feesPending = String(account.source_note || '').includes('其他費用待補');
-  const annualCost = feesPending ? null : (plan.annualCost ?? toFiniteNumber(account.effective_annual_cost));
+  // 排程還沒載入時 plan.annualCost 是 null，退回主檔存的那個值。fallback 一定要是 null ——
+  // toFiniteNumber 預設吐 0，沒存年化成本的貸款就會變成「實際年化成本 0.00%」，
+  // 等排程載進來才跳成真的數字。算不出來就該顯示「—」。
+  const annualCost = feesPending ? null : (plan.annualCost ?? toFiniteNumber(account.effective_annual_cost, null));
   const dateLabel = active ? '預計到期' : '結清日期';
   const dateValue = active ? account.maturity_date : account.closed_on;
   const loanTypeLabel = loanTypeName(normalizedLoanType(account));
@@ -1141,18 +1144,36 @@ function loanCardTop(id) {
   return card ? card.getBoundingClientRect().top : null;
 }
 
-// 把卡片頂端拉回原本在視窗裡的位置。loan-ui-fix.js 會在後面的 frame 再搬一次 DOM，
-// 高度還會變，所以連續三個 frame 各重量一次 —— 每次都重新量，不是套用同一個差值。
+// 把卡片頂端拉回原本在視窗裡的位置。
+//
+// loan-ui-fix.js 用 MutationObserver 在後面的 frame 繼續搬 DOM（把卡片上的欄位移進明細、
+// 拿掉 loanFoot），而它自己的改動又會再觸發自己一輪，所以高度要好幾個 frame 才會穩。
+// 固定補正三次會漏掉最後一次改動 —— 實測會間歇性地從 371 掉到 641。
+// 改成一直補到「連兩個 frame 都沒再動」為止，最多 20 個 frame（捲不動時不會空轉太久）。
+const PIN_MAX_FRAMES = 20;
 function pinLoanCard(id, topBefore) {
   if (topBefore === null) return;
+  let steady = 0;
+  let frames = 0;
   const settle = () => {
     const topNow = loanCardTop(id);
-    if (topNow === null) return;
+    if (topNow === null) return true;
     const drift = topNow - topBefore;
-    if (Math.abs(drift) > 0.5) window.scrollTo(0, window.scrollY + drift);
+    if (Math.abs(drift) > 0.5) {
+      window.scrollTo(0, window.scrollY + drift);
+      steady = 0;
+      return false;
+    }
+    steady += 1;
+    return steady >= 2;
   };
-  settle();
-  requestAnimationFrame(() => { settle(); requestAnimationFrame(settle); });
+  if (settle()) return;
+  const tick = () => {
+    frames += 1;
+    if (settle() || frames >= PIN_MAX_FRAMES) return;
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
 }
 
 const usdFormat = value => masked
