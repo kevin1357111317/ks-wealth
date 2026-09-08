@@ -62,4 +62,6 @@ test('已結清信貸不保存也不顯示不確定的表定利率', () => {
   assert.match(clearedClosedRates, /nominal_annual_rate = null/);
   assert.match(app, /const showNominalRate = active \|\| normalizedLoanType\(account\) !== 'personal'/);
   assert.match(app, /\$\{nominalRateFact\}/);
+  assert.ok(app.includes("? `<div><span>表定利率</span><b>${account.annualRate"));
+  assert.ok(!app.includes("? `${nominalRateFact}`"));
 });
