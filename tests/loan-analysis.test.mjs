@@ -7,6 +7,7 @@ const css = await readFile(new URL('../portfolio.css', import.meta.url), 'utf8')
 const migration = await readFile(new URL('../supabase/migrations/20260907100000_loan_analysis.sql', import.meta.url), 'utf8');
 const futureBank = await readFile(new URL('../supabase/migrations/20260908090000_future_bank_verified_loan.sql', import.meta.url), 'utf8');
 const ctbcTopupFees = await readFile(new URL('../supabase/migrations/20260908180000_correct_ctbc_topup_fees.sql', import.meta.url), 'utf8');
+const clearedClosedRates = await readFile(new URL('../supabase/migrations/20260908210000_clear_closed_personal_loan_rates.sql', import.meta.url), 'utf8');
 
 test('loan analysis is a third per-owner analysis destination', () => {
   assert.match(app, /data-open-loans/);
@@ -53,4 +54,12 @@ test('潤隆增貸依 KLFAN 保留五筆正確名稱的其他費用', () => {
   assert.match(ctbcTopupFees, /due_date = date '2026-08-28'/);
   assert.match(ctbcTopupFees, /amount_twd = -2210/);
   assert.match(ctbcTopupFees, /其他費用共 5 筆、NT\$ 25,046/);
+});
+
+test('已結清信貸不保存也不顯示不確定的表定利率', () => {
+  assert.match(clearedClosedRates, /status = 'closed'/);
+  assert.match(clearedClosedRates, /loan_type = 'personal'/);
+  assert.match(clearedClosedRates, /nominal_annual_rate = null/);
+  assert.match(app, /const showNominalRate = active \|\| normalizedLoanType\(account\) !== 'personal'/);
+  assert.match(app, /\$\{nominalRateFact\}/);
 });
