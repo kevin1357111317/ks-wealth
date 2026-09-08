@@ -1096,7 +1096,7 @@ function loanPage() {
     : 0;
   const daily = totalMonthly * 12 / 365;
   const typeName = loanTypeName(loanTypeFilter);
-  shell(`<div class="portfolioView"><div class="seg loanTypeSeg"><button data-loan-type="personal" class="${loanTypeFilter === 'personal' ? 'on' : ''}">信貸</button><button data-loan-type="topup" class="${loanTypeFilter === 'topup' ? 'on' : ''}">增貸</button><button data-loan-type="mortgage" class="${loanTypeFilter === 'mortgage' ? 'on' : ''}">房貸</button></div><div class="portfolioSummary loanSummary"><div class="portfolioMetric"><span>目前貸款餘額</span><b>NT$ ${formatNumber(totalBalance)}</b><small>${active.length} 筆進行中</small></div><div class="portfolioMetric"><span>每月還款</span><b>NT$ ${formatNumber(totalMonthly)}</b><small>平均每天 NT$ ${formatNumber(daily)}</small></div><div class="portfolioMetric"><span>加權平均利率</span><b>${weightedRate.toFixed(2)}%</b><small>按目前本金加權</small></div><div class="portfolioMetric"><span>已結清</span><b>${closed.length} 筆</b><small>保留 KLFAN 紀錄</small></div></div><div class="sectionHead"><span>進行中${typeName}</span><b>${active.length} 筆</b></div><div class="loanList">${active.length ? active.map(account => loanAccountCard(account, account.id === expandedLoan)).join('') : `<div class="portfolioEmpty">目前沒有進行中的${typeName}。</div>`}</div>${closed.length ? `<div class="sectionHead"><span>已結清${typeName}</span><b>${closed.length} 筆</b></div><div class="loanList">${closed.map(account => loanAccountCard(account, account.id === expandedLoan)).join('')}</div>` : ''}</div>`, `${ownerName(analysisOwner)}貸款分析`);
+  shell(`<div class="portfolioView"><div class="seg loanTypeSeg"><button data-loan-type="personal" class="${loanTypeFilter === 'personal' ? 'on' : ''}">信貸</button><button data-loan-type="topup" class="${loanTypeFilter === 'topup' ? 'on' : ''}">增貸</button><button data-loan-type="mortgage" class="${loanTypeFilter === 'mortgage' ? 'on' : ''}">房貸</button></div><div class="portfolioSummary loanSummary"><div class="portfolioMetric"><span>目前貸款餘額</span><b>NT$ ${formatNumber(totalBalance)}</b><small>${active.length} 筆進行中</small></div><div class="portfolioMetric"><span>每月還款</span><b>NT$ ${formatNumber(totalMonthly)}</b><small>平均每天 NT$ ${formatNumber(daily)}</small></div><div class="portfolioMetric"><span>加權平均利率</span><b>${weightedRate.toFixed(2)}%</b><small>按目前本金加權</small></div><div class="portfolioMetric"><span>已結清</span><b>${closed.length} 筆</b><small>保留歷史紀錄</small></div></div><div class="sectionHead"><span>進行中${typeName}</span><b>${active.length} 筆</b></div><div class="loanList">${active.length ? active.map(account => loanAccountCard(account, account.id === expandedLoan)).join('') : `<div class="portfolioEmpty">目前沒有進行中的${typeName}。</div>`}</div>${closed.length ? `<div class="sectionHead"><span>已結清${typeName}</span><b>${closed.length} 筆</b></div><div class="loanList">${closed.map(account => loanAccountCard(account, account.id === expandedLoan)).join('')}</div>` : ''}</div>`, `${ownerName(analysisOwner)}貸款分析`);
 
   root.querySelectorAll('[data-loan-type]').forEach(button => { button.onclick = () => {
     loanTypeFilter = button.dataset.loanType;
@@ -1114,6 +1114,9 @@ function loanPage() {
 function bindLoanCards() {
   root.querySelectorAll('[data-loan-account]').forEach(button => { button.onclick = () => {
     const id = button.dataset.loanAccount;
+    // 被點的那張要留在原地。一次只開一張，所以點下面那張時，上面那張會同時收起來 ——
+    // 收起來的高度差會把下面的內容整個往上拉，這就是「點開卻跳走」的來源。
+    const topBefore = loanCardTop(id);
     expandedLoan = expandedLoan === id ? null : id;
     const accounts = ownerLoanRows(analysisOwner);
     root.querySelectorAll('.loanCard').forEach(card => {
@@ -1124,7 +1127,27 @@ function bindLoanCards() {
       if (account) card.outerHTML = loanAccountCard(account, shouldOpen);
     });
     bindLoanCards();   // outerHTML 會換掉節點，事件要重綁
+    pinLoanCard(id, topBefore);
   }; });
+}
+
+function loanCardTop(id) {
+  const card = root.querySelector(`.loanCard[data-loan-card="${String(id).replace(/["\\]/g, '\\$&')}"]`);
+  return card ? card.getBoundingClientRect().top : null;
+}
+
+// 把卡片頂端拉回原本在視窗裡的位置。loan-ui-fix.js 會在後面的 frame 再搬一次 DOM，
+// 高度還會變，所以連續三個 frame 各重量一次 —— 每次都重新量，不是套用同一個差值。
+function pinLoanCard(id, topBefore) {
+  if (topBefore === null) return;
+  const settle = () => {
+    const topNow = loanCardTop(id);
+    if (topNow === null) return;
+    const drift = topNow - topBefore;
+    if (Math.abs(drift) > 0.5) window.scrollTo(0, window.scrollY + drift);
+  };
+  settle();
+  requestAnimationFrame(() => { settle(); requestAnimationFrame(settle); });
 }
 
 const usdFormat = value => masked

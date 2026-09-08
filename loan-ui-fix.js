@@ -195,29 +195,6 @@ function simplifyLoanRows(scope = document) {
   });
 }
 
-function keepLoanExpansionDownward() {
-  if (!root) return;
-
-  // app-v3 會在點擊信貸卡片時整頁重繪並做錨點補正；
-  // 開啟卡片時改成鎖住原本的 scrollY，讓新增內容只往卡片下方長出，不把畫面往上拉。
-  root.addEventListener('click', event => {
-    if (!(event.target instanceof Element)) return;
-    const button = event.target.closest('[data-loan-account]');
-    if (!button) return;
-    const card = button.closest('.loanCard');
-    if (card?.classList.contains('open')) return;
-
-    const scrollY = window.scrollY;
-    const restore = () => window.scrollTo({ top: scrollY, left: 0, behavior: 'auto' });
-
-    requestAnimationFrame(() => {
-      restore();
-      // UI 精簡程式會在下一個 frame 再調整 DOM，因此再鎖一次位置，避免 iOS Safari 二次回彈。
-      requestAnimationFrame(restore);
-    });
-  }, true);
-}
-
 function applyLoanUiFixes(scope = document) {
   fixLoanSectionCounters(scope);
   moveCardFactsToExpandedDetail(scope);
@@ -225,7 +202,6 @@ function applyLoanUiFixes(scope = document) {
   simplifyLoanRows(scope);
 }
 
-keepLoanExpansionDownward();
 applyLoanUiFixes();
 
 if (root) {
