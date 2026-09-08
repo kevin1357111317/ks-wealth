@@ -903,7 +903,7 @@ function groupedCards(list, ownerScope, kind) {
 
 // 資產頁上只放入口，數字留在分析頁裡面講。
 function analysisEntry() {
-  return `<div class="analysisEntry"><button data-open-portfolio>股票分析<i>›</i></button><button data-open-usd>美金分析<i>›</i></button><button data-open-loans>貸款分析<i>›</i></button></div>`;
+  return `<div class="analysisEntry"><button data-open-portfolio>股票分析<i>›</i></button><button data-open-loans>貸款分析<i>›</i></button><button data-open-usd>美金分析<i>›</i></button></div>`;
 }
 
 // 分析頁只看單一個人的部位。全部合起來的 portfolioModel 還是要留著 ——
