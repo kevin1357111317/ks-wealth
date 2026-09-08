@@ -4,6 +4,7 @@ import test from 'node:test';
 
 const app = await readFile(new URL('../app-v3.js', import.meta.url), 'utf8');
 const css = await readFile(new URL('../portfolio.css', import.meta.url), 'utf8');
+const loanUiFix = await readFile(new URL('../loan-ui-fix.js', import.meta.url), 'utf8');
 const migration = await readFile(new URL('../supabase/migrations/20260907100000_loan_analysis.sql', import.meta.url), 'utf8');
 const futureBank = await readFile(new URL('../supabase/migrations/20260908090000_future_bank_verified_loan.sql', import.meta.url), 'utf8');
 const ctbcTopupFees = await readFile(new URL('../supabase/migrations/20260908180000_correct_ctbc_topup_fees.sql', import.meta.url), 'utf8');
@@ -68,4 +69,18 @@ test('已結清信貸不保存也不顯示不確定的表定利率', () => {
 
 test('已結清貸款的奇數筆明細維持雙欄左側對齊', () => {
   assert.match(css, /\.loanCashflowMetrics>div:last-child:nth-child\(odd\)\{text-align:left\}/);
+});
+
+test('貸款分析使用統一文案與欄位格式', () => {
+  assert.match(app, /const historyLabel = '過往繳款'/);
+  assert.match(app, /<span>未來繳款<\/span>/);
+  assert.match(app, /<span>其他費用<\/span>/);
+  assert.match(app, /每月還款（TWD）/);
+  assert.match(app, /active \? '每月還款' : '總還款'/);
+  assert.match(app, /<span>撥款<\/span>/);
+  assert.doesNotMatch(app, /過往實際繳款|過往繳款／已到期排程|未來還款排程|開辦費明細|撥款／資金流入|每月月付/);
+  assert.match(loanUiFix, /表定利率／實際年化成本/);
+  assert.match(loanUiFix, /sectionLabel === '過往繳款'/);
+  assert.match(loanUiFix, /sectionLabel === '未來繳款'/);
+  assert.doesNotMatch(loanUiFix, /過往實際繳款|未來還款排程|開辦費明細|撥款／資金流入|每月月付|表定利率；實際年化利率/);
 });

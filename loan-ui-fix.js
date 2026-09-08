@@ -4,9 +4,7 @@ function fixLoanSectionCounters(scope = document) {
   scope.querySelectorAll('.loanFlowSection > .sectionHead').forEach(head => {
     const labelNode = head.querySelector('span');
     const label = labelNode?.textContent?.trim();
-    if (label !== '開辦費明細' && label !== '其他費用') return;
-
-    if (labelNode && label !== '其他費用') labelNode.textContent = '其他費用';
+    if (label !== '其他費用') return;
 
     const section = head.closest('.loanFlowSection');
     const count = section?.querySelectorAll('.loanPlan > *').length ?? 0;
@@ -56,14 +54,14 @@ function moveCardFactsToExpandedDetail(scope = document) {
 
     const statedItem = findFact('表定利率');
     const annualItem = findFact('實際年化成本') || findFact('實際年化利率');
-    const combinedItem = findFact('表定利率；實際年化利率');
+    const combinedItem = findFact('表定利率／實際年化成本');
 
     if (!combinedItem && statedItem && annualItem) {
       const statedValue = statedItem.querySelector('b')?.textContent?.trim() || '—';
       const annualValue = annualItem.querySelector('b')?.textContent?.trim() || '—';
       const labelNode = statedItem.querySelector('span');
       const valueNode = statedItem.querySelector('b');
-      if (labelNode) labelNode.textContent = '表定利率；實際年化利率';
+      if (labelNode) labelNode.textContent = '表定利率／實際年化成本';
       if (valueNode) valueNode.textContent = `${statedValue} ; ${annualValue}`;
       annualItem.remove();
     }
@@ -78,14 +76,14 @@ function moveCardFactsToExpandedDetail(scope = document) {
       });
     }
 
-    // 第一層只留每月月付與合併後的利率；目前本金餘額仍維持卡片主數字。
-    const keepLabels = new Set(['每月月付', '表定利率；實際年化利率']);
+    // 第一層只留每月還款與合併後的利率；目前本金餘額仍維持卡片主數字。
+    const keepLabels = new Set(['每月還款', '表定利率／實際年化成本']);
     [...facts.children].forEach(item => {
       const label = item.querySelector('span')?.textContent?.trim() || '';
       if (!keepLabels.has(label)) item.remove();
     });
 
-    const ordered = ['每月月付', '表定利率；實際年化利率']
+    const ordered = ['每月還款', '表定利率／實際年化成本']
       .map(label => [...facts.children].find(item => item.querySelector('span')?.textContent?.trim() === label))
       .filter(Boolean);
     const current = [...facts.children];
@@ -108,10 +106,7 @@ function simplifyAndReorderLoanMetrics(scope = document) {
       metricByLabel(metrics, label)?.remove();
     });
 
-    const feeItem = metricByLabel(metrics, '開辦費') || metricByLabel(metrics, '其他費用');
-    const feeLabel = feeItem?.querySelector('span');
-    if (feeLabel && feeLabel.textContent?.trim() !== '其他費用') feeLabel.textContent = '其他費用';
-
+    const feeItem = metricByLabel(metrics, '其他費用');
     const termText = formatLoanTerm(totalPeriods);
     let termItem = metrics.querySelector('[data-loan-term]');
     if (termText) {
@@ -171,24 +166,24 @@ function setSimpleRowLabel(row, label) {
 function simplifyLoanRows(scope = document) {
   scope.querySelectorAll('.loanDetail').forEach(detail => {
     const sections = [...detail.querySelectorAll(':scope > .loanFlowSection')];
-    const pastSection = sections.find(section => section.querySelector(':scope > .sectionHead span')?.textContent?.trim() === '過往實際繳款');
+    const pastSection = sections.find(section => section.querySelector(':scope > .sectionHead span')?.textContent?.trim() === '過往繳款');
     const pastCount = pastSection?.querySelectorAll('.loanPlan > .loanPlanRow').length ?? 0;
 
     sections.forEach(section => {
       const sectionLabel = section.querySelector(':scope > .sectionHead span')?.textContent?.trim();
       const rows = [...section.querySelectorAll('.loanPlan > .loanPlanRow')];
 
-      if (sectionLabel === '過往實際繳款') {
+      if (sectionLabel === '過往繳款') {
         rows.forEach((row, index) => setSimpleRowLabel(row, `第 ${index + 1} 期`));
         return;
       }
 
-      if (sectionLabel === '未來還款排程') {
+      if (sectionLabel === '未來繳款') {
         rows.forEach((row, index) => setSimpleRowLabel(row, `第 ${pastCount + index + 1} 期`));
         return;
       }
 
-      if (sectionLabel === '撥款／資金流入') {
+      if (sectionLabel === '撥款') {
         rows.forEach(row => setSimpleRowLabel(row, '撥款'));
       }
     });
