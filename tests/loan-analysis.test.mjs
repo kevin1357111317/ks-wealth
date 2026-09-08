@@ -9,6 +9,7 @@ const migration = await readFile(new URL('../supabase/migrations/20260907100000_
 const futureBank = await readFile(new URL('../supabase/migrations/20260908090000_future_bank_verified_loan.sql', import.meta.url), 'utf8');
 const ctbcTopupFees = await readFile(new URL('../supabase/migrations/20260908180000_correct_ctbc_topup_fees.sql', import.meta.url), 'utf8');
 const clearedClosedRates = await readFile(new URL('../supabase/migrations/20260908210000_clear_closed_personal_loan_rates.sql', import.meta.url), 'utf8');
+const runlongMortgage = await readFile(new URL('../supabase/migrations/20260908220000_add_runlong_mortgage.sql', import.meta.url), 'utf8');
 
 test('loan analysis is a third per-owner analysis destination', () => {
   assert.match(app, /data-open-loans/);
@@ -83,4 +84,23 @@ test('貸款分析使用統一文案與欄位格式', () => {
   assert.match(loanUiFix, /sectionLabel === '過往繳款'/);
   assert.match(loanUiFix, /sectionLabel === '未來繳款'/);
   assert.doesNotMatch(loanUiFix, /過往實際繳款|未來還款排程|開辦費明細|撥款／資金流入|每月月付|表定利率；實際年化利率/);
+});
+
+
+test('潤隆房貸依中信畫面加入房貸分類', () => {
+  assert.ok(runlongMortgage.includes("loan_type in ('personal', 'topup', 'mortgage')"));
+  assert.ok(runlongMortgage.includes("'230905_KL_CTBC_MORTGAGE'"));
+  assert.ok(runlongMortgage.includes("'潤隆房貸'"));
+  assert.ok(runlongMortgage.includes("'mortgage',"));
+  assert.ok(runlongMortgage.includes('8000000'));
+  assert.ok(runlongMortgage.includes('2.18'));
+  assert.ok(runlongMortgage.includes('30287'));
+  assert.ok(runlongMortgage.includes("date '2023-09-05'"));
+  assert.ok(runlongMortgage.includes("date '2053-09-05'"));
+  assert.match(runlongMortgage, /generate_series\(1, 360\)/);
+  assert.ok(runlongMortgage.includes('s.n <= 36'));
+  assert.ok(runlongMortgage.includes('7412586'));
+  assert.ok(runlongMortgage.includes('其他費用待補'));
+  assert.ok(app.includes("includes('其他費用待補')"));
+  assert.ok(app.includes("feesPending ? '—'"));
 });
