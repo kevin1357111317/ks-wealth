@@ -122,8 +122,11 @@ db.loan_schedule.push(...${JSON.stringify(schedule)});`;
 
   await t.test('再點一次收起來，而且一次只開一個', async () => {
     await page.click('[data-loan-account]');
-    await page.waitForTimeout(200);
+    assert.equal(await page.locator('.loanCard.collapsing').count(), 1, '收合時先保留卡片並播放高度動畫');
+    assert.equal(await page.locator('.loanDetail').count(), 1, '動畫完成前明細不應瞬間消失');
+    await page.waitForTimeout(300);
     assert.equal(await page.locator('.loanDetail').count(), 0);
+    assert.equal(await page.locator('.loanCard.collapsing').count(), 0);
   });
 
   await t.test('每月還款旁邊帶出平均每天要還多少', async () => {
