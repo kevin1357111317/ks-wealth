@@ -13,6 +13,22 @@ Vercel 直接部署靜態檔。
 `README.md` 是真正的設計文件：每個怪地方為什麼長這樣、數字跟哪份資料對過，都寫在裡面。
 動到某一塊之前先讀那一節，改完把新的理由補回去。
 
+## 版控
+
+正式版號規則寫在 `VERSIONING.md`，**每次正式更新都要升版號**。
+
+- 大更新：`V1 -> V2 -> V3`
+- 小更新：`V1 -> V1P1 -> V1P2`
+- 大版升級時小版號歸零，例如 `V1P8 -> V2`
+
+`app-version.js` 裡的 `APP_VERSION` 是畫面顯示版號的唯一來源。每次出貨要同步更新：
+
+1. `app-version.js` 的 `APP_VERSION`
+2. `VERSIONING.md` 的目前正式版
+3. `index.html` 的 `/app-version.js?v=` 快取字串
+
+commit message 建議直接帶版號，方便日後追蹤。
+
 ## 出貨流程
 
 在 `claude/asset-tracking-folder-fs4nqp` 上開發，開 PR，squash merge 進 `main`。
