@@ -1,4 +1,4 @@
-// 信貸卡片點開之後要看得到還款排程。排程是從 KLFAN 試算表匯進來的實際資料，
+// 貸款卡片點開之後要看得到還款排程。排程是從 KLFAN 試算表匯進來的實際資料，
 // 不是用公式現算的 —— 實際條件有寬限期、責任轉移這些例外，算出來對不上（元大那筆
 // 就是：試算表的結算日期欄寫 7 年，但排程列一路到 10 年，用 7 年算月付會差 3,765）。
 import assert from 'node:assert/strict';
@@ -24,7 +24,7 @@ const skip = !chromium ? 'playwright 未安裝'
   : !existsSync(BROWSER) ? '找不到 Chromium'
   : false;
 
-test('信貸卡片點開看得到還款排程', { skip }, async t => {
+test('貸款卡片點開看得到還款排程', { skip }, async t => {
   // 一筆進行中的信貸：2026-08-07 撥款 1,060,000，之後每月 7 號還 10,606，共 120 期
   const schedule = [{ loan_account_id: 'L1', due_date: '2026-08-07', amount_twd: 1060000 }];
   for (let i = 0; i < 120; i += 1) {
@@ -67,7 +67,7 @@ db.loan_schedule.push(...${JSON.stringify(schedule)});`;
   await page.click('[data-tab="husband"]');
   await page.waitForSelector('.fab');
 
-  await t.test('開 App 不載排程，點進信貸分析才載', async () => {
+  await t.test('開 App 不載排程，點進貸款分析才載', async () => {
     // 837 列的排程只有這一頁要用
     assert.equal(await page.evaluate(() =>
       globalThis.__fake.calls.filter(call => call.table === 'loan_schedule').length), 0);
