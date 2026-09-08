@@ -1044,6 +1044,53 @@ function loanAccountCard(account, expanded = false) {
   return `<article class="loanCard ${expanded ? 'open' : ''}"><button type="button" class="loanCardTap" data-loan-account="${escapeHtml(account.id)}"><div class="loanCardHead"><div><b>${escapeHtml(account.name)}</b><small>${escapeHtml(account.lender)} · ${escapeHtml(loanTypeLabel)}</small></div><span class="loanStatus ${active ? 'active' : ''}">${active ? '進行中' : '已結清'}</span></div><div class="loanBalance"><span>${active ? '目前本金餘額' : '原貸款金額'}</span><b>NT$ ${formatNumber(active ? account.currentBalance : original)}</b></div><div class="loanProgress"><i style="--progress:${progress}%"></i></div><div class="loanFacts"><div><span>原貸款</span><b>NT$ ${formatNumber(original)}</b></div><div><span>表定利率</span><b>${account.annualRate > 0 ? account.annualRate.toFixed(2) + '%' : '—'}</b></div><div><span>${active ? '每月月付' : '總還款'}</span><b>${active ? 'NT$ ' + formatNumber(account.monthlyPayment) : totalRepayment ? 'NT$ ' + formatNumber(totalRepayment) : '—'}</b></div><div><span>實際年化成本</span><b>${annualCost !== null && Number.isFinite(annualCost) ? (annualCost * 100).toFixed(2) + '%' : '—'}</b></div><div><span>${dateLabel}</span><b>${dateValue ? escapeHtml(dateValue) : '—'}</b></div><div><span>全期利息與費用</span><b>NT$ ${formatNumber(plan.totalInterestAndFees || borrowingCost)}</b></div></div>${active ? `<small class="loanFoot">已償還本金約 NT$ ${formatNumber(paidPrincipal)} · ${progress.toFixed(1)}%</small>` : `<small class="loanFoot">實際年化成本已納入開辦費、提前清償與每筆現金流日期</small>`}</button>${expanded ? loanScheduleDetail(account) : ''}</article>`;
 }
 
+function smoothlyCollapse(container, content, finish) {
+  if (!container || !content) {
+    finish();
+    return;
+  }
+
+  const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  if (reduceMotion || typeof content.animate !== 'function') {
+    finish();
+    return;
+  }
+
+  container.classList.add('collapsing');
+  const height = content.getBoundingClientRect().height;
+  const animation = content.animate([
+    { height: `${height}px`, opacity: 1 },
+    { height: '0px', opacity: 0 },
+  ], {
+    duration: 240,
+    easing: 'cubic-bezier(.22, 1, .36, 1)',
+    fill: 'forwards',
+  });
+
+  let finished = false;
+  const complete = () => {
+    if (finished) return;
+    finished = true;
+    animation.cancel();
+    finish();
+  };
+  animation.addEventListener('finish', complete, { once: true });
+  animation.addEventListener('cancel', complete, { once: true });
+}
+
+function collapseLoanCard(button, id) {
+  const card = button.closest('.loanCard');
+  const detail = card?.querySelector(':scope > .loanDetail');
+  expandedLoan = null;
+
+  smoothlyCollapse(card, detail, () => {
+    if (!card?.isConnected) return;
+    detail?.remove();
+    card.classList.remove('open', 'collapsing');
+    button.setAttribute('aria-expanded', 'false');
+  });
+}
+
 function loanPage() {
   const rows = ownerLoanRows(analysisOwner)
     .filter(account => normalizedLoanType(account) === loanTypeFilter);
@@ -1068,9 +1115,14 @@ function loanPage() {
   }; });
 
   root.querySelectorAll('[data-loan-account]').forEach(button => { button.onclick = () => {
-    // 就地展開，不跳頁；再點一次收起來。跟台帳卡片同一套錨點處理，畫面不會彈回頂部。
+    // 收合時先把明細高度平滑縮到 0，再移除節點。若直接 render()，iOS 會在頁面
+    // 瞬間變短時修正 scrollY，卡片靠近頁尾就會明顯亂跳。
     const id = button.dataset.loanAccount;
-    expandedLoan = expandedLoan === id ? null : id;
+    if (expandedLoan === id) {
+      collapseLoanCard(button, id);
+      return;
+    }
+    expandedLoan = id;
     renderKeepingAnchor('data-loan-account', id);
   }; });
 }
@@ -1196,7 +1248,18 @@ function personPage(ownerScope) {
     const group = event.target.closest('[data-group]');
     if (group) {
       const key = group.dataset.group;
-      openGroups.has(key) ? openGroups.delete(key) : openGroups.add(key);
+      if (openGroups.has(key)) {
+        const container = group.closest('.categoryGroup');
+        const content = container?.querySelector(':scope > .categoryItems');
+        openGroups.delete(key);
+        smoothlyCollapse(container, content, () => {
+          if (!container?.isConnected) return;
+          content?.remove();
+          container.classList.remove('open', 'collapsing');
+        });
+        return;
+      }
+      openGroups.add(key);
       renderKeepingAnchor('data-group', key);
       return;
     }
