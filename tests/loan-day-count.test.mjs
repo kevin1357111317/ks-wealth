@@ -74,3 +74,19 @@ test('出了寬限期就開始還本金', () => {
   assert.equal(db.financial_items[0].amount_twd, 11895000 - (48494 - 21609));
 });
 
+
+// 新匯入一筆貸款時，很容易變成「主檔說已經扣到今天，但排程列從撥款日就開始、都還沒扣」。
+// 這時候天數 = 應繳日 − 已扣到的日期會是負的，利息跟著變負，本金就變成天文數字。
+// 潤隆房貸就是這樣被寫成第一期本金 502,231、利息 -471,944。
+test('排程比「已扣到的日期」還早也不會算出負利息', () => {
+  seed({ dayCount: 'act365', graceUntil: null, rate: 2.18, principal: 8000000,
+    payment: 30287, dues: ['2023-10-05', '2023-11-05', '2023-12-05'] });
+  db.loan_accounts[0].last_payment_applied_on = '2026-09-05';   // 比所有排程都晚
+  const applied = applyDueLoanPayments('2026-09-30');
+  assert.equal(applied.length, 3);
+  assert.ok(applied.every(row => row.interest_twd >= 0), `利息不該是負的：${JSON.stringify(applied)}`);
+  assert.ok(applied.every(row => row.principal_twd <= 30287),
+    '本金不該超過那一期的月付');
+  assert.ok(db.financial_items[0].amount_twd > 7900000,
+    `三期最多還三期的本金，餘額不該掉那麼多：${db.financial_items[0].amount_twd}`);
+});
