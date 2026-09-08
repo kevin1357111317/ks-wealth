@@ -61,6 +61,10 @@ function writeCache(key, result) {
   } catch {}
 }
 
+function setText(node, text) {
+  if (node && node.textContent !== text) node.textContent = text;
+}
+
 function remainingMonthContext() {
   const title = document.querySelector('.brand h1')?.textContent?.trim() || '';
   if (!title.includes('貸款分析')) return null;
@@ -141,12 +145,13 @@ function formatShortDate(value) {
 function renderResult(metric, result) {
   const value = metric.querySelector('b');
   const note = metric.querySelector('small');
-  if (value) value.textContent = formatMoney(result.total);
-  if (note) {
-    note.textContent = result.count <= 0
+  setText(value, formatMoney(result.total));
+  setText(
+    note,
+    result.count <= 0
       ? '本月已繳完'
-      : `尚有 ${result.count} 筆待繳${result.nextDue ? ` · 最近 ${formatShortDate(result.nextDue)}` : ''}`;
-  }
+      : `尚有 ${result.count} 筆待繳${result.nextDue ? ` · 最近 ${formatShortDate(result.nextDue)}` : ''}`,
+  );
 }
 
 function refreshRemainingMonthSummary({ force = false } = {}) {
@@ -159,18 +164,19 @@ function refreshRemainingMonthSummary({ force = false } = {}) {
   const value = metric.querySelector('b');
   const note = metric.querySelector('small');
 
-  if (label && label.textContent !== '本月剩餘還款') label.textContent = '本月剩餘還款';
+  setText(label, '本月剩餘還款');
 
-  // 先同步畫出今日快取，讓 core render 出來的「整月總額」沒有機會被使用者看到。
+  // 同一個摘要節點已綁定今天的資料時直接離開，避免 observer 因文字更新再次觸發自己。
+  if (!force && metric.dataset.remainingMonthKey === key) return;
+  metric.dataset.remainingMonthKey = key;
+
+  // 先同步畫出今日快取，讓 core render 出來的整月總額不會被看到。
   const cached = readCache(key);
   if (cached) renderResult(metric, cached);
   else {
-    if (value) value.textContent = '—';
-    if (note) note.textContent = '更新中…';
+    setText(value, '—');
+    setText(note, '更新中…');
   }
-
-  if (!force && metric.dataset.remainingMonthKey === key) return;
-  metric.dataset.remainingMonthKey = key;
 
   void loadRemainingMonth(owner, loanType).then(result => {
     writeCache(key, result);
@@ -193,19 +199,18 @@ async function prewarmRemainingMonth() {
       writeCache(key, result);
     })
   ));
-  refreshRemainingMonthSummary();
   return true;
 }
 
 refreshRemainingMonthSummary();
 void prewarmRemainingMonth().then(ok => {
-  // 剛登入時 auth token 可能比此模組晚落到 storage；補一次即可，不讓首次進分析頁閃舊值。
+  // 剛登入時 auth token 可能比此模組晚落到 storage；補一次即可。
   if (!ok) setTimeout(() => void prewarmRemainingMonth(), 800);
 });
 
 if (root) {
   const observer = new MutationObserver(() => {
-    // MutationObserver 本身會在瀏覽器 paint 前執行；不要再延到 requestAnimationFrame。
+    // MutationObserver 會在 paint 前執行；同步套快取，但不重複改寫同一節點。
     refreshRemainingMonthSummary();
   });
   observer.observe(root, { childList: true, subtree: true });
@@ -213,7 +218,5 @@ if (root) {
 
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
-  // 回到 App 時先維持快取立即顯示，再背景重抓最新狀態。
-  refreshRemainingMonthSummary();
-  void prewarmRemainingMonth();
+  refreshRemainingMonthSummary({ force: true });
 });
