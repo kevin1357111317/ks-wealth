@@ -6,6 +6,7 @@ const app = await readFile(new URL('../app-v3.js', import.meta.url), 'utf8');
 const css = await readFile(new URL('../portfolio.css', import.meta.url), 'utf8');
 const migration = await readFile(new URL('../supabase/migrations/20260907100000_loan_analysis.sql', import.meta.url), 'utf8');
 const futureBank = await readFile(new URL('../supabase/migrations/20260908090000_future_bank_verified_loan.sql', import.meta.url), 'utf8');
+const ctbcTopupFees = await readFile(new URL('../supabase/migrations/20260908180000_correct_ctbc_topup_fees.sql', import.meta.url), 'utf8');
 
 test('loan analysis is a third per-owner analysis destination', () => {
   assert.match(app, /data-open-loans/);
@@ -42,4 +43,14 @@ test('夫妻往來不再顯示，將來銀行以銀行畫面資料為準', () =>
   assert.match(futureBank, /maturity_date = date '2036-03-23'/);
   assert.match(futureBank, /generate_series\(0, 119\)/);
   assert.match(futureBank, /s\.n between 0 and 4/);
+});
+
+test('潤隆增貸依 KLFAN 保留五筆正確名稱的其他費用', () => {
+  assert.match(ctbcTopupFees, /source_key = '250429_KL_CTBC'/);
+  assert.match(ctbcTopupFees, /when -9000 then '管帳費'/);
+  assert.match(ctbcTopupFees, /when -66 then '火災險'/);
+  assert.match(ctbcTopupFees, /when -11560 then '代辦費'/);
+  assert.match(ctbcTopupFees, /due_date = date '2026-08-28'/);
+  assert.match(ctbcTopupFees, /amount_twd = -2210/);
+  assert.match(ctbcTopupFees, /其他費用共 5 筆、NT\$ 25,046/);
 });
