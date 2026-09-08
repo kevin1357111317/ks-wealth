@@ -1078,6 +1078,10 @@ function loanAccountCard(account, expanded = false) {
   const dateLabel = active ? '預計到期' : '結清日期';
   const dateValue = active ? account.maturity_date : account.closed_on;
   const loanTypeLabel = loanTypeName(normalizedLoanType(account));
+  const showNominalRate = active || normalizedLoanType(account) !== 'personal';
+  const nominalRateFact = showNominalRate
+    ? `${nominalRateFact}`
+    : '';
   return `<article class="loanCard ${expanded ? 'open' : ''}" data-loan-card="${escapeHtml(account.id)}"><button type="button" class="loanCardTap" data-loan-account="${escapeHtml(account.id)}"><div class="loanCardHead"><div><b>${escapeHtml(account.name)}</b><small>${escapeHtml(account.lender)} · ${escapeHtml(loanTypeLabel)}</small></div><span class="loanStatus ${active ? 'active' : ''}">${active ? '進行中' : '已結清'}</span></div><div class="loanBalance"><span>${active ? '目前本金餘額' : '原貸款金額'}</span><b>NT$ ${formatNumber(active ? account.currentBalance : original)}</b></div><div class="loanProgress"><i style="--progress:${progress}%"></i></div><div class="loanFacts"><div><span>原貸款</span><b>NT$ ${formatNumber(original)}</b></div><div><span>表定利率</span><b>${account.annualRate > 0 ? account.annualRate.toFixed(2) + '%' : '—'}</b></div><div><span>${active ? '每月月付' : '總還款'}</span><b>${active ? 'NT$ ' + formatNumber(account.monthlyPayment) : totalRepayment ? 'NT$ ' + formatNumber(totalRepayment) : '—'}</b></div><div><span>實際年化成本</span><b>${annualCost !== null && Number.isFinite(annualCost) ? (annualCost * 100).toFixed(2) + '%' : '—'}</b></div><div><span>${dateLabel}</span><b>${dateValue ? escapeHtml(dateValue) : '—'}</b></div><div><span>全期利息與費用</span><b>NT$ ${formatNumber(plan.totalInterestAndFees || borrowingCost)}</b></div></div>${active ? `<small class="loanFoot">已償還本金約 NT$ ${formatNumber(paidPrincipal)} · ${progress.toFixed(1)}%</small>` : `<small class="loanFoot">實際年化成本已納入開辦費、提前清償與每筆現金流日期</small>`}</button>${expanded ? loanScheduleDetail(account) : ''}</article>`;
 }
 
