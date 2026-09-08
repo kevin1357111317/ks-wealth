@@ -289,6 +289,40 @@ null、潤隆增貸是舊值），這樣連破折號都不會閃：
 差額就是開辦費、管理費那些一次性費用攤到全期的效果，數字都合理。回填用的二分法跟前端
 `loan-core.js` 的 XIRR 同一套規則：撥款為正、費用與還款為負，日期取 `actual_date`。
 
+### 排程要分頁抓：PostgREST 一次只給 1000 列
+
+上面那張表回填之後，潤隆房貸的卡片還是錯的：
+
+| 欄位 | 卡片顯示 | 應該是 |
+| --- | --- | --- |
+| 表定利率／實際年化成本 | 2.18% ; **−8.94%** | 2.18% ; 2.20% |
+| 貸款年限 | **11 年 11 個月** | 30 年 |
+| 已繳期數 | 36 / **143** | 36 / **360** |
+
+三個數字錯在同一件事上：**前端只拿到 360 期裡最早的 143 期**。`loan_schedule` 現在有 1,924
+列，`ensureLoanSchedule()` 用 `.range(0, 9999)` 一次抓 —— 但 PostgREST 伺服器端有
+`db-max-rows`（這個專案是 1000），Range 開再大也沒用，超出的直接砍掉，**而且不回錯誤**。
+照 `due_date` 排序之後，前 1000 列剛好只包含潤隆房貸的 143 筆繳款，用 SQL 對過完全吻合：
+
+```sql
+with ranked as (select s.*, a.name, row_number() over (order by s.due_date, s.id) rn
+                from loan_schedule s join loan_accounts a on a.id = s.loan_account_id)
+select name, count(*) filter (where entry_type = 'payment') from ranked where rn <= 1000 group by name;
+-- 鼎宇房貸 274、潤隆房貸 143、潤隆增貸 123、將來 112、元大 107…
+```
+
+排程少了尾巴，後面三個數字就一起垮：期數少算 → `loan-ui-fix.js` 從期數分母推的「貸款年限」
+跟著變 11 年 11 個月；現金流缺了 2038 年之後的還款 → XIRR 看起來是「借 800 萬只還回 430 萬」，
+算出來當然是負的。
+
+改成 `fetchAllRows()` 逐頁抓（每頁 1000，拿到不足一頁就停）。淨值快照、財務範圍快照、美金
+交易那三支 `.range(0, 9999)` 也一起換掉 —— 淨值快照一天一列，放個三年就會撞到同一個上限。
+
+測試在 `tests/loan-schedule-paging.test.mjs`：另一筆貸款塞 900 列日繳排程把 30 年房貸的尾巴
+擠出單頁範圍，跟正式站同一個形狀。`tests/support/fake-supabase.js` 的 `range()` 也照著補上
+1000 列上限，不然這個 bug 在測試裡根本重現不出來。把分頁拿掉會紅成
+「已繳期數 36 / 99、貸款年限 8 年 3 個月、年化成本 −20.46%」，確認過。
+
 ### 天數要夾在 0 以上
 
 `apply_due_loan_payments()` 原本直接用 `應繳日 − 已扣到的日期` 當天數，沒有下限。新匯入一筆
