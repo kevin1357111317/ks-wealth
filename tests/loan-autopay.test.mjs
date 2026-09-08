@@ -100,6 +100,15 @@ db.loan_accounts.push(
   { id: 'L4', household_id: 'H1', owner_scope: 'husband', financial_item_id: 'fi-loan4', source_key: 'fourth', lender: '玉山銀行', name: '第四筆信貸', loan_type: 'personal', original_principal_twd: 500000, nominal_annual_rate: 2.18, contractual_monthly_payment_twd: 5000, start_date: '${today}', status: 'active', autopay: true, last_payment_applied_on: null },
   { id: 'L5', household_id: 'H1', owner_scope: 'husband', financial_item_id: 'fi-loan5', source_key: 'fifth', lender: '國泰世華', name: '第五筆信貸', loan_type: 'personal', original_principal_twd: 600000, nominal_annual_rate: 2.18, contractual_monthly_payment_twd: 5000, start_date: '${today}', status: 'active', autopay: true, last_payment_applied_on: null },
 );
+db.financial_items.push({ id: 'fi-wife', household_id: 'H1', kind: 'liability', category: '房貸',
+  name: '鼎宇房貸', owner_scope: 'wife', amount_twd: 11895000, monthly_payment_twd: 21609.5,
+  interest_rate: 2.18, sort_order: 9 });
+db.loan_accounts.push({ id: 'W1', household_id: 'H1', owner_scope: 'wife', financial_item_id: 'fi-wife',
+  source_key: 'esun', lender: '玉山銀行', name: '鼎宇房貸', loan_type: 'mortgage',
+  original_principal_twd: 11895000, nominal_annual_rate: 2.18, contractual_monthly_payment_twd: 21609.5,
+  start_date: '2024-03-01', maturity_date: '2054-03-01', grace_until: '2027-03-01',
+  interest_day_count: 'month12', status: 'active', autopay: true,
+  last_payment_applied_on: '${today}' });
 db.loan_schedule.push(...${JSON.stringify(schedule)});`;
 
   const types = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html', '.png': 'image/png' };
@@ -215,6 +224,25 @@ db.loan_schedule.push(...${JSON.stringify(schedule)});`;
       document.querySelectorAll('.loanCard')[index].getBoundingClientRect().top, picked.index);
     assert.ok(Math.abs(topAfter - picked.top) <= 2,
       `被點的卡片應該留在原地，卻從 ${picked.top} 移到 ${topAfter}`);
+  });
+
+  await t.test('進貸款分析停在這個人真的有貸款的那一頁', async () => {
+    // 老公有信貸，照舊停在信貸
+    await page.goBack();
+    await page.waitForSelector('#personSeg');
+    await page.click('[data-open-loans]');
+    await page.waitForSelector('[data-loan-type]');
+    assert.equal(await page.textContent('[data-loan-type].on'), '信貸');
+    // 老婆只有房貸 —— 停在信貸的話整頁都是 0
+    await page.goBack();
+    await page.waitForSelector('[data-tab]');
+    await page.click('[data-tab="wife"]');
+    await page.waitForSelector('[data-open-loans]');
+    await page.click('[data-open-loans]');
+    await page.waitForSelector('[data-loan-type]');
+    assert.equal(await page.textContent('[data-loan-type].on'), '房貸');
+    await page.waitForSelector('.loanCard');
+    assert.match(await page.textContent('.loanSummary'), /NT\$ 11,895,000/);
   });
 
   assert.deepEqual(failures, [], '瀏覽器不該有錯誤');

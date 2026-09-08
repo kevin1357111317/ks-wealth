@@ -1342,11 +1342,19 @@ function renderKeepingAnchor(attribute, value) {
   if (documentTopAfter !== documentTopBefore) window.scrollTo(0, window.scrollY + (documentTopAfter - documentTopBefore));
 }
 
+// 進貸款分析預設停在「這個人真的有貸款」的那一頁。老婆只有房貸，一進來就停在信貸
+// 會看到整頁的 0。都沒有的話還是回信貸，空狀態的文案本來就寫給那種情況。
+function firstLoanTypeWithRows(ownerScope) {
+  const mine = loanAccounts.filter(account => account.owner_scope === ownerScope && account.status === 'active');
+  return ['personal', 'topup', 'mortgage'].find(type =>
+    mine.some(account => normalizedLoanType(account) === type)) ?? 'personal';
+}
+
 function openAnalysis(screen, ownerScope) {
   if (screen === 'stocks') void ensureLedger().then(ok => { if (ok && analysisScreen === 'stocks') render(); });
   if (screen === 'loans') void ensureLoanSchedule().then(ok => { if (ok && analysisScreen === 'loans') render(); });
   expandedLoan = null;
-  if (screen === 'loans') loanTypeFilter = 'personal';
+  if (screen === 'loans') loanTypeFilter = firstLoanTypeWithRows(ownerScope);
   analysisOwner = ownerScope;
   expandedStock = null;   // 換人看就把展開的那張收掉，免得停在另一個人的標的上
   analysisReturnScroll = window.scrollY;
