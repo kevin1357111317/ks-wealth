@@ -86,7 +86,7 @@ let ledgerFlight = null;
 let usdTransactions = [];
 let loanAccounts = [];
 let loanEvents = [];
-// 還款排程有 837 列，只有信貸分析頁要用，跟台帳一樣點進去才載。
+// 還款排程有 837 列，只有貸款分析頁要用，跟台帳一樣點進去才載。
 let loanSchedule = [];
 let loanScheduleLoaded = false;
 let loanScheduleFlight = null;
@@ -870,7 +870,7 @@ function groupedCards(list, ownerScope, kind) {
 
 // 資產頁上只放入口，數字留在分析頁裡面講。
 function analysisEntry() {
-  return `<div class="analysisEntry"><button data-open-portfolio>股票分析<i>›</i></button><button data-open-usd>美金分析<i>›</i></button><button data-open-loans>信貸分析<i>›</i></button></div>`;
+  return `<div class="analysisEntry"><button data-open-portfolio>股票分析<i>›</i></button><button data-open-usd>美金分析<i>›</i></button><button data-open-loans>貸款分析<i>›</i></button></div>`;
 }
 
 // 分析頁只看單一個人的部位。全部合起來的 portfolioModel 還是要留著 ——
@@ -1038,12 +1038,13 @@ function loanAccountCard(account, expanded = false) {
   const annualCost = plan.annualCost ?? toFiniteNumber(account.effective_annual_cost);
   const dateLabel = active ? '預計到期' : '結清日期';
   const dateValue = active ? account.maturity_date : account.closed_on;
-  return `<article class="loanCard ${expanded ? 'open' : ''}"><button type="button" class="loanCardTap" data-loan-account="${escapeHtml(account.id)}"><div class="loanCardHead"><div><b>${escapeHtml(account.name)}</b><small>${escapeHtml(account.lender)} · ${escapeHtml(account.loan_type === 'topup' ? '增貸' : '信貸')}</small></div><span class="loanStatus ${active ? 'active' : ''}">${active ? '進行中' : '已結清'}</span></div><div class="loanBalance"><span>${active ? '目前本金餘額' : '原貸款金額'}</span><b>NT$ ${formatNumber(active ? account.currentBalance : original)}</b></div><div class="loanProgress"><i style="--progress:${progress}%"></i></div><div class="loanFacts"><div><span>原貸款</span><b>NT$ ${formatNumber(original)}</b></div><div><span>表定利率</span><b>${account.annualRate > 0 ? account.annualRate.toFixed(2) + '%' : '—'}</b></div><div><span>${active ? '每月月付' : '總還款'}</span><b>${active ? 'NT$ ' + formatNumber(account.monthlyPayment) : totalRepayment ? 'NT$ ' + formatNumber(totalRepayment) : '—'}</b></div><div><span>實際年化成本</span><b>${annualCost !== null && Number.isFinite(annualCost) ? (annualCost * 100).toFixed(2) + '%' : '—'}</b></div><div><span>${dateLabel}</span><b>${dateValue ? escapeHtml(dateValue) : '—'}</b></div><div><span>全期利息與費用</span><b>NT$ ${formatNumber(plan.totalInterestAndFees || borrowingCost)}</b></div></div>${active ? `<small class="loanFoot">已償還本金約 NT$ ${formatNumber(paidPrincipal)} · ${progress.toFixed(1)}%</small>` : `<small class="loanFoot">實際年化成本已納入開辦費、提前清償與每筆現金流日期</small>`}</button>${expanded ? loanScheduleDetail(account) : ''}</article>`;
+  const loanTypeLabel = account.loan_type === 'topup' ? '增貸' : account.loan_type === 'mortgage' ? '房貸' : '信貸';
+  return `<article class="loanCard ${expanded ? 'open' : ''}"><button type="button" class="loanCardTap" data-loan-account="${escapeHtml(account.id)}"><div class="loanCardHead"><div><b>${escapeHtml(account.name)}</b><small>${escapeHtml(account.lender)} · ${escapeHtml(loanTypeLabel)}</small></div><span class="loanStatus ${active ? 'active' : ''}">${active ? '進行中' : '已結清'}</span></div><div class="loanBalance"><span>${active ? '目前本金餘額' : '原貸款金額'}</span><b>NT$ ${formatNumber(active ? account.currentBalance : original)}</b></div><div class="loanProgress"><i style="--progress:${progress}%"></i></div><div class="loanFacts"><div><span>原貸款</span><b>NT$ ${formatNumber(original)}</b></div><div><span>表定利率</span><b>${account.annualRate > 0 ? account.annualRate.toFixed(2) + '%' : '—'}</b></div><div><span>${active ? '每月月付' : '總還款'}</span><b>${active ? 'NT$ ' + formatNumber(account.monthlyPayment) : totalRepayment ? 'NT$ ' + formatNumber(totalRepayment) : '—'}</b></div><div><span>實際年化成本</span><b>${annualCost !== null && Number.isFinite(annualCost) ? (annualCost * 100).toFixed(2) + '%' : '—'}</b></div><div><span>${dateLabel}</span><b>${dateValue ? escapeHtml(dateValue) : '—'}</b></div><div><span>全期利息與費用</span><b>NT$ ${formatNumber(plan.totalInterestAndFees || borrowingCost)}</b></div></div>${active ? `<small class="loanFoot">已償還本金約 NT$ ${formatNumber(paidPrincipal)} · ${progress.toFixed(1)}%</small>` : `<small class="loanFoot">實際年化成本已納入開辦費、提前清償與每筆現金流日期</small>`}</button>${expanded ? loanScheduleDetail(account) : ''}</article>`;
 }
 
 function loanEventTimeline(rows) {
   if (!rows.length) return '';
-  return `<section class="loanTimeline"><div class="sectionHead"><span>夫妻信貸結清紀錄</span><b>已結清</b></div>${rows.map(row => `<div class="loanEvent"><time>${escapeHtml(row.event_date)}</time><div><b>${escapeHtml(row.title)}</b><small>${escapeHtml(row.note || '')}</small></div><span>NT$ ${formatNumber(row.amount_twd)}</span></div>`).join('')}</section>`;
+  return `<section class="loanTimeline"><div class="sectionHead"><span>夫妻貸款結清紀錄</span><b>已結清</b></div>${rows.map(row => `<div class="loanEvent"><time>${escapeHtml(row.event_date)}</time><div><b>${escapeHtml(row.title)}</b><small>${escapeHtml(row.note || '')}</small></div><span>NT$ ${formatNumber(row.amount_twd)}</span></div>`).join('')}</section>`;
 }
 
 function loanPage() {
@@ -1058,7 +1059,7 @@ function loanPage() {
   const accountIds = new Set(rows.map(account => account.id));
   const events = loanEvents.filter(event => accountIds.has(event.loan_account_id));
   const daily = totalMonthly * 12 / 365;
-  shell(`<div class="portfolioView"><div class="portfolioSummary loanSummary"><div class="portfolioMetric"><span>目前信貸餘額</span><b>NT$ ${formatNumber(totalBalance)}</b><small>${active.length} 筆進行中</small></div><div class="portfolioMetric"><span>每月還款</span><b>NT$ ${formatNumber(totalMonthly)}</b><small>平均每天 NT$ ${formatNumber(daily)}</small></div><div class="portfolioMetric"><span>加權平均利率</span><b>${weightedRate.toFixed(2)}%</b><small>按目前本金加權</small></div><div class="portfolioMetric"><span>已結清</span><b>${closed.length} 筆</b><small>保留 KLFAN 紀錄</small></div></div><div class="sectionHead"><span>進行中信貸</span><b>${active.length} 筆</b></div><div class="loanList">${active.length ? active.map(account => loanAccountCard(account, account.id === expandedLoan)).join('') : '<div class="portfolioEmpty">目前沒有進行中的信貸。</div>'}</div>${closed.length ? `<div class="sectionHead"><span>已結清信貸</span><b>${closed.length} 筆</b></div><div class="loanList">${closed.map(account => loanAccountCard(account, account.id === expandedLoan)).join('')}</div>` : ''}${loanEventTimeline(events)}</div>`, `${ownerName(analysisOwner)}信貸分析`);
+  shell(`<div class="portfolioView"><div class="portfolioSummary loanSummary"><div class="portfolioMetric"><span>目前貸款餘額</span><b>NT$ ${formatNumber(totalBalance)}</b><small>${active.length} 筆進行中</small></div><div class="portfolioMetric"><span>每月還款</span><b>NT$ ${formatNumber(totalMonthly)}</b><small>平均每天 NT$ ${formatNumber(daily)}</small></div><div class="portfolioMetric"><span>加權平均利率</span><b>${weightedRate.toFixed(2)}%</b><small>按目前本金加權</small></div><div class="portfolioMetric"><span>已結清</span><b>${closed.length} 筆</b><small>保留 KLFAN 紀錄</small></div></div><div class="sectionHead"><span>進行中貸款</span><b>${active.length} 筆</b></div><div class="loanList">${active.length ? active.map(account => loanAccountCard(account, account.id === expandedLoan)).join('') : '<div class="portfolioEmpty">目前沒有進行中的貸款。</div>'}</div>${closed.length ? `<div class="sectionHead"><span>已結清貸款</span><b>${closed.length} 筆</b></div><div class="loanList">${closed.map(account => loanAccountCard(account, account.id === expandedLoan)).join('')}</div>` : ''}${loanEventTimeline(events)}</div>`, `${ownerName(analysisOwner)}貸款分析`);
 
   root.querySelectorAll('[data-loan-account]').forEach(button => { button.onclick = () => {
     // 就地展開，不跳頁；再點一次收起來。跟台帳卡片同一套錨點處理，畫面不會彈回頂部。
