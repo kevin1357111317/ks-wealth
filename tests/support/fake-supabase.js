@@ -97,6 +97,10 @@ export function applyDueLoanPayments(today) {
   return applied;
 }
 
+// PostgREST 的 db-max-rows：不管 Range 開多大，伺服器一次最多只吐這麼多列，
+// 而且被砍掉不會報錯。要模擬出來，前端漏抓尾巴的 bug 才測得到。
+const MAX_ROWS = 1000;
+
 function builder(table, rows) {
   let filtered = rows;
   const api = {
@@ -104,11 +108,14 @@ function builder(table, rows) {
     eq(col, val) { filtered = filtered.filter(r => r[col] === val); return api; },
     is(col, val) { filtered = filtered.filter(r => (r[col] ?? null) === val); return api; },
     order(col) { filtered = [...filtered].sort((a, b) => String(a[col] ?? '').localeCompare(String(b[col] ?? ''))); return api; },
-    range() { return api; },
+    range(from = 0, to = MAX_ROWS - 1) {
+      filtered = filtered.slice(from, from + Math.min(to - from + 1, MAX_ROWS));
+      return api;
+    },
     limit(n) { filtered = filtered.slice(0, n); return api; },
     single() { return Promise.resolve({ data: filtered[0] ?? null, error: null }); },
     maybeSingle() { return Promise.resolve({ data: filtered[0] ?? null, error: null }); },
-    then(resolve) { return Promise.resolve({ data: filtered, error: null }).then(resolve); },
+    then(resolve) { return Promise.resolve({ data: filtered.slice(0, MAX_ROWS), error: null }).then(resolve); },
   };
   return api;
 }

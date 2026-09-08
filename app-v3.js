@@ -531,12 +531,27 @@ async function applySession(nextSession) {
 
 // Data loading / Realtime ----------------------------------------------------
 
+// PostgREST 伺服器端一次最多吐 1000 列，.range(0, 9999) 要更多也沒用 —— 超出的直接被
+// 砍掉，而且不會報錯。排程總共一千九百多列，不分頁抓的話尾巴就不見了：潤隆房貸曾經
+// 只拿到 360 期裡最早的 143 期，貸款年限（11 年 11 個月）、已繳期數（36/143）、
+// 年化成本（−8.94%，因為看起來永遠還不完）三個數字一起錯。
+const PAGE_ROWS = 1000;
+async function fetchAllRows(build) {
+  const all = [];
+  for (let from = 0; ; from += PAGE_ROWS) {
+    const { data, error } = await build().range(from, from + PAGE_ROWS - 1);
+    if (error) return { data: null, error };
+    all.push(...(data ?? []));
+    if ((data?.length ?? 0) < PAGE_ROWS) return { data: all, error: null };
+  }
+}
+
 async function ensureLoanSchedule() {
   if (loanScheduleLoaded) return true;
   if (loanScheduleFlight) return loanScheduleFlight;
   loanScheduleFlight = (async () => {
-    const { data, error } = await sb.from('loan_schedule')
-      .select('id,loan_account_id,due_date,actual_date,amount_twd,balance_after_twd,entry_type,note').order('due_date').order('id').range(0, 9999);
+    const { data, error } = await fetchAllRows(() => sb.from('loan_schedule')
+      .select('id,loan_account_id,due_date,actual_date,amount_twd,balance_after_twd,entry_type,note').order('due_date').order('id'));
     if (error) return false;
     loanSchedule = data ?? [];
     loanScheduleLoaded = true;
@@ -584,10 +599,11 @@ async function loadData({ blocking = false } = {}) {
   loadFlight = (async () => {
     const [itemResult, familyHistoryResult, householdResult, scopeHistoryResult, usdResult, loanResult, nextDueResult] = await Promise.all([
       sb.from('financial_items').select('*').eq('household_id', householdId).order('sort_order'),
-      sb.from('net_worth_history').select('*').eq('household_id', householdId).order('recorded_on').range(0, 9999),
+      // 這三張表也走分頁：淨值快照一天一列，放個三年就會撞到 1000 列的上限
+      fetchAllRows(() => sb.from('net_worth_history').select('*').eq('household_id', householdId).order('recorded_on')),
       sb.from('households').select('name').eq('id', householdId).single(),
-      sb.from('financial_scope_history').select('*').eq('household_id', householdId).order('recorded_on').range(0, 9999),
-      sb.from('usd_transactions').select('*').eq('household_id', householdId).order('trade_date').order('id').range(0, 9999),
+      fetchAllRows(() => sb.from('financial_scope_history').select('*').eq('household_id', householdId).order('recorded_on')),
+      fetchAllRows(() => sb.from('usd_transactions').select('*').eq('household_id', householdId).order('trade_date').order('id')),
       sb.from('loan_accounts').select('*').eq('household_id', householdId).order('start_date'),
       sb.from('loan_schedule').select('loan_account_id,due_date,amount_twd')
         .eq('entry_type', 'payment').is('applied_at', null).order('due_date').range(0, 299),
