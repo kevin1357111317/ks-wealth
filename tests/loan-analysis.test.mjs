@@ -10,9 +10,15 @@ test('loan analysis is a third per-owner analysis destination', () => {
   assert.match(app, /data-open-loans/);
   assert.match(app, /data-open-loans>貸款分析/);
   assert.match(app, /目前貸款餘額/);
+  assert.match(app, /let loanTypeFilter = 'personal'/);
+  assert.match(app, /data-loan-type="personal"/);
+  assert.match(app, /data-loan-type="topup"/);
+  assert.match(app, /data-loan-type="mortgage"/);
+  assert.match(app, /normalizedLoanType\(account\) === loanTypeFilter/);
   assert.match(app, /openAnalysis\('loans', ownerScope\)/);
   assert.match(app, /analysisScreen === 'loans'/);
   assert.match(css, /grid-template-columns:repeat\(3,1fr\)/);
+  assert.doesNotMatch(css, /\.loanSummary \.portfolioMetric:first-child\{grid-column:1\/-1\}/);
 });
 
 test('current balances reuse financial items instead of being counted twice', () => {

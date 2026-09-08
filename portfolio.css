@@ -3,7 +3,7 @@
 /* KLFAN loan analysis */
 .analysisEntry{grid-template-columns:repeat(3,1fr);gap:8px}
 .analysisEntry button{gap:5px;padding:0 12px;border-radius:22px;font-size:.92rem;white-space:nowrap}
-.loanSummary .portfolioMetric:first-child{grid-column:1/-1}.loanList{display:grid;gap:10px}
+.loanSummary .portfolioMetric{min-width:0}.loanList{display:grid;gap:10px}
 .loanCard{padding:17px;border:1px solid #dbe8e4;border-radius:20px;background:#fff}
 .loanCardHead{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 .loanCardHead b,.loanCardHead small,.loanBalance span,.loanBalance b,.loanFacts span,.loanFacts b,.loanFoot{display:block}
