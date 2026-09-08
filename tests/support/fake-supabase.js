@@ -51,12 +51,53 @@ function syncTrigger(key) {
   else db.financial_items.push({ id: `fi-${key}`, sort_order: 99, notes: null, ...patch });
 }
 
+// 對應 supabase/migrations/20260908100000_loan_autopay.sql 的 apply_due_loan_payments()：
+// 銀行用 actual/365，利息 = 餘額 × 年利率 × 相隔天數 ÷ 365，本金 = 月付 − 利息；
+// 寬限期內本金一律 0。只有 entry_type='payment' 的列算還款，撥款與開辦費不扣。
+// 同一期扣過就不再扣（applied_at 不是 null 就跳過）。
+export function applyDueLoanPayments(today) {
+  const applied = [];
+  for (const acct of db.loan_accounts) {
+    if (acct.status !== 'active' || acct.autopay === false) continue;
+    const item = db.financial_items.find(i => i.id === acct.financial_item_id && i.kind === 'liability');
+    if (!item) continue;
+    const rate = Number(item.interest_rate ?? acct.nominal_annual_rate ?? 0);
+    const startedFrom = String(acct.last_payment_applied_on ?? acct.start_date);
+    let balance = Number(item.amount_twd);
+    let prev = startedFrom;
+    const due = db.loan_schedule
+      .filter(row => row.loan_account_id === acct.id && row.entry_type === 'payment'
+        && String(row.due_date) <= today && !row.applied_at)
+      .sort((a, b) => String(a.due_date).localeCompare(String(b.due_date)));
+    for (const row of due) {
+      const days = Math.round((Date.parse(row.due_date) - Date.parse(prev)) / 86400000);
+      const interest = Math.round(balance * rate / 100 * days / 365);
+      const grace = acct.grace_until && String(row.due_date) <= String(acct.grace_until);
+      const principal = grace
+        ? 0
+        : Math.min(balance, Math.max(0, Math.round(Math.abs(Number(row.amount_twd)) - interest)));
+      balance -= principal;
+      Object.assign(row, { applied_at: new Date().toISOString(), applied_principal_twd: principal,
+        applied_interest_twd: interest, applied_balance_twd: balance });
+      prev = String(row.due_date);
+      applied.push({ loan_account_id: acct.id, loan_name: acct.name, due_date: row.due_date,
+        principal_twd: principal, interest_twd: interest, balance_twd: balance });
+    }
+    if (prev !== startedFrom) {
+      item.amount_twd = balance;
+      acct.last_payment_applied_on = prev;
+    }
+  }
+  return applied;
+}
+
 function builder(table, rows) {
   let filtered = rows;
   const api = {
     select() { return api; },
     eq(col, val) { filtered = filtered.filter(r => r[col] === val); return api; },
-    order() { return api; },
+    is(col, val) { filtered = filtered.filter(r => (r[col] ?? null) === val); return api; },
+    order(col) { filtered = [...filtered].sort((a, b) => String(a[col] ?? '').localeCompare(String(b[col] ?? ''))); return api; },
     range() { return api; },
     limit(n) { filtered = filtered.slice(0, n); return api; },
     single() { return Promise.resolve({ data: filtered[0] ?? null, error: null }); },
@@ -86,6 +127,10 @@ export function makeClient() {
       return { data: { results: [], updated: 1, priceOnly: 0, failed: 0, fx: { symbol: 'USD/TWD', rate: FX }, gold: {} }, error: null };
     } },
     rpc: async name => {
+      if (name === 'apply_due_loan_payments') {
+        const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei' }).format(new Date());
+        return { data: applyDueLoanPayments(today), error: null };
+      }
       // 每次整包重載都會叫一次。台帳有一千多筆交易（92 KB），報價更新不該碰它。
       globalThis.__bootstraps = (globalThis.__bootstraps ?? 0) + 1;
       if (name !== 'klfan_bootstrap') return { data: null, error: null };

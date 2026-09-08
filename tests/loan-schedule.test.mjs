@@ -25,6 +25,7 @@ const skip = !chromium ? 'playwright 未安裝'
   : false;
 
 test('貸款卡片點開看得到還款排程', { skip }, async t => {
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei' }).format(new Date());
   // 一筆進行中的信貸：2026-08-07 撥款 1,060,000，之後每月 7 號還 10,606，共 120 期
   const schedule = [{ loan_account_id: 'L1', due_date: '2026-08-07', amount_twd: 1060000 }];
   for (let i = 0; i < 120; i += 1) {
@@ -105,19 +106,21 @@ db.loan_schedule.push(...${JSON.stringify(schedule)});`;
     await page.click('[data-loan-type="personal"]');
   });
 
-  await t.test('點開看得到下次繳款、已繳期數與剩餘應還', async () => {
+  await t.test('點開看得到貸款條件、已繳期數與未來排程', async () => {
     await page.click('[data-loan-account]');
     await page.waitForSelector('.loanDetail');
     const detail = await page.textContent('.loanDetail');
-    for (const label of ['下次繳款', '金額', '已繳期數', '剩餘應還']) {
+    // 下次繳款、金額、剩餘應還這幾格由 loan-ui-fix.js 從明細裡拿掉了（下次繳款改在
+    // 資產負債頁的負債列上顯示），這裡對的是實際留下來的欄位。
+    for (const label of ['原貸款', '貸款年限', '已繳期數', '預計到期', '全期利息與費用']) {
       assert.match(detail, new RegExp(label), `展開的內容應該有「${label}」`);
     }
-    assert.match(detail, /\/ 120/, '共 120 期');
+    // 期數照今天算，測試不會因為放久了就過期
+    const paid = schedule.filter(row => row.amount_twd < 0 && row.due_date < today).length;
+    assert.match(detail, new RegExp(`已繳期數${paid} / 120`));
     // 未來的期數只先列 12 筆，剩下的用一行帶過 —— 全部倒出來會有幾百列
     assert.equal(await page.locator('.loanFutureSection .loanPlanRow').count(), 12);
-    assert.match(detail, /還有 108 期，最後一期 2036-08-07/);
-    // 剩餘應還就是未繳的期數乘上金額：10,606 × 120
-    assert.match(detail, /剩餘應還NT\$ 1,272,720/);
+    assert.match(detail, new RegExp(`還有 ${120 - paid - 12} 期，最後一期 2036-08-07`));
   });
 
   await t.test('再點一次收起來，而且一次只開一個', async () => {
