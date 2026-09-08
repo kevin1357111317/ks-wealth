@@ -90,6 +90,10 @@ let loanSchedule = [];
 let loanScheduleLoaded = false;
 let loanScheduleFlight = null;
 let expandedLoan = null;   // 就地展開的那一筆，一次只開一個
+// 主畫面的負債列要顯示下次繳款，但完整排程有 800 多列。這裡只留每一筆「還沒扣款的
+// 最早一期」，由 loadData() 抓一小段回來組成 { 貸款 id: { date, amount } }。
+let loanNextDue = {};
+let autopayCheckedOn = null;
 let loanTypeFilter = 'personal';   // 貸款分析預設先看信貸，可切換增貸／房貸
 let analysisScreen = null;   // 'stocks'｜'usd'｜'loans'，null 就是一般的資產頁
 let analysisOwner = 'husband';   // 分析頁看的是誰的部位
@@ -388,6 +392,7 @@ async function resolveMembership() {
   if (!loaded) return;
   lifecycle = 'ready';
   subscribeRealtime();
+  void applyDueLoanPayments();
   void refreshQuotes({ reason: 'startup' });
   startQuoteAutoRefresh();
 }
@@ -479,6 +484,7 @@ async function refreshTwQuotes() {
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
   void keepScreenAwake();
+  void applyDueLoanPayments();   // App 擺著過了午夜，回來時補扣當天的
   // 螢幕關著的那段時間計時器是停的，回來時先補一次。
   if (session && member && Date.now() - quoteLastAt >= QUOTE_FULL_INTERVAL_MS) {
     void refreshQuotes({ reason: 'visible' });
@@ -507,6 +513,8 @@ async function applySession(nextSession) {
   loanScheduleLoaded = false;
   loanScheduleFlight = null;
   expandedLoan = null;
+  loanNextDue = {};
+  autopayCheckedOn = null;
   loanTypeFilter = 'personal';
   analysisScreen = null;
   analysisOwner = 'husband';
@@ -537,6 +545,24 @@ async function ensureLoanSchedule() {
   return loanScheduleFlight;
 }
 
+// 繳款日一到（台北時間跨過午夜）就把負債扣掉，不用每個月自己改數字。真正的計算在
+// apply_due_loan_payments() 裡 —— 放資料庫是因為每台裝置、還有每天的快照都要走同一套
+// 規則，而且它是冪等的：同一期扣過就不會再扣第二次。日期沒換就不用再問。
+async function applyDueLoanPayments() {
+  const today = taipeiDate();
+  if (!member || autopayCheckedOn === today) return false;
+  autopayCheckedOn = today;
+  const { data, error } = await sb.rpc('apply_due_loan_payments');
+  if (error) {
+    autopayCheckedOn = null;   // 沒問成就別記，下次進來再試
+    return false;
+  }
+  if (!data?.length) return false;
+  loanScheduleLoaded = false;   // 排程上的 applied_* 變了，下次進分析頁重抓
+  await loadData({ blocking: false });
+  return true;
+}
+
 async function ensureLedger() {
   if (ledgerLoaded) return true;
   if (ledgerFlight) return ledgerFlight;
@@ -556,13 +582,15 @@ async function loadData({ blocking = false } = {}) {
   if (loadFlight) return loadFlight;
   const householdId = member.household_id;
   loadFlight = (async () => {
-    const [itemResult, familyHistoryResult, householdResult, scopeHistoryResult, usdResult, loanResult] = await Promise.all([
+    const [itemResult, familyHistoryResult, householdResult, scopeHistoryResult, usdResult, loanResult, nextDueResult] = await Promise.all([
       sb.from('financial_items').select('*').eq('household_id', householdId).order('sort_order'),
       sb.from('net_worth_history').select('*').eq('household_id', householdId).order('recorded_on').range(0, 9999),
       sb.from('households').select('name').eq('id', householdId).single(),
       sb.from('financial_scope_history').select('*').eq('household_id', householdId).order('recorded_on').range(0, 9999),
       sb.from('usd_transactions').select('*').eq('household_id', householdId).order('trade_date').order('id').range(0, 9999),
       sb.from('loan_accounts').select('*').eq('household_id', householdId).order('start_date'),
+      sb.from('loan_schedule').select('loan_account_id,due_date,amount_twd')
+        .eq('entry_type', 'payment').is('applied_at', null).order('due_date').range(0, 299),
     ]);
     const failure = [itemResult.error, familyHistoryResult.error, householdResult.error, scopeHistoryResult.error].find(Boolean);
     if (failure) throw failure;
@@ -575,6 +603,15 @@ async function loadData({ blocking = false } = {}) {
     fxRate = items.find(item => item.fx_rate_twd > 1 && item.quote_currency === 'USD')?.fx_rate_twd ?? fxRate;
     if (!usdResult.error) usdTransactions = usdResult.data ?? [];
     if (!loanResult.error) loanAccounts = loanResult.data ?? [];
+    if (!nextDueResult.error) {
+      loanNextDue = {};
+      for (const row of nextDueResult.data ?? []) {
+        // 已經按 due_date 排好，每一筆貸款第一次遇到的就是下一期
+        if (!loanNextDue[row.loan_account_id]) {
+          loanNextDue[row.loan_account_id] = { date: String(row.due_date), amount: Math.abs(toFiniteNumber(row.amount_twd)) };
+        }
+      }
+    }
     // 已經載過才重載 —— 完整重載的觸發時機是交易真的變了。
     if (ledgerLoaded) {
       ledgerLoaded = false;
@@ -1041,7 +1078,7 @@ function loanAccountCard(account, expanded = false) {
   const dateLabel = active ? '預計到期' : '結清日期';
   const dateValue = active ? account.maturity_date : account.closed_on;
   const loanTypeLabel = loanTypeName(normalizedLoanType(account));
-  return `<article class="loanCard ${expanded ? 'open' : ''}"><button type="button" class="loanCardTap" data-loan-account="${escapeHtml(account.id)}"><div class="loanCardHead"><div><b>${escapeHtml(account.name)}</b><small>${escapeHtml(account.lender)} · ${escapeHtml(loanTypeLabel)}</small></div><span class="loanStatus ${active ? 'active' : ''}">${active ? '進行中' : '已結清'}</span></div><div class="loanBalance"><span>${active ? '目前本金餘額' : '原貸款金額'}</span><b>NT$ ${formatNumber(active ? account.currentBalance : original)}</b></div><div class="loanProgress"><i style="--progress:${progress}%"></i></div><div class="loanFacts"><div><span>原貸款</span><b>NT$ ${formatNumber(original)}</b></div><div><span>表定利率</span><b>${account.annualRate > 0 ? account.annualRate.toFixed(2) + '%' : '—'}</b></div><div><span>${active ? '每月月付' : '總還款'}</span><b>${active ? 'NT$ ' + formatNumber(account.monthlyPayment) : totalRepayment ? 'NT$ ' + formatNumber(totalRepayment) : '—'}</b></div><div><span>實際年化成本</span><b>${annualCost !== null && Number.isFinite(annualCost) ? (annualCost * 100).toFixed(2) + '%' : '—'}</b></div><div><span>${dateLabel}</span><b>${dateValue ? escapeHtml(dateValue) : '—'}</b></div><div><span>全期利息與費用</span><b>NT$ ${formatNumber(plan.totalInterestAndFees || borrowingCost)}</b></div></div>${active ? `<small class="loanFoot">已償還本金約 NT$ ${formatNumber(paidPrincipal)} · ${progress.toFixed(1)}%</small>` : `<small class="loanFoot">實際年化成本已納入開辦費、提前清償與每筆現金流日期</small>`}</button>${expanded ? loanScheduleDetail(account) : ''}</article>`;
+  return `<article class="loanCard ${expanded ? 'open' : ''}" data-loan-card="${escapeHtml(account.id)}"><button type="button" class="loanCardTap" data-loan-account="${escapeHtml(account.id)}"><div class="loanCardHead"><div><b>${escapeHtml(account.name)}</b><small>${escapeHtml(account.lender)} · ${escapeHtml(loanTypeLabel)}</small></div><span class="loanStatus ${active ? 'active' : ''}">${active ? '進行中' : '已結清'}</span></div><div class="loanBalance"><span>${active ? '目前本金餘額' : '原貸款金額'}</span><b>NT$ ${formatNumber(active ? account.currentBalance : original)}</b></div><div class="loanProgress"><i style="--progress:${progress}%"></i></div><div class="loanFacts"><div><span>原貸款</span><b>NT$ ${formatNumber(original)}</b></div><div><span>表定利率</span><b>${account.annualRate > 0 ? account.annualRate.toFixed(2) + '%' : '—'}</b></div><div><span>${active ? '每月月付' : '總還款'}</span><b>${active ? 'NT$ ' + formatNumber(account.monthlyPayment) : totalRepayment ? 'NT$ ' + formatNumber(totalRepayment) : '—'}</b></div><div><span>實際年化成本</span><b>${annualCost !== null && Number.isFinite(annualCost) ? (annualCost * 100).toFixed(2) + '%' : '—'}</b></div><div><span>${dateLabel}</span><b>${dateValue ? escapeHtml(dateValue) : '—'}</b></div><div><span>全期利息與費用</span><b>NT$ ${formatNumber(plan.totalInterestAndFees || borrowingCost)}</b></div></div>${active ? `<small class="loanFoot">已償還本金約 NT$ ${formatNumber(paidPrincipal)} · ${progress.toFixed(1)}%</small>` : `<small class="loanFoot">實際年化成本已納入開辦費、提前清償與每筆現金流日期</small>`}</button>${expanded ? loanScheduleDetail(account) : ''}</article>`;
 }
 
 function loanPage() {
@@ -1067,11 +1104,26 @@ function loanPage() {
     render();
   }; });
 
+  bindLoanCards();
+}
+
+// 收放只換那一張卡片，不重繪整頁。重繪的話收合時頁面變矮，瀏覽器先把捲動量夾到新的
+// 底部、錨點補正再拉一次，看起來就是跳一下；只換一張卡片就沒有這兩次強制捲動。
+// 換的是整張卡片而不是只加減明細節點，因為 loan-ui-fix.js 會把卡片上的欄位搬進展開的
+// 明細裡 —— 直接把明細拿掉會連那些被搬走的欄位一起刪掉。
+function bindLoanCards() {
   root.querySelectorAll('[data-loan-account]').forEach(button => { button.onclick = () => {
-    // 就地展開，不跳頁；再點一次收起來。跟台帳卡片同一套錨點處理，畫面不會彈回頂部。
     const id = button.dataset.loanAccount;
     expandedLoan = expandedLoan === id ? null : id;
-    renderKeepingAnchor('data-loan-account', id);
+    const accounts = ownerLoanRows(analysisOwner);
+    root.querySelectorAll('.loanCard').forEach(card => {
+      const key = card.dataset.loanCard;
+      const shouldOpen = key === expandedLoan;
+      if (card.classList.contains('open') === shouldOpen) return;   // 這張沒變就別動
+      const account = accounts.find(row => row.id === key);
+      if (account) card.outerHTML = loanAccountCard(account, shouldOpen);
+    });
+    bindLoanCards();   // outerHTML 會換掉節點，事件要重綁
   }; });
 }
 
@@ -1209,6 +1261,12 @@ function personPage(ownerScope) {
   };
 }
 
+// 主畫面的負債列跟貸款分析看的是同一份排程：這裡回傳這筆負債下一期還沒扣的款。
+function loanNextDueForItem(itemId) {
+  const account = loanAccounts.find(row => row.financial_item_id === itemId && row.status === 'active');
+  return account ? loanNextDue[account.id] ?? null : null;
+}
+
 function itemCard(item, total) {
   const quote = quoteData[item.id];
   const percent = total ? item.amount_twd / total * 100 : 0;
@@ -1224,9 +1282,13 @@ function itemCard(item, total) {
   const quoteLine = quote
     ? `<span class="quoteLive"><i></i>${price}<b class="${tone}">${change > 0 ? '+' : ''}${change.toFixed(2)}%</b></span>`
     : item.symbol ? '<span class="quotePending">沿用最近市值</span>' : '';
+  const due = item.kind === 'liability' ? loanNextDueForItem(item.id) : null;
+  const dueLine = due
+    ? `<span>下次 ${escapeHtml(due.date.slice(5).replace('-', '/'))} NT$ ${formatNumber(due.amount)}</span>`
+    : '';
   const meta = item.kind === 'asset'
     ? (item.market === 'GOLD' ? `<span>重量 ${quantity} g</span>${quoteLine}` : item.symbol ? `<span>持有 ${quantity} 股</span>${quoteLine}` : '')
-    : `<span>利率 ${item.interest_rate !== null ? item.interest_rate.toFixed(2) + '%' : '待設定'}</span><span>月付 ${item.monthly_payment_twd !== null ? 'NT$ ' + formatNumber(item.monthly_payment_twd) : '待設定'}</span>`;
+    : `<span>利率 ${item.interest_rate !== null ? item.interest_rate.toFixed(2) + '%' : '待設定'}</span>${dueLine || `<span>月付 ${item.monthly_payment_twd !== null ? 'NT$ ' + formatNumber(item.monthly_payment_twd) : '待設定'}</span>`}`;
   const original = isNativeUsd
     ? `<span>US$ ${masked ? '••••••' : new Intl.NumberFormat('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(item.native_amount)}</span>`
     : '';

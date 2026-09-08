@@ -177,5 +177,12 @@ Deno.serve(async (req: Request) => {
     family: familyWrite.error?.message ?? null,
   }, 500);
 
-  return json({ ok: true, recordedOn, updated, failed, fxRate, households: households.size });
+  // 快照寫完才扣當天到期的貸款期數：這一輪 06:00 記的是「昨天」的收盤數字，先扣的話
+  // 今天的還款會被算進昨天。放在後面，前端沒開 App 的日子也還是有人把款扣掉。
+  // 冪等 —— 前端已經扣過的話這裡就是零列。
+  const { data: autopay, error: autopayError } = await client.rpc("apply_due_loan_payments");
+  if (autopayError) console.error("autopay_failed", autopayError.message);
+
+  return json({ ok: true, recordedOn, updated, failed, fxRate, households: households.size,
+    loanPayments: autopay?.length ?? 0 });
 });
