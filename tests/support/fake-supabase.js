@@ -70,12 +70,14 @@ export function applyDueLoanPayments(today) {
         && String(row.due_date) <= today && !row.applied_at)
       .sort((a, b) => String(a.due_date).localeCompare(String(b.due_date)));
     for (const row of due) {
-      const days = Math.round((Date.parse(row.due_date) - Date.parse(prev)) / 86400000);
+      // 天數夾在 0 以上：新匯入的貸款會帶著「已套用到今天」但排程從過去開始，
+      // 沒有下限的話天數是負的，利息跟著變負、本金就爆掉。
+      const days = Math.max(0, Math.round((Date.parse(row.due_date) - Date.parse(prev)) / 86400000));
       // 各家銀行的算法不一樣：玉山房貸是年利率 ÷ 12（每個月固定同一個數字），
       // 其他信貸是 actual/365（照兩次繳款日相隔幾天算）。
-      const interest = acct.interest_day_count === 'month12'
+      const interest = Math.max(0, acct.interest_day_count === 'month12'
         ? Math.round(balance * rate / 100 / 12)
-        : Math.round(balance * rate / 100 * days / 365);
+        : Math.round(balance * rate / 100 * days / 365));
       const grace = acct.grace_until && String(row.due_date) <= String(acct.grace_until);
       const principal = grace
         ? 0
@@ -83,7 +85,7 @@ export function applyDueLoanPayments(today) {
       balance -= principal;
       Object.assign(row, { applied_at: new Date().toISOString(), applied_principal_twd: principal,
         applied_interest_twd: interest, applied_balance_twd: balance });
-      prev = String(row.due_date);
+      prev = String(row.due_date) > prev ? String(row.due_date) : prev;
       applied.push({ loan_account_id: acct.id, loan_name: acct.name, due_date: row.due_date,
         principal_twd: principal, interest_twd: interest, balance_twd: balance });
     }
