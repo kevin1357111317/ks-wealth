@@ -1047,7 +1047,10 @@ function loanAccountCard(account, expanded = false) {
 function loanPage() {
   const rows = ownerLoanRows(analysisOwner)
     .filter(account => normalizedLoanType(account) === loanTypeFilter);
-  const active = rows.filter(account => account.status === 'active');
+  const active = rows
+    .filter(account => account.status === 'active')
+    .sort((a, b) => a.currentBalance - b.currentBalance
+      || String(a.name).localeCompare(String(b.name), 'zh-Hant'));
   const closed = rows.filter(account => account.status === 'closed');
   const totalBalance = active.reduce((sum, account) => sum + account.currentBalance, 0);
   const totalMonthly = active.reduce((sum, account) => sum + account.monthlyPayment, 0);
