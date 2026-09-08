@@ -10,6 +10,7 @@ const futureBank = await readFile(new URL('../supabase/migrations/20260908090000
 const ctbcTopupFees = await readFile(new URL('../supabase/migrations/20260908180000_correct_ctbc_topup_fees.sql', import.meta.url), 'utf8');
 const clearedClosedRates = await readFile(new URL('../supabase/migrations/20260908210000_clear_closed_personal_loan_rates.sql', import.meta.url), 'utf8');
 const runlongMortgage = await readFile(new URL('../supabase/migrations/20260908220000_add_runlong_mortgage.sql', import.meta.url), 'utf8');
+const runlongMortgageFee = await readFile(new URL('../supabase/migrations/20260908230000_add_runlong_mortgage_fee.sql', import.meta.url), 'utf8');
 
 test('loan analysis is a third per-owner analysis destination', () => {
   assert.match(app, /data-open-loans/);
@@ -103,4 +104,15 @@ test('潤隆房貸依中信畫面加入房貸分類', () => {
   assert.ok(runlongMortgage.includes('其他費用待補'));
   assert.ok(app.includes("includes('其他費用待補')"));
   assert.ok(app.includes("feesPending ? '—'"));
+});
+
+
+test('潤隆房貸開辦費納入其他費用與實際年化成本', () => {
+  assert.ok(runlongMortgageFee.includes("source_key = '230905_KL_CTBC_MORTGAGE'"));
+  assert.ok(runlongMortgageFee.includes("date '2023-09-05'"));
+  assert.ok(runlongMortgageFee.includes('-1000'));
+  assert.ok(runlongMortgageFee.includes("'fee'"));
+  assert.ok(runlongMortgageFee.includes("'開辦費'"));
+  assert.ok(runlongMortgageFee.includes('effective_annual_cost = 0.02199399761367926'));
+  assert.doesNotMatch(runlongMortgageFee, /其他費用待補/);
 });
