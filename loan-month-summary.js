@@ -2,6 +2,7 @@ const root = document.querySelector('#root');
 const SUPABASE_URL = 'https://gbxsnwqbjmgfikpblyot.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_VtGM8w7CqxDB_3NaROR8OA_H0txX-_I';
 const AUTH_STORAGE_KEY = 'sb-gbxsnwqbjmgfikpblyot-auth-token';
+const CACHE_PREFIX = 'ks-loan-month-summary';
 
 function readAccessToken() {
   const raw = localStorage.getItem(AUTH_STORAGE_KEY);
@@ -27,6 +28,37 @@ function taipeiDateParts() {
 
 function ymd(year, month, day) {
   return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function todayKey() {
+  const { year, month, day } = taipeiDateParts();
+  return ymd(year, month, day);
+}
+
+function dataKey(owner, loanType) {
+  return `${owner}|${loanType}|${todayKey()}`;
+}
+
+function storageKey(key) {
+  return `${CACHE_PREFIX}|${key}`;
+}
+
+function readCache(key) {
+  try {
+    const raw = localStorage.getItem(storageKey(key));
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (!data || typeof data.total !== 'number' || typeof data.count !== 'number') return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+function writeCache(key, result) {
+  try {
+    localStorage.setItem(storageKey(key), JSON.stringify(result));
+  } catch {}
 }
 
 function remainingMonthContext() {
@@ -88,9 +120,8 @@ async function loadRemainingMonth(owner, loanType) {
   ]);
 
   const validRows = rows.filter(row => !row.applied_at);
-  const total = validRows.reduce((sum, row) => sum + Math.abs(Number(row.amount_twd) || 0), 0);
   return {
-    total,
+    total: validRows.reduce((sum, row) => sum + Math.abs(Number(row.amount_twd) || 0), 0),
     count: validRows.length,
     nextDue: validRows[0]?.actual_date || validRows[0]?.due_date || null,
   };
@@ -107,51 +138,82 @@ function formatShortDate(value) {
   return `${Number(match[1])}/${Number(match[2])}`;
 }
 
-function refreshRemainingMonthSummary() {
+function renderResult(metric, result) {
+  const value = metric.querySelector('b');
+  const note = metric.querySelector('small');
+  if (value) value.textContent = formatMoney(result.total);
+  if (note) {
+    note.textContent = result.count <= 0
+      ? '本月已繳完'
+      : `尚有 ${result.count} 筆待繳${result.nextDue ? ` · 最近 ${formatShortDate(result.nextDue)}` : ''}`;
+  }
+}
+
+function refreshRemainingMonthSummary({ force = false } = {}) {
   const context = remainingMonthContext();
   if (!context) return;
-  const { owner, loanType, metric } = context;
-  const { year, month, day } = taipeiDateParts();
-  const key = `${owner}|${loanType}|${ymd(year, month, day)}`;
-  if (metric.dataset.remainingMonthKey === key) return;
-  metric.dataset.remainingMonthKey = key;
 
+  const { owner, loanType, metric } = context;
+  const key = dataKey(owner, loanType);
   const label = metric.querySelector('span');
   const value = metric.querySelector('b');
   const note = metric.querySelector('small');
+
   if (label && label.textContent !== '本月剩餘還款') label.textContent = '本月剩餘還款';
 
+  // 先同步畫出今日快取，讓 core render 出來的「整月總額」沒有機會被使用者看到。
+  const cached = readCache(key);
+  if (cached) renderResult(metric, cached);
+  else {
+    if (value) value.textContent = '—';
+    if (note) note.textContent = '更新中…';
+  }
+
+  if (!force && metric.dataset.remainingMonthKey === key) return;
+  metric.dataset.remainingMonthKey = key;
+
   void loadRemainingMonth(owner, loanType).then(result => {
+    writeCache(key, result);
     if (!metric.isConnected || metric.dataset.remainingMonthKey !== key) return;
-    if (value) value.textContent = formatMoney(result.total);
-    if (note) {
-      if (result.count <= 0) note.textContent = '本月已繳完';
-      else note.textContent = `尚有 ${result.count} 筆待繳${result.nextDue ? ` · 最近 ${formatShortDate(result.nextDue)}` : ''}`;
-    }
+    renderResult(metric, result);
   }).catch(() => {
     if (!metric.isConnected || metric.dataset.remainingMonthKey !== key) return;
     metric.dataset.remainingMonthKey = '';
   });
 }
 
+async function prewarmRemainingMonth() {
+  if (!readAccessToken()) return false;
+  const owners = ['husband', 'wife'];
+  const loanTypes = ['personal', 'topup', 'mortgage'];
+  await Promise.allSettled(owners.flatMap(owner =>
+    loanTypes.map(async loanType => {
+      const key = dataKey(owner, loanType);
+      const result = await loadRemainingMonth(owner, loanType);
+      writeCache(key, result);
+    })
+  ));
+  refreshRemainingMonthSummary();
+  return true;
+}
+
 refreshRemainingMonthSummary();
+void prewarmRemainingMonth().then(ok => {
+  // 剛登入時 auth token 可能比此模組晚落到 storage；補一次即可，不讓首次進分析頁閃舊值。
+  if (!ok) setTimeout(() => void prewarmRemainingMonth(), 800);
+});
 
 if (root) {
-  let queued = false;
   const observer = new MutationObserver(() => {
-    if (queued) return;
-    queued = true;
-    requestAnimationFrame(() => {
-      queued = false;
-      refreshRemainingMonthSummary();
-    });
+    // MutationObserver 本身會在瀏覽器 paint 前執行；不要再延到 requestAnimationFrame。
+    refreshRemainingMonthSummary();
   });
   observer.observe(root, { childList: true, subtree: true });
 }
 
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
-  const context = remainingMonthContext();
-  if (context) context.metric.dataset.remainingMonthKey = '';
+  // 回到 App 時先維持快取立即顯示，再背景重抓最新狀態。
   refreshRemainingMonthSummary();
+  void prewarmRemainingMonth();
 });
