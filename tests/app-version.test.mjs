@@ -26,6 +26,6 @@ test('版號三個地方要一致', async () => {
 
 test('版號格式照 VERSIONING.md 的規則', async () => {
   const source = (await read('app-version.js')).match(/const APP_VERSION = '([^']+)'/)?.[1];
-  // 大版 V2、小版 V2P3；大版升級時小版歸零，所以 V2P0 不該存在
+  // 大版 V2、小版 V2P4；大版升級時小版歸零，所以 V2P0 不該存在
   assert.match(source, /^V[1-9]\d*(P[1-9]\d*)?$/, `版號格式不對：${source}`);
 });

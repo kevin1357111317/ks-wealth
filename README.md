@@ -17,11 +17,12 @@
 - `auth-tools.js`：密碼重設等 Auth 輔助流程
 - `sheet-gesture.js`：手機 Sheet 關閉手勢
 - `app-version.js`：正式版號的唯一來源，並在標題右邊掛版號膠囊（規則見 `VERSIONING.md`）
-- `loan-ui-fix.js`、`loan-month-summary.js`：貸款畫面的後處理層，見下一節
+- `loan-ui-fix.js`、`loan-month-summary.js`、`loan-month-core.js`：貸款畫面的後處理與月份彙總，見下一節
 - `v3.css`：主要手機優先 UI
 - `v3-trends.css`：趨勢、分類卡片與目前「布布一二的家」主題樣式
 - `supabase/functions/`：市場行情與每日快照等後端 Edge Functions
-- `supabase/migrations/`：資料庫 schema 歷史；不代表每個 proposed migration 都已套用
+- `supabase/migrations/`：已套用或用來重建正式 schema 的 migration 歷史
+- `supabase/proposals/`：不可直接執行的歷史提案與研究筆記
 
 `app.js` 與 `style.css` 是舊版保留檔案，目前沒有被正式 `index.html` 引用。
 
@@ -33,9 +34,9 @@
 
 - `loan-ui-fix.js`：把卡片頭的欄位搬進展開的明細、拿掉重複的格子，而且「貸款年限」是
   從已繳期數的**分母**推出來的（所以排程抓不齊時年限會跟著錯，見「排程要分頁抓」那節）
-- `loan-month-summary.js`：把摘要的「每月還款／平均每天」換成「本月剩餘還款」，自己帶
-  publishable key、從 localStorage 讀 auth token，直接打 PostgREST 算當月還沒扣的期數，
-  結果存在 localStorage 當天快取
+- `loan-month-summary.js`：把摘要換成「本月剩餘還款」，自己帶 publishable key、從
+  localStorage 讀 auth token，直接打 PostgREST 算當月還沒扣的期數。每輪只批次查一次帳戶與
+  一次排程，再依成員／貸款類型分桶；同時觸發的更新共用同一個請求，結果存在 localStorage 當天快取
 
 第二支不走 `app-v3.js` 的 supabase client，所以測試裡的假 client 攔不到它 —— 瀏覽器測試
 看到的那一格會停在「更新中…」，斷言要對著這個狀態寫，不要對著 `app-v3.js` 的原始樣板寫。
@@ -161,8 +162,7 @@ PAMP 星座的 NT$52,696 是完整買進支出，其中含工錢 NT$23,080。工
 
 ## 貸款分析
 
-個人頁的分析入口依序是「股票分析／貸款分析／美金分析」三個按鈕，美金分析固定在最右邊。貸款分析統整信貸、房屋增貸，
-並可在之後納入房貸。`loan_accounts` 保存 KLFAN 工作表的原貸款、期程、預估總還款與結清狀態；
+個人頁的分析入口依序是「股票分析／貸款分析／黃金分析／美金分析」四個按鈕，美金分析固定在最右邊。貸款分析統整信貸、房屋增貸與房貸。`loan_accounts` 保存 KLFAN 工作表的原貸款、期程、預估總還款與結清狀態；
 進行中貸款以 `financial_item_id` 連回
 `financial_items` 的既有負債列，畫面上的目前本金、利率與月付以負債列為準。
 分析頁以「信貸／增貸／房貸」三段切換，預設顯示信貸；摘要數字、進行中清單與已結清紀錄
@@ -176,8 +176,8 @@ KLFAN 中已結清的舊信貸保留在分析頁，但餘額固定為零。由�
 `loan_schedule` 是完整的貸款現金流，以 `entry_type` 區分撥款、費用、還款與調整，並同時保存
 應繳日 `due_date` 和已知的實際扣款日 `actual_date`。貸款卡片點一下會列出資金流入、所有費用、
 過往繳款與未來排程，並用每筆實際現金流做 XIRR，顯示含開辦費的「實際年化成本」。費用不會
-再被誤算成還款期數；「每月還款」那格的
-平均每天是 `月付 × 12 ÷ 365`。排程是懶載入的（`ensureLoanSchedule()`），沒點開分析頁就不抓。
+再被誤算成還款期數；摘要的原始「每月還款」會由後處理層換成「本月剩餘還款」。排程是
+懶載入的（`ensureLoanSchedule()`），沒點開分析頁就不抓。
 
 `240820_KL_LB` 已依 2026-09-07 LINE Bank App 畫面核對：本金 350 萬、實收 3,499,112、
 開辦費 888、首期 20,523、其後月付 39,763；截至 2026-09-05 已繳 25 次、剩 72 次，
@@ -626,4 +626,4 @@ Twelve Data 免費方案是每分鐘 8 credits、一個 symbol 算一個。這�
 
 GitHub `main` 已連接 Vercel Production；合併或 push 到 `main` 會觸發正式部署。功能變更應先在工作分支完成測試與 diff review，再合併至 `main`。
 
-Supabase Production schema 與 Git migration history 可能有已知差異。執行 migration 前必須先核對 Production migration history；禁止自動執行名稱含 `proposed` / `not_yet_applied` 的 migration。
+Supabase Production schema 與 Git migration history 可能有已知差異。執行 migration 前必須先核對 Production migration history；提案只能放在 `supabase/proposals/`，不得放進正式 migration 目錄。未完成 reconciliation 前禁止直接對 Production 執行 `supabase db push`。
