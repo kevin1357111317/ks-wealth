@@ -13,6 +13,7 @@ import {
 } from './financial-core.js?v=hide-sold-out-1';
 import { calculatePortfolio, decodePortfolioBootstrap } from './portfolio-core.js?v=owner-scope-1';
 import { calculateUsd } from './usd-core.js?v=usd-1';
+import { calculateGold } from './gold-core.js?v=gold-1';
 import { calculateLoanCashflow } from './loan-core.js?v=cashflow-1';
 
 // App / Supabase -------------------------------------------------------------
@@ -84,6 +85,7 @@ let ledgerLoaded = false;
 let ledgerFlight = null;
 // 美金部位自己一本帳，跟 financial_items 沒有連動：買賣只在美金分析頁裡進出。
 let usdTransactions = [];
+let goldTransactions = [];
 let loanAccounts = [];
 // 還款排程有 837 列，只有貸款分析頁要用，跟台帳一樣點進去才載。
 let loanSchedule = [];
@@ -95,7 +97,7 @@ let expandedLoan = null;   // 就地展開的那一筆，一次只開一個
 let loanNextDue = {};
 let autopayCheckedOn = null;
 let loanTypeFilter = 'personal';   // 貸款分析預設先看信貸，可切換增貸／房貸
-let analysisScreen = null;   // 'stocks'｜'usd'｜'loans'，null 就是一般的資產頁
+let analysisScreen = null;   // 'stocks'｜'usd'｜'gold'｜'loans'，null 就是一般的資產頁
 let analysisOwner = 'husband';   // 分析頁看的是誰的部位
 let expandedStock = null;   // 台帳清單裡就地展開的那一檔，一次只開一個
 // 分析頁是狀態切換不是換頁，返回手勢預設不會有反應。進去時推一筆歷史，
@@ -519,6 +521,7 @@ async function applySession(nextSession) {
   analysisScreen = null;
   analysisOwner = 'husband';
   usdTransactions = [];
+  goldTransactions = [];
   expandedStock = null;
   analysisPushed = false;
   analysisReturnScroll = 0;
@@ -597,13 +600,14 @@ async function loadData({ blocking = false } = {}) {
   if (loadFlight) return loadFlight;
   const householdId = member.household_id;
   loadFlight = (async () => {
-    const [itemResult, familyHistoryResult, householdResult, scopeHistoryResult, usdResult, loanResult, nextDueResult] = await Promise.all([
+    const [itemResult, familyHistoryResult, householdResult, scopeHistoryResult, usdResult, goldResult, loanResult, nextDueResult] = await Promise.all([
       sb.from('financial_items').select('*').eq('household_id', householdId).order('sort_order'),
       // 這三張表也走分頁：淨值快照一天一列，放個三年就會撞到 1000 列的上限
       fetchAllRows(() => sb.from('net_worth_history').select('*').eq('household_id', householdId).order('recorded_on')),
       sb.from('households').select('name').eq('id', householdId).single(),
       fetchAllRows(() => sb.from('financial_scope_history').select('*').eq('household_id', householdId).order('recorded_on')),
       fetchAllRows(() => sb.from('usd_transactions').select('*').eq('household_id', householdId).order('trade_date').order('id')),
+      fetchAllRows(() => sb.from('gold_transactions').select('*').eq('household_id', householdId).order('trade_date').order('id')),
       sb.from('loan_accounts').select('*').eq('household_id', householdId).order('start_date'),
       sb.from('loan_schedule').select('loan_account_id,due_date,amount_twd')
         .eq('entry_type', 'payment').is('applied_at', null).order('due_date').range(0, 299),
@@ -618,6 +622,7 @@ async function loadData({ blocking = false } = {}) {
     householdName = householdResult.data?.name || '布布一二的家';
     fxRate = items.find(item => item.fx_rate_twd > 1 && item.quote_currency === 'USD')?.fx_rate_twd ?? fxRate;
     if (!usdResult.error) usdTransactions = usdResult.data ?? [];
+    if (!goldResult.error) goldTransactions = goldResult.data ?? [];
     if (!loanResult.error) loanAccounts = loanResult.data ?? [];
     if (!nextDueResult.error) {
       loanNextDue = {};
@@ -919,7 +924,7 @@ function groupedCards(list, ownerScope, kind) {
 
 // 資產頁上只放入口，數字留在分析頁裡面講。
 function analysisEntry() {
-  return `<div class="analysisEntry"><button data-open-portfolio>股票分析<i>›</i></button><button data-open-loans>貸款分析<i>›</i></button><button data-open-usd>美金分析<i>›</i></button></div>`;
+  return `<div class="analysisEntry"><button data-open-portfolio>股票分析<i>›</i></button><button data-open-loans>貸款分析<i>›</i></button><button data-open-gold>黃金分析<i>›</i></button><button data-open-usd>美金分析<i>›</i></button></div>`;
 }
 
 // 分析頁只看單一個人的部位。全部合起來的 portfolioModel 還是要留著 ——
@@ -932,6 +937,13 @@ function ownerPortfolioModel(ownerScope) {
 
 function ownerUsdModel(ownerScope) {
   return calculateUsd(usdTransactions.filter(row => (row.owner_scope ?? 'husband') === ownerScope), fxRate);
+}
+
+function ownerGoldModel(ownerScope) {
+  return calculateGold(
+    goldTransactions.filter(row => (row.owner_scope ?? 'husband') === ownerScope),
+    items.filter(item => item.owner_scope === ownerScope && item.market === 'GOLD'),
+  );
 }
 
 function portfolioSummaryCards(bucket) {
@@ -1027,6 +1039,7 @@ async function syncPortfolioFinancialItem(stockKey, { ownerScope, notes } = {}) 
 
 function analysisPage() {
   if (analysisScreen === 'usd') return usdPage();
+  if (analysisScreen === 'gold') return goldPage();
   if (analysisScreen === 'loans') return loanPage();
   // 點進來才去載台帳，載好會再 render 一次。
   if (!portfolioModel) {
@@ -1034,6 +1047,25 @@ function analysisPage() {
       `${ownerName(analysisOwner)}股票分析`);
   }
   portfolioListPage();
+}
+
+const gramFormat = value => masked
+  ? '\u2022\u2022\u2022\u2022'
+  : new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 4 }).format(toFiniteNumber(value));
+
+function goldTransactionRow(row) {
+  return `<div class="portfolioTx goldTx"><div class="portfolioTxWhen"><b>${escapeHtml(row.name)}</b><small>${escapeHtml(row.date)}${row.note ? ` · ${escapeHtml(row.note)}` : ''}</small></div><div class="portfolioTxAmount"><b class="negative">−NT$ ${formatNumber(row.costTwd)}</b><small>${gramFormat(row.grams)} g${row.premiumTwd ? ` · 收藏工錢 NT$ ${formatNumber(row.premiumTwd)}` : ''}</small></div></div>`;
+}
+
+// 目前重量與市值沿用資產頁的即時黃金行情；成本與投入時點來自 KLFAN 黃金工作表。
+function goldPage() {
+  const model = ownerGoldModel(analysisOwner);
+  const rows = [...model.rows].reverse();
+  const resultTone = model.trackedProfitTwd >= 0 ? 'up' : 'down';
+  const reconciliation = model.reconciled
+    ? `<div class="goldReconcile ok"><b>重量已核對</b><span>成本台帳與資產頁都是 ${gramFormat(model.holdingGrams)} g</span></div>`
+    : `<div class="goldReconcile warn"><b>尚有 ${gramFormat(model.untrackedGrams)} g 缺少買進成本</b><span>資產頁 ${gramFormat(model.holdingGrams)} g；KLFAN 已追蹤 ${gramFormat(model.trackedGrams)} g。下方報酬只計算已追蹤部位，不把差額當成零成本。</span></div>`;
+  shell(`<div class="portfolioView"><div class="portfolioSummary"><div class="portfolioMetric"><span>目前黃金部位</span><b>${gramFormat(model.holdingGrams)} g</b><small>${model.transactions} 筆成本紀錄</small></div><div class="portfolioMetric"><span>目前台幣市值</span><b>NT$ ${formatNumber(model.currentValueTwd)}</b><small>每公克約 NT$ ${formatNumber(model.pricePerGram)}</small></div><div class="portfolioMetric"><span>已追蹤投入成本</span><b>NT$ ${formatNumber(model.trackedCostTwd)}</b><small>${gramFormat(model.trackedGrams)} g</small></div><div class="portfolioMetric"><span>已追蹤目前價值</span><b>NT$ ${formatNumber(model.trackedValueTwd)}</b><small>${model.retainedPremiumTwd ? `含收藏工錢 NT$ ${formatNumber(model.retainedPremiumTwd)}` : '依目前每公克市值'}</small></div><div class="portfolioMetric"><span>已追蹤損益</span><b class="${resultTone}">NT$ ${formatNumber(model.trackedProfitTwd)}</b><small>${formatPercent(model.trackedReturnRate)}</small></div><div class="portfolioMetric"><span>年化報酬率</span><b class="${resultTone}">${formatPercent(model.xirr)}</b><small>計入每筆實際投入時點</small></div></div>${reconciliation}<div class="sectionHead"><span>買進紀錄${model.firstTradeDate ? ` · 自 ${escapeHtml(model.firstTradeDate)}` : ''}</span><b>${model.transactions} 筆</b></div><div class="portfolioTxList">${rows.length ? rows.map(goldTransactionRow).join('') : '<div class="portfolioEmpty">還沒有黃金成本紀錄。</div>'}</div></div>`, `${ownerName(analysisOwner)}黃金分析`);
 }
 
 function ownerLoanRows(ownerScope) {
@@ -1307,6 +1339,8 @@ function personPage(ownerScope) {
   if (portfolioButton) portfolioButton.onclick = () => openAnalysis('stocks', ownerScope);
   const usdButton = root.querySelector('[data-open-usd]');
   if (usdButton) usdButton.onclick = () => openAnalysis('usd', ownerScope);
+  const goldButton = root.querySelector('[data-open-gold]');
+  if (goldButton) goldButton.onclick = () => openAnalysis('gold', ownerScope);
   const loanButton = root.querySelector('[data-open-loans]');
   if (loanButton) loanButton.onclick = () => openAnalysis('loans', ownerScope);
   root.querySelector('.categoryList').onclick = event => {
