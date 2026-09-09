@@ -73,11 +73,21 @@
 
 ## 分析頁分老公／老婆
 
-股票分析與美金分析在兩個人的頁面上都有，各自只看自己名下的部位：
+股票分析、美金分析與黃金分析在兩個人的頁面上都有，各自只看自己名下的部位：
 
 - 股票照 `klfan_stocks.owner_scope` 切。這一欄本來就有，只是 `klfan_bootstrap()` 沒有把它送到
   前端 —— `s` 陣列現在多帶第 7 個元素 `owner_scope`
 - 美金照 `usd_transactions.owner_scope` 切，在美金分析頁記的那筆就記在當下看的那個人名下
+- 黃金即時重量與市值照 `financial_items.owner_scope` 切，歷史成本照 `gold_transactions.owner_scope` 切
+
+## 黃金分析
+
+黃金分析把即時部位與 KLFAN「黃金」工作表的成本台帳分開保存：`financial_items` 繼續負責目前重量、
+即時金價與台幣市值，`gold_transactions` 只保存每筆買進日期、成本、重量與收藏工錢。年化報酬率用每筆
+實際投入日期重算 XIRR，不沿用試算表可能過期的快取結果。
+
+成本台帳重量若小於資產頁重量，畫面會明確顯示缺少成本的克數；損益與 XIRR 只計算已有成本的部位，
+不把差額誤當成零成本獲利。PAMP 星座仍依原 KLFAN 邏輯把收藏工錢保留在目前價值中，但成本不重複加計。
 - 合起來的 `portfolioModel` 還是要留著：編輯表單與 `syncPortfolioFinancialItem()` 是照 key
   找標的，跟歸屬無關，用切過的那份會找不到
 

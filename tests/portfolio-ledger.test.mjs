@@ -396,7 +396,7 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     assert.match(await page.textContent('[data-open-usd]'), /^\s*美金分析/);
     // 入口只留按鈕，數字都收進分析頁裡
     const entry = (await page.textContent('.analysisEntry')).replace(/[\s›]+/g, '');
-    assert.equal(entry, '股票分析貸款分析美金分析');
+    assert.equal(entry, '股票分析貸款分析黃金分析美金分析');
 
     await page.click('[data-open-usd]');
     await page.waitForSelector('.portfolioSummary');

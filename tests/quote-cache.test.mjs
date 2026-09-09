@@ -133,7 +133,7 @@ async function refresh({ cache, gold = null, twelveBudget = 8, live = LIVE, requ
 }
 
 test('快取夠新時只花 1 個 credit，黃金以外都沿用', async () => {
-  const { body, used } = await refresh({ cache: cacheRows(60_000) });
+  const { body, used } = await refresh({ cache: cacheRows(30_000) });
   assert.equal(used.twelve, 1, '只該為 XAU/USD 打一次 Twelve Data');
   assert.equal(body.fx.rate, FX, '匯率該來自快取');
   assert.equal(body.failed, 0);
@@ -205,7 +205,7 @@ test('XAU/USD 也要進快取，否則同一分鐘跑兩輪必定壓死黃金', 
 
 test('金價快取過期就重抓', async () => {
   const stale = { symbol: 'XAU/USD', price: 4000, updated_at: new Date(Date.now() - 28 * 60_000).toISOString() };
-  const { body, used } = await refresh({ cache: cacheRows(60_000), gold: stale });
+  const { body, used } = await refresh({ cache: cacheRows(30_000), gold: stale });
   assert.equal(used.twelve, 1, '只有 XAU/USD 要重抓');
   assert.equal(body.gold.price, XAU, '不該沿用過期的 4000');
   assert.equal(body.gold.cached, false);
