@@ -18,7 +18,7 @@ had only **2**. These files close that gap:
 | `20260826051542_ks_wealth_v2_reduce_rpc_surface.sql` | `20260826051542` | Copied verbatim, no data |
 | `20260826052600_ks_wealth_v2_source_name_alignment.sql` | `20260826052600` | DDL only — see "Data removed" below |
 | `20260827120000_reconcile_untracked_schema_changes.sql` | *(none — see below)* | New: catches up 3 pieces of schema that were never tracked by any migration at all |
-| `20260829000000_proposed_hardening_not_yet_applied.sql` | *(none — proposal, not production state)* | New: optional follow-up hardening, **not** a reconstruction of current state |
+| `../proposals/20260829_hardening_review_draft.md` | *(none — archived proposal)* | Non-executable historical note; intentionally outside migrations |
 
 ## Data removed from the reconstructed files
 
@@ -68,11 +68,12 @@ The timestamp prefix `20260827120000` is a placeholder — the real change happe
 between the last tracked migration (`...052600`, Aug 26) and the next tracked one
 (`...000736`, Aug 28), but production doesn't record exactly when.
 
-## `20260829000000_proposed_hardening_not_yet_applied.sql` — separate, opt-in
+## `../proposals/20260829_hardening_review_draft.md` — archived, non-executable
 
 This one is different in kind from all the others above: it does **not** describe production's
-current state. It's a draft of the "nice to have" hardening items you asked me to use my
-judgment on:
+current state. It was moved out of the migration directory so no migration runner can mistake
+it for deployable schema. Its column-removal idea is obsolete because the frontend still reads
+those legacy fields as a fallback.
 
 - Stop letting household members write directly to `net_worth_history` /
   `financial_scope_history` via the REST API (both are meant to be Edge-Function-only writes;

@@ -1,3 +1,5 @@
+import { LOAN_OWNERS, LOAN_TYPES, loanMonthBucketKey, summarizeRemainingMonth } from './loan-month-core.js?v=V2P4';
+
 const root = document.querySelector('#root');
 const SUPABASE_URL = 'https://gbxsnwqbjmgfikpblyot.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_VtGM8w7CqxDB_3NaROR8OA_H0txX-_I';
@@ -99,36 +101,41 @@ async function rest(path, params) {
   return response.json();
 }
 
+let monthDataFlight = null;
+
+async function loadRemainingMonthBatch() {
+  if (monthDataFlight) return monthDataFlight;
+  monthDataFlight = (async () => {
+    const { year, month, day } = taipeiDateParts();
+    const today = ymd(year, month, day);
+    const next = month === 12 ? ymd(year + 1, 1, 1) : ymd(year, month + 1, 1);
+
+    const accounts = await rest('loan_accounts', [
+      ['select', 'id,owner_scope,loan_type,status'],
+      ['status', 'eq.active'],
+    ]);
+    const ids = accounts.map(row => row.id).filter(Boolean);
+    if (!ids.length) return summarizeRemainingMonth([], []);
+
+    const rows = await rest('loan_schedule', [
+      ['select', 'id,loan_account_id,due_date,actual_date,amount_twd,applied_at'],
+      ['loan_account_id', `in.(${ids.join(',')})`],
+      ['entry_type', 'eq.payment'],
+      ['applied_at', 'is.null'],
+      ['due_date', `gte.${today}`],
+      ['due_date', `lt.${next}`],
+      ['order', 'due_date.asc'],
+    ]);
+
+    return summarizeRemainingMonth(accounts, rows);
+  })();
+  try { return await monthDataFlight; }
+  finally { monthDataFlight = null; }
+}
+
 async function loadRemainingMonth(owner, loanType) {
-  const { year, month, day } = taipeiDateParts();
-  const today = ymd(year, month, day);
-  const next = month === 12 ? ymd(year + 1, 1, 1) : ymd(year, month + 1, 1);
-
-  const accounts = await rest('loan_accounts', [
-    ['select', 'id'],
-    ['status', 'eq.active'],
-    ['owner_scope', `eq.${owner}`],
-    ['loan_type', `eq.${loanType}`],
-  ]);
-  const ids = accounts.map(row => row.id).filter(Boolean);
-  if (!ids.length) return { total: 0, count: 0, nextDue: null };
-
-  const rows = await rest('loan_schedule', [
-    ['select', 'loan_account_id,due_date,actual_date,amount_twd,applied_at'],
-    ['loan_account_id', `in.(${ids.join(',')})`],
-    ['entry_type', 'eq.payment'],
-    ['applied_at', 'is.null'],
-    ['due_date', `gte.${today}`],
-    ['due_date', `lt.${next}`],
-    ['order', 'due_date.asc'],
-  ]);
-
-  const validRows = rows.filter(row => !row.applied_at);
-  return {
-    total: validRows.reduce((sum, row) => sum + Math.abs(Number(row.amount_twd) || 0), 0),
-    count: validRows.length,
-    nextDue: validRows[0]?.actual_date || validRows[0]?.due_date || null,
-  };
+  const result = await loadRemainingMonthBatch();
+  return result[loanMonthBucketKey(owner, loanType)] ?? { total: 0, count: 0, nextDue: null };
 }
 
 function formatMoney(value) {
@@ -190,16 +197,18 @@ function refreshRemainingMonthSummary({ force = false } = {}) {
 
 async function prewarmRemainingMonth() {
   if (!readAccessToken()) return false;
-  const owners = ['husband', 'wife'];
-  const loanTypes = ['personal', 'topup', 'mortgage'];
-  await Promise.allSettled(owners.flatMap(owner =>
-    loanTypes.map(async loanType => {
-      const key = dataKey(owner, loanType);
-      const result = await loadRemainingMonth(owner, loanType);
-      writeCache(key, result);
-    })
-  ));
-  return true;
+  try {
+    const result = await loadRemainingMonthBatch();
+    for (const owner of LOAN_OWNERS) {
+      for (const loanType of LOAN_TYPES) {
+        const key = dataKey(owner, loanType);
+        writeCache(key, result[loanMonthBucketKey(owner, loanType)]);
+      }
+    }
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 refreshRemainingMonthSummary();

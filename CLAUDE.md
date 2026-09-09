@@ -1,4 +1,6 @@
-# 給 Claude 的工作方式
+# KS Wealth 工作方式
+
+所有協作者先讀 `AGENTS.md`；本檔保留專案的完整實作與出貨細節。
 
 屋主的偏好是**簡單講**，用中文，做完講重點就好，不要長篇報告。
 
@@ -31,7 +33,7 @@ commit message 建議直接帶版號，方便日後追蹤。
 
 ## 出貨流程
 
-在 `claude/asset-tracking-folder-fs4nqp` 上開發，開 PR，squash merge 進 `main`。
+從最新 `main` 建立各自的工作分支，開 PR，squash merge 進 `main`。
 
 `node --test tests/*.test.mjs` 要全過才推。playwright 沒裝的話測試會自己 skip，
 先 `npm i --no-save playwright`（Chromium 已經在 `/opt/pw-browsers`，不要再下載）。
