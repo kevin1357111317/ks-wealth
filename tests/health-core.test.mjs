@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildHealthInsights, buildHealthModel } from '../health-core.js';
+import {
+  buildHealthDomains,
+  buildHealthInsights,
+  buildHealthModel,
+  healthReferenceBoundaries,
+  selectHealthTrendKeys,
+} from '../health-core.js';
 
 const reports = [
   { id: 'older', owner_scope: 'wife', checkup_year: 2024 },
@@ -27,3 +33,56 @@ test('abnormal red-cell pattern creates a preconception follow-up, not a diagnos
   assert.match(insights[0].action, /未證實缺鐵前不要自行/);
 });
 
+test('a missing metric in one year is skipped instead of breaking the trend', () => {
+  const model = buildHealthModel(reports, [
+    { checkup_id: 'latest', metric_key: 'afp', value_numeric: 12, status: 'high' },
+  ], 'wife');
+  assert.deepEqual(model.series('afp').map(point => point.year), [2025]);
+});
+
+test('a two-sided reference range keeps both lower and upper chart lines', () => {
+  assert.deepEqual(healthReferenceBoundaries({ reference_low: 80, reference_high: 100 }), [80, 100]);
+  assert.deepEqual(healthReferenceBoundaries({ reference_low: null, reference_high: 9 }), [9]);
+});
+
+test('trend selection prioritizes abnormal metrics with two or more years', () => {
+  const model = buildHealthModel(reports, [
+    { checkup_id: 'older', metric_key: 'afp', value_numeric: 10.9, status: 'high' },
+    { checkup_id: 'latest', metric_key: 'afp', value_numeric: 12, status: 'high' },
+    { checkup_id: 'older', metric_key: 'hba1c', value_numeric: 5.2, status: 'normal' },
+    { checkup_id: 'latest', metric_key: 'hba1c', value_numeric: 5.4, status: 'normal' },
+  ], 'wife');
+  assert.deepEqual(selectHealthTrendKeys(model, 'wife'), ['afp', 'hba1c']);
+});
+
+test('husband advice and domains use his actual follow-up items', () => {
+  const husbandReports = [
+    { id: 'h-2024', owner_scope: 'husband', checkup_year: 2024 },
+    { id: 'h-2026', owner_scope: 'husband', checkup_year: 2026 },
+  ];
+  const husbandMetrics = [
+    { checkup_id: 'h-2024', metric_key: 'wbc', value_numeric: 3.73, status: 'low' },
+    { checkup_id: 'h-2026', metric_key: 'wbc', value_numeric: 3.93, status: 'low' },
+    { checkup_id: 'h-2026', metric_key: 'neutrophil', value_numeric: 54.4, status: 'normal' },
+    { checkup_id: 'h-2026', metric_key: 'total_bilirubin', value_numeric: 1.3, status: 'high' },
+    { checkup_id: 'h-2026', metric_key: 'thoracic_scoliosis', value_text: '胸椎脊柱側彎', status: 'watch' },
+  ];
+  const model = buildHealthModel(husbandReports, husbandMetrics, 'husband');
+  const insights = buildHealthInsights(model, 'husband');
+  assert.match(insights.map(row => row.title).join('、'), /白血球/);
+  assert.match(insights.map(row => row.title).join('、'), /膽紅素/);
+  assert.match(insights.map(row => row.body).join('、'), /2\.14/);
+  assert.deepEqual(buildHealthDomains(model, model.latest, 'husband').map(row => row.title), [
+    '血液與免疫', '肝膽功能', '影像與結構',
+  ]);
+});
+
+test('a low hemoglobin alone does not claim a microcytic pattern', () => {
+  const model = buildHealthModel([
+    { id: 'only', owner_scope: 'wife', checkup_year: 2026 },
+  ], [
+    { checkup_id: 'only', metric_key: 'hemoglobin', value_numeric: 11, status: 'low' },
+    { checkup_id: 'only', metric_key: 'mcv', value_numeric: 88, status: 'normal' },
+  ], 'wife');
+  assert.doesNotMatch(buildHealthInsights(model, 'wife')[0].title, /小球性/);
+});

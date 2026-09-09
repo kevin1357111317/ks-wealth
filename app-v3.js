@@ -15,7 +15,13 @@ import { calculatePortfolio, decodePortfolioBootstrap } from './portfolio-core.j
 import { calculateUsd } from './usd-core.js?v=usd-1';
 import { calculateGold } from './gold-core.js?v=gold-trim-1';
 import { calculateLoanCashflow } from './loan-core.js?v=cashflow-1';
-import { buildHealthInsights, buildHealthModel } from './health-core.js?v=V3';
+import {
+  buildHealthDomains,
+  buildHealthInsights,
+  buildHealthModel,
+  healthReferenceBoundaries,
+  selectHealthTrendKeys,
+} from './health-core.js?v=V3P1';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -623,8 +629,7 @@ async function loadData({ blocking = false } = {}) {
         .eq('household_id', householdId).order('checkup_year')),
       fetchAllRows(() => sb.from('health_metrics').select('*').order('sort_order').order('id')),
     ]);
-    const failure = [itemResult.error, familyHistoryResult.error, householdResult.error, scopeHistoryResult.error,
-      healthCheckupResult.error, healthMetricResult.error].find(Boolean);
+    const failure = [itemResult.error, familyHistoryResult.error, householdResult.error, scopeHistoryResult.error].find(Boolean);
     if (failure) throw failure;
     if (!member || member.household_id !== householdId) return false;
 
@@ -636,8 +641,10 @@ async function loadData({ blocking = false } = {}) {
     if (!usdResult.error) usdTransactions = usdResult.data ?? [];
     if (!goldResult.error) goldTransactions = goldResult.data ?? [];
     if (!loanResult.error) loanAccounts = loanResult.data ?? [];
-    healthCheckups = healthCheckupResult.data ?? [];
-    healthMetrics = healthMetricResult.data ?? [];
+    if (!healthCheckupResult.error && !healthMetricResult.error) {
+      healthCheckups = healthCheckupResult.data ?? [];
+      healthMetrics = healthMetricResult.data ?? [];
+    }
     if (!nextDueResult.error) {
       loanNextDue = {};
       for (const row of nextDueResult.data ?? []) {
@@ -886,7 +893,8 @@ function dashboard() {
   const family = summary();
   const husband = summary('husband');
   const wife = summary('wife');
-  const health = buildHealthModel(healthCheckups, healthMetrics, 'wife');
+  const wifeHealth = buildHealthModel(healthCheckups, healthMetrics, 'wife');
+  const husbandHealth = buildHealthModel(healthCheckups, healthMetrics, 'husband');
   const husbandShare = family.totalAssets ? husband.totalAssets / family.totalAssets * 100 : 0;
   const wifeShare = family.totalAssets ? wife.totalAssets / family.totalAssets * 100 : 0;
   const ownerDistribution = `<section class="panel"><div class="panelTitle"><div><h2>夫妻資產分布</h2></div></div><div class="ownerGrid"><div class="ownerTile"><span>老公資產</span><b>NT$ ${formatNumber(husband.totalAssets)}</b><small>占家庭資產 ${husbandShare.toFixed(1)}%</small></div><div class="ownerTile"><span>老婆資產</span><b>NT$ ${formatNumber(wife.totalAssets)}</b><small>占家庭資產 ${wifeShare.toFixed(1)}%</small></div></div></section>`;
@@ -896,12 +904,14 @@ function dashboard() {
   const distributionTotal = distributionKind === 'asset' ? family.totalAssets : family.totalLiabilities;
   const distributionTitle = distributionKind === 'asset' ? '家庭資產分布' : '家庭負債分布';
 
-  const healthCopy = health.latest
-    ? `老婆 ${health.latest.checkup_year} 年健檢已整理 · 查看重點與趨勢`
+  const healthOwners = [husbandHealth.latest, wifeHealth.latest].filter(Boolean).length;
+  const latestHealthYear = Math.max(husbandHealth.latest?.checkup_year ?? 0, wifeHealth.latest?.checkup_year ?? 0);
+  const healthCopy = healthOwners
+    ? `已整理 ${healthOwners} 人 · 最新 ${latestHealthYear} 年 · 查看重點與趨勢`
     : '整理夫妻歷年健檢、異常趨勢與備孕行動';
   const healthEntry = `<button class="healthHomeEntry" data-open-health><div><small>FAMILY HEALTH</small><b>夫妻健康報告</b><span>${healthCopy}</span></div><i>♡</i></button>`;
   shell(`<section class="portfolioHero"><div class="heroLabel"><span>家庭淨資產</span><span>老公＋老婆</span></div><div class="bigMoney">${formatMoney(family.netWorth)}</div><div class="miniStats"><div><span>家庭總資產</span><b>NT$ ${formatNumber(family.totalAssets)}</b></div><div><span>家庭總負債</span><b>NT$ ${formatNumber(family.totalLiabilities)}</b></div></div></section>${healthEntry}${trendChart(familyTrendRows(family.netWorth))}${distributionPanel(distributionRows, distributionTotal, distributionTitle, distributionKind)}${ownerDistribution}`, '家庭');
-  root.querySelector('[data-open-health]').onclick = () => openAnalysis('health', health.latest ? 'wife' : 'husband');
+  root.querySelector('[data-open-health]').onclick = () => openAnalysis('health', husbandHealth.latest ? 'husband' : 'wife');
 }
 
 function distributionPanel(rows, total, title, kind) {
@@ -967,8 +977,8 @@ function healthTrendCard(model, report, key) {
   const series = model.series(key);
   const selected = model.metric(report, key);
   if (!series.length || !selected) return '';
-  const boundary = selected.reference_high ?? selected.reference_low;
-  const values = series.map(point => point.value).concat(boundary === null ? [] : [boundary]);
+  const boundaries = healthReferenceBoundaries(selected);
+  const values = series.map(point => point.value).concat(boundaries);
   let min = Math.min(...values);
   let max = Math.max(...values);
   const pad = Math.max((max - min) * .24, Math.abs(max || 1) * .045, .5);
@@ -977,7 +987,9 @@ function healthTrendCard(model, report, key) {
   const x = index => series.length === 1 ? 140 : 16 + index * (268 / (series.length - 1));
   const y = value => 91 - ((value - min) / (max - min || 1)) * 70;
   const points = series.map((point, index) => `${x(index)},${y(point.value)}`).join(' ');
-  const ref = boundary === null ? '' : `<line class="healthRef" x1="16" y1="${y(boundary)}" x2="284" y2="${y(boundary)}"/>`;
+  const ref = boundaries
+    .map(boundary => `<line class="healthRef" x1="16" y1="${y(boundary)}" x2="284" y2="${y(boundary)}"/>`)
+    .join('');
   const labels = series.map((point, index) => `<text x="${x(index)}" y="107" text-anchor="middle">${point.year}</text>`).join('');
   const dots = series.map((point, index) => `<circle class="healthDot" cx="${x(index)}" cy="${y(point.value)}" r="4"/>`).join('');
   const normal = selected.status === 'normal' || selected.status === 'info';
@@ -1016,7 +1028,7 @@ function bindHealthControls() {
 function healthPage() {
   const model = buildHealthModel(healthCheckups, healthMetrics, analysisOwner);
   if (!model.latest) {
-    shell(`<div class="healthView">${healthOwnerControl()}<div class="healthEmpty"><b>尚未匯入${ownerName(analysisOwner)}健檢資料</b><span>之後提供報告，就會自動加入年度趨勢。</span></div></div>`, `${ownerName(analysisOwner)}健康報告`);
+    shell(`<div class="healthView">${healthOwnerControl()}<div class="healthEmpty"><b>尚未匯入${ownerName(analysisOwner)}健檢資料</b><span>提供報告並完成核對後，就會加入年度趨勢。</span></div></div>`, `${ownerName(analysisOwner)}健康報告`);
     bindHealthControls();
     return;
   }
@@ -1025,18 +1037,17 @@ function healthPage() {
     ? healthSelectedYear : model.latest.checkup_year;
   const report = model.reports.find(row => row.checkup_year === selectedYear) ?? model.latest;
   const insights = buildHealthInsights(model, analysisOwner);
+  const latestScore = model.metric(model.latest, 'management_score');
+  const score = latestScore?.value_numeric === null || latestScore?.value_numeric === undefined ? '' : `<section class="healthScore"><div><span>健康管理評分</span><b>${healthMetricValue(latestScore)}<small>/ 100</small></b></div><p>依目前提供的健檢、年齡與備孕重點整理，不是疾病風險量表。</p></section>`;
   const advice = `<section class="healthAdvice"><div class="healthAdviceHead"><div><span>${model.latest.checkup_year} 年重點</span><h2>今年與未來的改善方向</h2></div></div><div class="healthActionList">${insights.map(insight => `<article class="healthAction ${insight.tone}"><div class="healthActionTop"><i class="healthBadge">${escapeHtml(insight.badge)}</i><b>${escapeHtml(insight.title)}</b></div><p>${escapeHtml(insight.body)}</p><strong>具體行動｜${escapeHtml(insight.action)}</strong></article>`).join('')}</div><p class="healthDisclaimer">依健檢趨勢提供優先順序，不等同診斷；若有不適、懷孕或醫師已有不同指示，以臨床評估為準。</p></section>`;
   const yearControl = `<div class="seg healthYearSeg">${model.reports.map(row => `<button data-health-year="${row.checkup_year}" class="${row.checkup_year === selectedYear ? 'on' : ''}">${row.checkup_year}</button>`).join('')}</div>`;
-  const trends = ['mcv', 'hemoglobin', 'afp', 'total_cholesterol']
+  const trends = selectHealthTrendKeys(model, analysisOwner)
     .map(key => healthTrendCard(model, report, key)).filter(Boolean).join('');
-  const domains = [
-    healthDomainCard(model, report, '紅血球型態', '備孕前優先釐清', ['rbc', 'hemoglobin', 'mcv', 'mch', 'rdw_cv'], '紅血球偏小的型態已連續出現；先區分缺鐵與血紅蛋白帶因，不直接把它當成單純缺鐵。'),
-    healthDomainCard(model, report, 'AFP', '非急診追蹤', ['afp', 'alt'], 'AFP 是非特異性指標；搭配肝功能、肝炎狀態與影像，由醫師判斷追蹤間隔。'),
-    healthDomainCard(model, report, '尿液檢查', '重新採樣確認', ['urine_turbidity', 'urine_leukocyte', 'urine_protein'], '先用正確中段尿複查，才能區分採樣污染、無症狀菌尿或其他泌尿道問題。'),
-    healthDomainCard(model, report, '血脂結構', '目前非首要問題', ['total_cholesterol', 'ldl_c', 'hdl_c', 'triglyceride', 'non_hdl_c'], '總膽固醇雖超過報告門檻，但要連同 LDL、非 HDL、三酸甘油脂與整體風險一起看，不宜只憑總膽固醇判定。'),
-  ].filter(Boolean).join('');
+  const domains = buildHealthDomains(model, report, analysisOwner)
+    .map(domain => healthDomainCard(model, report, domain.title, domain.status, domain.keys, domain.copy))
+    .join('');
 
-  shell(`<div class="healthView">${healthOwnerControl()}${advice}${yearControl}<div class="sectionHead"><span>重要指標趨勢</span><b>${model.reports.length} 個年度</b></div><div class="healthTrendGrid">${trends}</div><div class="sectionHead"><span>${selectedYear} 年重點指標</span><b>${report.source_label ? escapeHtml(report.source_label) : '年度健檢'}</b></div><div class="healthDomainList">${domains}</div></div>`, `${ownerName(analysisOwner)}健康報告`);
+  shell(`<div class="healthView">${healthOwnerControl()}${score}${advice}${yearControl}<div class="sectionHead"><span>重要指標趨勢</span><b>${model.reports.length} 個年度</b></div><div class="healthTrendGrid">${trends}</div><div class="sectionHead"><span>${selectedYear} 年重點指標</span><b>${report.source_label ? escapeHtml(report.source_label) : '年度健檢'}</b></div><div class="healthDomainList">${domains}</div></div>`, `${ownerName(analysisOwner)}健康報告`);
   bindHealthControls();
 }
 
