@@ -21,7 +21,8 @@ test('依 KLFAN 黃金交易重算，不沿用漏掉兩筆 2.5g 的舊快取', (
   assert.equal(model.excludedGrams, 5);
   assert.equal(model.trackedCostTwd, 830672);
   assert.equal(model.workmanshipTwd, 23080);
-  assert.equal(model.trackedValueTwd, 900000 / 204.3105 * 199.3105);
+  assert.equal(model.retainedWorkmanshipTwd, 23080);
+  assert.equal(model.trackedValueTwd, 900000 / 204.3105 * 199.3105 + 23080);
   assert.equal(model.untrackedGrams, 0);
   assert.equal(model.reconciled, true);
   assert.ok(model.xirr > 0);
@@ -43,7 +44,7 @@ test('黃金分析入口、資料表與頁面已接進 App', async () => {
   assert.match(app, /analysisScreen === 'gold'/);
   assert.match(app, /from\('gold_transactions'\)/);
   assert.match(app, /尚有 .*缺少買進成本/);
-  assert.match(app, /工錢只列入成本/);
+  assert.match(app, /目前金價＋工錢/);
   assert.match(app, /不計入年化/);
   assert.match(migration, /create table if not exists public\.gold_transactions/);
   assert.match(migration, /grant select, insert, update, delete on public\.gold_transactions to authenticated/);
