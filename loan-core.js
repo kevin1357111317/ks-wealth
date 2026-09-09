@@ -1,4 +1,4 @@
-import { xirr } from './portfolio-core.js';
+import { xirr } from './portfolio-core.js?v=xirr-fast-1';
 
 const number = value => {
   const parsed = Number(value);

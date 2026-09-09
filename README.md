@@ -557,7 +557,6 @@ Fugle 的每分鐘上限沒有查到明文；4 檔 × 每 5 秒 = 48 次／分�
 
 - 資產列的金額：Edge Function 已經算好在 `results[].amountTwd`，直接套進 `items`
 - 股票分析的股價：另外去 `klfan_quotes` 撈一次（約 3 KB），重掛到 `portfolioStocks[].quote`
-  再重算 `portfolioModel`
 
 `realtime` 的 `financial_items` 事件也不能整包重載 —— 每一輪報價更新都會寫它，事件會送回來
 給我們自己，照單全收就等於每分鐘重載一次。那一條改成 `reloadItems()`，只重抓 `financial_items`。
@@ -583,6 +582,82 @@ Fugle 的每分鐘上限沒有查到明文；4 檔 × 每 5 秒 = 48 次／分�
 
 `tests/awake-autorefresh.test.mjs` 守住「開 App 跟切到個人頁都不該叫 `klfan_bootstrap`，
 但入口按鈕還是要在」。
+
+## 計算的錢花在哪裡（V2P5）
+
+數字全部沒變，改的是「同一個數字算幾次、每次多花多少」。用正式資料的量級
+（39 檔、1489 筆交易、30 年房貸 361 列）在同一台機器上量：
+
+| | 之前 | 之後 |
+| --- | --- | --- |
+| 分析頁重算單一個人的部位 | 77.6 ms | 13.1 ms |
+| 整份台帳 `portfolioModel` | 337.2 ms | 這條路徑整個拿掉 |
+| 一筆 30 年房貸的現金流 | 32.9 ms | 2.5 ms |
+
+（Node 在伺服器上的數字，手機上大約再乘三到六倍。）
+
+### XIRR：日期解析從內圈搬出來
+
+`xirr()` 掃兩百多個候選利率、命中變號區間後再二分兩百次，所以 `npv()` 大概會被叫四百多次。
+以前每一次 `npv()` 都對每一筆現金流重跑一次 `Date.parse()` —— 但**距離基準日幾年只跟日期
+有關、跟利率無關**。整體年化那一次有 1489 筆現金流，等於白做幾十萬次字串解析。
+
+現在日期在進迴圈前就換算成 `Float64Array` 的年數，`npv()` 裡只剩浮點運算。二分法多了一個
+出口：中點等於某一端就代表兩端已經夾成相鄰的浮點數，再切下去 `low`／`high` 都不會再動，
+原本會空轉到第 200 圈。
+
+兩件事都不改算法，**結果必須逐位元相同**。`tests/xirr-optimization.test.mjs` 裡留了一份改寫前
+的原始碼當對照，拿 3000 組亂數現金流加邊界案例逐一比對 `Object.is()`。想確認它真的守得住，
+把二分法的出口改成「`high - low < 1e-12` 就停」這種看起來無害的寫法 —— 會紅。
+
+### 用 key 找一檔標的不必重算整份台帳
+
+編輯表單與 `syncPortfolioFinancialItem()` 只是要照 `portfolio_stock_key` 找一檔，用到的欄位
+只有名稱、市場、股數與市值。以前它們讀的是 `portfolioModel`，那是整份台帳跑出來的（每檔
+一個 XIRR，外加台股／美股／全部三個總計），而且**每分鐘報價更新完還會再算一遍**。
+
+現在改成 `portfolioPosition(key)`，只對那一檔跑 `calculateStockValue()`（不含 XIRR）。順帶把
+一個舊問題解掉：`refreshQuotes()` 只有在 `updated > 0` 時才重算 `portfolioModel`，但匯率是
+每一輪都可能更新的 —— 舊的 `portfolioModel` 會停在上一次重算時的匯率。現算就沒有這回事。
+
+`analysisPage()` 原本拿 `portfolioModel` 是否為 null 當「台帳載好了沒」，改成看 `ledgerLoaded`
+（兩者在 `applySession()` 裡本來就一起重設）。
+
+### 分析頁與貸款頁的重算要看指紋
+
+`render()` 是整個重建 DOM，而展開一張卡片、切換「顯示已出清」這些純畫面的操作也會走
+`render()` —— 數字一個都沒動，卻整份重算。現在 `ownerPortfolioModel()` 帶一個指紋，只有
+四件事會讓它重算：台帳整份換掉（重載一定是新陣列，所以直接比對陣列本身）、匯率、報價
+（唯一會就地改到 `portfolioStocks` 的欄位），以及跨過午夜換日期。
+
+`loanScheduleFor()` 同理，而且原本更浪費：排程有一千九百多列，**每張卡片都把整份 filter 一遍**，
+展開的那一筆還會因為卡片本體與明細各要一份而算兩次。現在依貸款分組一次、算過的留著，
+快取綁在 `loanSchedule` 這個陣列本身與台北日期上。
+
+指紋漏東西的下場是畫面上出現別人的錢（漏掉 `ownerScope`，老婆頁就會顯示老公的部位），
+所以 `tests/render-cache.test.mjs` 用真的瀏覽器照使用者的順序按一遍，比對每一頁的數字。
+
+### 兩張頭像不要內嵌在 JS 裡
+
+導覽列的布布與一二以前是 base64 寫在 `app-v3.js` 裡，**82 KB，佔整支檔案四成**。它們會被
+當成 JS 字串解析，而且每次改前端 bump `?v=` 就要連圖一起重新下載。改成 `icons/nav-*.png`：
+瀏覽器平行下載、不擋 JS 解析，改程式也不會讓圖片的快取失效。`app-v3.js` 從 191 KB 降到 125 KB。
+
+### 同一支模組不要有兩種 specifier
+
+`app-v3.js` 匯入的是 `./portfolio-core.js?v=...`，但 `usd-core.js`／`gold-core.js`／`loan-core.js`
+匯入的是沒帶查詢字串的 `./portfolio-core.js`。對瀏覽器來說那是**兩個不同的模組**：抓兩次、
+解析兩次、模組層的常數各存一份。四個匯入處現在用同一個字串，`tests/repository-safety.test.mjs`
+會擋住再犯。
+
+同一支測試也擋住「JS 裡再出現 `data:image/`」。
+
+### 其他一次性的小東西
+
+- `Intl.NumberFormat` 的建構比格式化本身貴得多，原本有幾個寫在每一列交易的樣板字串裡，
+  一頁上千列就 new 上千個一模一樣的格式器。全部提到模組層。
+- `escapeHtml()` 的對照表原本是箭頭函式裡的物件字面量 —— 每跳脫一個字元配置一個新物件。
+- `xirr()` 那 246 個候選利率原本每次呼叫都重建一次。
 
 ## 行情額度與 klfan_quotes
 

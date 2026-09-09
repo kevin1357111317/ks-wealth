@@ -1,4 +1,4 @@
-import { localIsoDate, xirr } from './portfolio-core.js';
+import { localIsoDate, xirr } from './portfolio-core.js?v=xirr-fast-1';
 
 const number = value => {
   const parsed = Number(value);

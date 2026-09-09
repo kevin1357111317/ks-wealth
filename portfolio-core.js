@@ -49,25 +49,42 @@ export function effectivePrice(stock) {
   return live > 0 ? live : Math.max(0, number(stock.manualPrice));
 }
 
-export function xirr(cashflows) {
-  const flows = (cashflows ?? []).filter(flow => flow.date && Number.isFinite(Number(flow.amount)))
-    .map(flow => ({ date: String(flow.date), amount: Number(flow.amount) }));
-  if (!flows.some(flow => flow.amount > 0) || !flows.some(flow => flow.amount < 0)) return null;
-  const base = flows.reduce((earliest, flow) => flow.date < earliest ? flow.date : earliest, flows[0].date);
-  const baseMs = Date.parse(`${base}T00:00:00Z`);
-  const npv = rate => flows.reduce((sum, flow) => {
-    const years = (Date.parse(`${flow.date}T00:00:00Z`) - baseMs) / 86_400_000 / 365;
-    return sum + flow.amount / ((1 + rate) ** years);
-  }, 0);
+// 掃描用的候選利率跟每一次呼叫無關，建一次就好 —— 以前每算一檔標的都重建這 246 個數字。
+const XIRR_SCAN_RATES = (() => {
   const rates = [-0.9999, -0.999, -0.995, -0.99, -0.98, -0.95, -0.9, -0.85, -0.8,
     -0.7, -0.6, -0.5, -0.4, -0.3, -0.2, -0.1];
   for (let rate = -0.05; rate <= 1000; rate = rate < 1 ? rate + 0.01 : (rate < 10 ? rate + 0.1 : rate * 1.15)) {
     rates.push(Math.round(rate * 1e6) / 1e6);
   }
   rates.push(1000);
+  return Object.freeze(rates);
+})();
+
+export function xirr(cashflows) {
+  const flows = (cashflows ?? []).filter(flow => flow.date && Number.isFinite(Number(flow.amount)))
+    .map(flow => ({ date: String(flow.date), amount: Number(flow.amount) }));
+  if (!flows.some(flow => flow.amount > 0) || !flows.some(flow => flow.amount < 0)) return null;
+  const base = flows.reduce((earliest, flow) => flow.date < earliest ? flow.date : earliest, flows[0].date);
+  const baseMs = Date.parse(`${base}T00:00:00Z`);
+  // 每個現金流距離基準日幾年，只跟日期有關、跟利率無關 —— 先算好。
+  // 以前這行在 npv() 裡面，等於每試一個利率就把所有日期字串重新 Date.parse 一次；
+  // 一檔標的要試四百多個利率，1489 筆交易的整體年化就是幾十萬次字串解析。
+  const count = flows.length;
+  const years = new Float64Array(count);
+  const amounts = new Float64Array(count);
+  for (let i = 0; i < count; i += 1) {
+    years[i] = (Date.parse(`${flows[i].date}T00:00:00Z`) - baseMs) / 86_400_000 / 365;
+    amounts[i] = flows[i].amount;
+  }
+  const npv = rate => {
+    const growth = 1 + rate;
+    let sum = 0;
+    for (let i = 0; i < count; i += 1) sum += amounts[i] / (growth ** years[i]);
+    return sum;
+  };
   let previousRate = null;
   let previousValue = null;
-  for (const rate of rates) {
+  for (const rate of XIRR_SCAN_RATES) {
     const value = npv(rate);
     if (!Number.isFinite(value)) {
       previousRate = previousValue = null;
@@ -80,6 +97,9 @@ export function xirr(cashflows) {
       let high = rate;
       for (let i = 0; i < 200; i += 1) {
         const middle = (low + high) / 2;
+        // 中點已經等於某一端 = 兩端夾成相鄰的浮點數，再切下去 middle 不會變、
+        // low/high 也不會動。原本會空轉到第 200 圈，結果完全一樣。
+        if (middle === low || middle === high) break;
         const middleValue = npv(middle);
         if (Math.abs(middleValue) < 1e-9) return middle;
         if ((lowValue < 0) === (middleValue < 0)) {
@@ -152,11 +172,20 @@ export function holdingYears(stock, today = localIsoDate()) {
   return days > 0 ? days / 365 : 0;
 }
 
-export function calculateStockMetrics(stock, fxRate, today = localIsoDate()) {
+// 股數與市值：不需要交易歷史的年化，只要現在值多少。編輯表單與台帳同步只用得到這些，
+// 為了它們跑一次 XIRR 是白花的。
+export function calculateStockValue(stock, fxRate) {
   const shares = currentShares(stock);
   const price = effectivePrice(stock);
   const currentValueNative = shares > EPSILON ? shares * price : 0;
-  const currentValueTwd = stock.currency === 'USD' ? currentValueNative * number(fxRate) : currentValueNative;
+  return {
+    ...stock, shares, price, currentValueNative,
+    currentValueTwd: stock.currency === 'USD' ? currentValueNative * number(fxRate) : currentValueNative,
+  };
+}
+
+export function calculateStockMetrics(stock, fxRate, today = localIsoDate()) {
+  const { shares, price, currentValueNative, currentValueTwd } = calculateStockValue(stock, fxRate);
   const cashflows = (stock.transactions ?? []).map(tx => ({ date: tx.date, amount: number(tx.twd) }));
   const netInvestedTwd = -cashflows.reduce((sum, flow) => sum + flow.amount, 0);
   const dividendsTwd = (stock.transactions ?? []).filter(tx => tx.kind === 'dividend')

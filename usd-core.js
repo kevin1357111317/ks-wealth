@@ -1,7 +1,7 @@
 // 美金部位的成本用「移動加權平均」算，跟 KLFAN 試算表的「美金」工作表同一套：
 // 買進把台幣成本加進去、重算平均；賣出用當下的平均成本認列已實現匯兌損益，
 // 平均成本本身不動。股票那邊用的是 FIFO，兩者刻意不共用。
-import { localIsoDate, xirr } from './portfolio-core.js';
+import { localIsoDate, xirr } from './portfolio-core.js?v=xirr-fast-1';
 
 const EPSILON = 1e-9;
 
