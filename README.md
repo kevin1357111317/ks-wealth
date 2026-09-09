@@ -20,11 +20,22 @@
 - `loan-ui-fix.js`、`loan-month-summary.js`、`loan-month-core.js`：貸款畫面的後處理與月份彙總，見下一節
 - `v3.css`：主要手機優先 UI
 - `v3-trends.css`：趨勢、分類卡片與目前「布布一二的家」主題樣式
+- `health-core.js`、`health.css`：夫妻健檢年度資料整理、重點建議與重要指標趨勢
 - `supabase/functions/`：市場行情與每日快照等後端 Edge Functions
 - `supabase/migrations/`：已套用或用來重建正式 schema 的 migration 歷史
 - `supabase/proposals/`：不可直接執行的歷史提案與研究筆記
 
 `app.js` 與 `style.css` 是舊版保留檔案，目前沒有被正式 `index.html` 引用。
+
+## 夫妻健康報告
+
+首頁的「夫妻健康報告」進入獨立健康模組，可切換老公／老婆與年度。畫面最上方固定用最新年度
+整理具體行動，年度切換則用來查看當年重點；趨勢只顯示備孕或健康決策需要優先關注的指標，
+不把整張檢驗單原樣搬進 App。
+
+健康資料分成 `health_checkups`（年度主檔）與 `health_metrics`（指標明細），不寫進前端或 GitHub。
+兩張表都啟用 RLS，只允許同一 household 的已登入成員讀取；App 端刻意唯讀，後續報告先經人工
+核對再從可信任的管理路徑匯入。健康建議是依數值做的優先排序，不取代醫師診斷。
 
 ### 貸款畫面有兩層後處理，不是 app-v3 畫完就結束
 

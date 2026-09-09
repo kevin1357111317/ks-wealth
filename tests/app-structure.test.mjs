@@ -26,6 +26,7 @@ test('production shell loads the current app and PWA metadata', () => {
   // 而忘了改的下場是測試紅著、但 PWA 其實載的是舊 bundle。
   assert.match(html, /app-v3\.js\?v=[\w-]+/);
   assert.match(html, /portfolio\.css\?v=[\w-]+/);
+  assert.match(html, /health\.css\?v=[\w-]+/);
   assert.match(html, /manifest\.webmanifest/);
   assert.match(html, /apple-mobile-web-app-title" content="布布一二的家"/);
   assert.doesNotMatch(html, /src="\/app\.js/);

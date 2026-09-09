@@ -15,6 +15,7 @@ import { calculatePortfolio, decodePortfolioBootstrap } from './portfolio-core.j
 import { calculateUsd } from './usd-core.js?v=usd-1';
 import { calculateGold } from './gold-core.js?v=gold-trim-1';
 import { calculateLoanCashflow } from './loan-core.js?v=cashflow-1';
+import { buildHealthInsights, buildHealthModel } from './health-core.js?v=V3';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -86,6 +87,9 @@ let ledgerFlight = null;
 // 美金部位自己一本帳，跟 financial_items 沒有連動：買賣只在美金分析頁裡進出。
 let usdTransactions = [];
 let goldTransactions = [];
+let healthCheckups = [];
+let healthMetrics = [];
+let healthSelectedYear = null;
 let loanAccounts = [];
 // 還款排程有 837 列，只有貸款分析頁要用，跟台帳一樣點進去才載。
 let loanSchedule = [];
@@ -97,7 +101,7 @@ let expandedLoan = null;   // 就地展開的那一筆，一次只開一個
 let loanNextDue = {};
 let autopayCheckedOn = null;
 let loanTypeFilter = 'personal';   // 貸款分析預設先看信貸，可切換增貸／房貸
-let analysisScreen = null;   // 'stocks'｜'usd'｜'gold'｜'loans'，null 就是一般的資產頁
+let analysisScreen = null;   // 'stocks'｜'usd'｜'gold'｜'loans'｜'health'，null 就是一般的資產頁
 let analysisOwner = 'husband';   // 分析頁看的是誰的部位
 let expandedStock = null;   // 台帳清單裡就地展開的那一檔，一次只開一個
 // 分析頁是狀態切換不是換頁，返回手勢預設不會有反應。進去時推一筆歷史，
@@ -522,6 +526,9 @@ async function applySession(nextSession) {
   analysisOwner = 'husband';
   usdTransactions = [];
   goldTransactions = [];
+  healthCheckups = [];
+  healthMetrics = [];
+  healthSelectedYear = null;
   expandedStock = null;
   analysisPushed = false;
   analysisReturnScroll = 0;
@@ -600,7 +607,8 @@ async function loadData({ blocking = false } = {}) {
   if (loadFlight) return loadFlight;
   const householdId = member.household_id;
   loadFlight = (async () => {
-    const [itemResult, familyHistoryResult, householdResult, scopeHistoryResult, usdResult, goldResult, loanResult, nextDueResult] = await Promise.all([
+    const [itemResult, familyHistoryResult, householdResult, scopeHistoryResult, usdResult, goldResult,
+      loanResult, nextDueResult, healthCheckupResult, healthMetricResult] = await Promise.all([
       sb.from('financial_items').select('*').eq('household_id', householdId).order('sort_order'),
       // 這三張表也走分頁：淨值快照一天一列，放個三年就會撞到 1000 列的上限
       fetchAllRows(() => sb.from('net_worth_history').select('*').eq('household_id', householdId).order('recorded_on')),
@@ -611,8 +619,12 @@ async function loadData({ blocking = false } = {}) {
       sb.from('loan_accounts').select('*').eq('household_id', householdId).order('start_date'),
       sb.from('loan_schedule').select('loan_account_id,due_date,amount_twd')
         .eq('entry_type', 'payment').is('applied_at', null).order('due_date').range(0, 299),
+      fetchAllRows(() => sb.from('health_checkups').select('*')
+        .eq('household_id', householdId).order('checkup_year')),
+      fetchAllRows(() => sb.from('health_metrics').select('*').order('sort_order').order('id')),
     ]);
-    const failure = [itemResult.error, familyHistoryResult.error, householdResult.error, scopeHistoryResult.error].find(Boolean);
+    const failure = [itemResult.error, familyHistoryResult.error, householdResult.error, scopeHistoryResult.error,
+      healthCheckupResult.error, healthMetricResult.error].find(Boolean);
     if (failure) throw failure;
     if (!member || member.household_id !== householdId) return false;
 
@@ -624,6 +636,8 @@ async function loadData({ blocking = false } = {}) {
     if (!usdResult.error) usdTransactions = usdResult.data ?? [];
     if (!goldResult.error) goldTransactions = goldResult.data ?? [];
     if (!loanResult.error) loanAccounts = loanResult.data ?? [];
+    healthCheckups = healthCheckupResult.data ?? [];
+    healthMetrics = healthMetricResult.data ?? [];
     if (!nextDueResult.error) {
       loanNextDue = {};
       for (const row of nextDueResult.data ?? []) {
@@ -872,6 +886,7 @@ function dashboard() {
   const family = summary();
   const husband = summary('husband');
   const wife = summary('wife');
+  const health = buildHealthModel(healthCheckups, healthMetrics, 'wife');
   const husbandShare = family.totalAssets ? husband.totalAssets / family.totalAssets * 100 : 0;
   const wifeShare = family.totalAssets ? wife.totalAssets / family.totalAssets * 100 : 0;
   const ownerDistribution = `<section class="panel"><div class="panelTitle"><div><h2>夫妻資產分布</h2></div></div><div class="ownerGrid"><div class="ownerTile"><span>老公資產</span><b>NT$ ${formatNumber(husband.totalAssets)}</b><small>占家庭資產 ${husbandShare.toFixed(1)}%</small></div><div class="ownerTile"><span>老婆資產</span><b>NT$ ${formatNumber(wife.totalAssets)}</b><small>占家庭資產 ${wifeShare.toFixed(1)}%</small></div></div></section>`;
@@ -881,7 +896,12 @@ function dashboard() {
   const distributionTotal = distributionKind === 'asset' ? family.totalAssets : family.totalLiabilities;
   const distributionTitle = distributionKind === 'asset' ? '家庭資產分布' : '家庭負債分布';
 
-  shell(`<section class="portfolioHero"><div class="heroLabel"><span>家庭淨資產</span><span>老公＋老婆</span></div><div class="bigMoney">${formatMoney(family.netWorth)}</div><div class="miniStats"><div><span>家庭總資產</span><b>NT$ ${formatNumber(family.totalAssets)}</b></div><div><span>家庭總負債</span><b>NT$ ${formatNumber(family.totalLiabilities)}</b></div></div></section>${trendChart(familyTrendRows(family.netWorth))}${distributionPanel(distributionRows, distributionTotal, distributionTitle, distributionKind)}${ownerDistribution}`, '家庭');
+  const healthCopy = health.latest
+    ? `老婆 ${health.latest.checkup_year} 年健檢已整理 · 查看重點與趨勢`
+    : '整理夫妻歷年健檢、異常趨勢與備孕行動';
+  const healthEntry = `<button class="healthHomeEntry" data-open-health><div><small>FAMILY HEALTH</small><b>夫妻健康報告</b><span>${healthCopy}</span></div><i>♡</i></button>`;
+  shell(`<section class="portfolioHero"><div class="heroLabel"><span>家庭淨資產</span><span>老公＋老婆</span></div><div class="bigMoney">${formatMoney(family.netWorth)}</div><div class="miniStats"><div><span>家庭總資產</span><b>NT$ ${formatNumber(family.totalAssets)}</b></div><div><span>家庭總負債</span><b>NT$ ${formatNumber(family.totalLiabilities)}</b></div></div></section>${healthEntry}${trendChart(familyTrendRows(family.netWorth))}${distributionPanel(distributionRows, distributionTotal, distributionTitle, distributionKind)}${ownerDistribution}`, '家庭');
+  root.querySelector('[data-open-health]').onclick = () => openAnalysis('health', health.latest ? 'wife' : 'husband');
 }
 
 function distributionPanel(rows, total, title, kind) {
@@ -930,6 +950,95 @@ function analysisEntry() {
 // 分析頁只看單一個人的部位。全部合起來的 portfolioModel 還是要留著 ——
 // 編輯表單與 syncPortfolioFinancialItem() 是照 key 找標的，跟歸屬無關。
 const ownerName = ownerScope => ownerScope === 'wife' ? '老婆' : '老公';
+
+const healthStatusText = status => ({
+  normal: '正常', low: '偏低', high: '偏高', watch: '留意', positive: '陽性', info: '參考',
+}[status] ?? '參考');
+
+function healthMetricValue(metric) {
+  if (!metric) return '—';
+  if (metric.value_text) return escapeHtml(metric.value_text);
+  if (metric.value_numeric === null || metric.value_numeric === undefined) return '—';
+  const value = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 2 }).format(metric.value_numeric);
+  return `${value}${metric.unit ? ` ${escapeHtml(metric.unit)}` : ''}`;
+}
+
+function healthTrendCard(model, report, key) {
+  const series = model.series(key);
+  const selected = model.metric(report, key);
+  if (!series.length || !selected) return '';
+  const boundary = selected.reference_high ?? selected.reference_low;
+  const values = series.map(point => point.value).concat(boundary === null ? [] : [boundary]);
+  let min = Math.min(...values);
+  let max = Math.max(...values);
+  const pad = Math.max((max - min) * .24, Math.abs(max || 1) * .045, .5);
+  min -= pad;
+  max += pad;
+  const x = index => series.length === 1 ? 140 : 16 + index * (268 / (series.length - 1));
+  const y = value => 91 - ((value - min) / (max - min || 1)) * 70;
+  const points = series.map((point, index) => `${x(index)},${y(point.value)}`).join(' ');
+  const ref = boundary === null ? '' : `<line class="healthRef" x1="16" y1="${y(boundary)}" x2="284" y2="${y(boundary)}"/>`;
+  const labels = series.map((point, index) => `<text x="${x(index)}" y="107" text-anchor="middle">${point.year}</text>`).join('');
+  const dots = series.map((point, index) => `<circle class="healthDot" cx="${x(index)}" cy="${y(point.value)}" r="4"/>`).join('');
+  const normal = selected.status === 'normal' || selected.status === 'info';
+  return `<article class="healthTrendCard"><div class="healthTrendHead"><div><span>${escapeHtml(selected.label)}</span><b>${healthMetricValue(selected)}</b></div><i class="healthTrendStatus ${normal ? 'normal' : ''}">${healthStatusText(selected.status)}</i></div><svg viewBox="0 0 300 112" role="img" aria-label="${escapeHtml(selected.label)}歷年趨勢"><line class="healthGrid" x1="16" y1="91" x2="284" y2="91"/>${ref}<polyline class="healthLine" points="${points}"/>${dots}${labels}</svg></article>`;
+}
+
+function healthValueChip(model, report, key) {
+  const metric = model.metric(report, key);
+  if (!metric) return '';
+  return `<div class="healthValue"><span>${escapeHtml(metric.label)}</span><b>${healthMetricValue(metric)}</b></div>`;
+}
+
+function healthDomainCard(model, report, title, status, keys, copy) {
+  const values = keys.map(key => healthValueChip(model, report, key)).filter(Boolean).join('');
+  if (!values) return '';
+  return `<article class="healthDomain"><div class="healthDomainHead"><b>${title}</b><span>${status}</span></div><div class="healthValues">${values}</div><p>${copy}</p></article>`;
+}
+
+function healthOwnerControl() {
+  return `<div class="seg healthPersonSeg"><button data-health-owner="husband" class="${analysisOwner === 'husband' ? 'on' : ''}">老公</button><button data-health-owner="wife" class="${analysisOwner === 'wife' ? 'on' : ''}">老婆</button></div>`;
+}
+
+function bindHealthControls() {
+  root.querySelectorAll('[data-health-owner]').forEach(button => { button.onclick = () => {
+    analysisOwner = button.dataset.healthOwner;
+    healthSelectedYear = null;
+    render();
+    window.scrollTo(0, 0);
+  }; });
+  root.querySelectorAll('[data-health-year]').forEach(button => { button.onclick = () => {
+    healthSelectedYear = Number(button.dataset.healthYear);
+    render();
+  }; });
+}
+
+function healthPage() {
+  const model = buildHealthModel(healthCheckups, healthMetrics, analysisOwner);
+  if (!model.latest) {
+    shell(`<div class="healthView">${healthOwnerControl()}<div class="healthEmpty"><b>尚未匯入${ownerName(analysisOwner)}健檢資料</b><span>之後提供報告，就會自動加入年度趨勢。</span></div></div>`, `${ownerName(analysisOwner)}健康報告`);
+    bindHealthControls();
+    return;
+  }
+
+  const selectedYear = model.reports.some(report => report.checkup_year === healthSelectedYear)
+    ? healthSelectedYear : model.latest.checkup_year;
+  const report = model.reports.find(row => row.checkup_year === selectedYear) ?? model.latest;
+  const insights = buildHealthInsights(model, analysisOwner);
+  const advice = `<section class="healthAdvice"><div class="healthAdviceHead"><div><span>${model.latest.checkup_year} 年重點</span><h2>今年與未來的改善方向</h2></div></div><div class="healthActionList">${insights.map(insight => `<article class="healthAction ${insight.tone}"><div class="healthActionTop"><i class="healthBadge">${escapeHtml(insight.badge)}</i><b>${escapeHtml(insight.title)}</b></div><p>${escapeHtml(insight.body)}</p><strong>具體行動｜${escapeHtml(insight.action)}</strong></article>`).join('')}</div><p class="healthDisclaimer">依健檢趨勢提供優先順序，不等同診斷；若有不適、懷孕或醫師已有不同指示，以臨床評估為準。</p></section>`;
+  const yearControl = `<div class="seg healthYearSeg">${model.reports.map(row => `<button data-health-year="${row.checkup_year}" class="${row.checkup_year === selectedYear ? 'on' : ''}">${row.checkup_year}</button>`).join('')}</div>`;
+  const trends = ['mcv', 'hemoglobin', 'afp', 'total_cholesterol']
+    .map(key => healthTrendCard(model, report, key)).filter(Boolean).join('');
+  const domains = [
+    healthDomainCard(model, report, '紅血球型態', '備孕前優先釐清', ['rbc', 'hemoglobin', 'mcv', 'mch', 'rdw_cv'], '紅血球偏小的型態已連續出現；先區分缺鐵與血紅蛋白帶因，不直接把它當成單純缺鐵。'),
+    healthDomainCard(model, report, 'AFP', '非急診追蹤', ['afp', 'alt'], 'AFP 是非特異性指標；搭配肝功能、肝炎狀態與影像，由醫師判斷追蹤間隔。'),
+    healthDomainCard(model, report, '尿液檢查', '重新採樣確認', ['urine_turbidity', 'urine_leukocyte', 'urine_protein'], '先用正確中段尿複查，才能區分採樣污染、無症狀菌尿或其他泌尿道問題。'),
+    healthDomainCard(model, report, '血脂結構', '目前非首要問題', ['total_cholesterol', 'ldl_c', 'hdl_c', 'triglyceride', 'non_hdl_c'], '總膽固醇雖超過報告門檻，但要連同 LDL、非 HDL、三酸甘油脂與整體風險一起看，不宜只憑總膽固醇判定。'),
+  ].filter(Boolean).join('');
+
+  shell(`<div class="healthView">${healthOwnerControl()}${advice}${yearControl}<div class="sectionHead"><span>重要指標趨勢</span><b>${model.reports.length} 個年度</b></div><div class="healthTrendGrid">${trends}</div><div class="sectionHead"><span>${selectedYear} 年重點指標</span><b>${report.source_label ? escapeHtml(report.source_label) : '年度健檢'}</b></div><div class="healthDomainList">${domains}</div></div>`, `${ownerName(analysisOwner)}健康報告`);
+  bindHealthControls();
+}
 
 function ownerPortfolioModel(ownerScope) {
   return calculatePortfolio(portfolioStocks.filter(stock => stock.ownerScope === ownerScope), fxRate);
@@ -1038,6 +1147,7 @@ async function syncPortfolioFinancialItem(stockKey, { ownerScope, notes } = {}) 
 }
 
 function analysisPage() {
+  if (analysisScreen === 'health') return healthPage();
   if (analysisScreen === 'usd') return usdPage();
   if (analysisScreen === 'gold') return goldPage();
   if (analysisScreen === 'loans') return loanPage();
