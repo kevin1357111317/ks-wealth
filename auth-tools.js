@@ -1,7 +1,7 @@
 import{createClient}from'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.95.0/+esm';
 
 const APP_URL='https://ks-bubu-yier.vercel.app';
-const sbAuth=createClient('https://gbxsnwqbjmgfikpblyot.supabase.co','sb_publishable_VtGM8w7CqxDB_3NaROR8OA_H0txX-_I',{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+const sbAuth=window.KS_SUPABASE_CLIENT??createClient('https://gbxsnwqbjmgfikpblyot.supabase.co','sb_publishable_VtGM8w7CqxDB_3NaROR8OA_H0txX-_I',{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});window.KS_SUPABASE_CLIENT=sbAuth;
 
 const validEmail=v=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 function helperMessage(text,error=false){let box=document.querySelector('#authhelpermsg');if(!box)return;box.className=error?'message error':'message';box.textContent=text}

@@ -4,6 +4,7 @@ import test from 'node:test';
 
 const source = await readFile(new URL('../app-v3.js', import.meta.url), 'utf8');
 const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+const authTools = await readFile(new URL('../auth-tools.js', import.meta.url), 'utf8');
 
 test('initial data renders before realtime and background quotes', () => {
   const resolver = source.slice(source.indexOf('async function resolveMembership'), source.indexOf('async function applySession'));
@@ -30,4 +31,11 @@ test('production shell loads the current app and PWA metadata', () => {
   assert.match(html, /manifest\.webmanifest/);
   assert.match(html, /apple-mobile-web-app-title" content="布布一二的家"/);
   assert.doesNotMatch(html, /src="\/app\.js/);
+});
+
+test('auth helpers and the app reuse one Supabase auth client', () => {
+  assert.match(authTools, /window\.KS_SUPABASE_CLIENT\?\?createClient/);
+  assert.match(authTools, /window\.KS_SUPABASE_CLIENT=sbAuth/);
+  assert.match(source, /window\.KS_SUPABASE_CLIENT \?\? createClient/);
+  assert.match(html, /auth-tools\.js\?v=[\w-]+/);
 });
