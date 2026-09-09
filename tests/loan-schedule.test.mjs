@@ -95,12 +95,12 @@ db.loan_schedule.push(...${JSON.stringify(schedule)});`;
     assert.equal(await page.locator('.loanCard').count(), 3, '一筆進行中與兩筆已結清信貸');
 
     await page.click('[data-loan-type="topup"]');
-    assert.match(await page.textContent('.loanSummary'), /NT\$ 700,000.*NT\$ 7,000/s);
+    assert.match(await page.textContent('.loanSummary'), /NT\$ 700,000.*加權平均利率2\.50%/s);
     assert.match(await page.textContent('.loanList'), /測試增貸/);
     assert.doesNotMatch(await page.textContent('.loanList'), /元大銀行信貸/);
 
     await page.click('[data-loan-type="mortgage"]');
-    assert.match(await page.textContent('.loanSummary'), /NT\$ 9,000,000.*NT\$ 40,000/s);
+    assert.match(await page.textContent('.loanSummary'), /NT\$ 9,000,000.*加權平均利率2\.10%/s);
     assert.match(await page.textContent('.loanList'), /測試房貸/);
 
     await page.click('[data-loan-type="personal"]');
@@ -143,9 +143,13 @@ db.loan_schedule.push(...${JSON.stringify(schedule)});`;
     assert.equal(await page.locator('.loanDetail').count(), 0);
   });
 
-  await t.test('每月還款旁邊帶出平均每天要還多少', async () => {
-    // 10,606 × 12 ÷ 365 ≈ 349
-    assert.match(await page.textContent('.loanSummary'), /平均每天 NT\$ 349/);
+  // 「每月還款／平均每天」那一格被 loan-month-summary.js 換成「本月剩餘還款」了，
+  // 它自己去 Supabase 抓當月還沒扣的期數，測試環境連不出去所以停在「更新中…」。
+  await t.test('摘要換成本月剩餘還款與加權平均利率', async () => {
+    const summary = await page.textContent('.loanSummary');
+    assert.match(summary, /本月剩餘還款/);
+    assert.match(summary, /加權平均利率3\.75%/);
+    assert.doesNotMatch(summary, /平均每天/, '舊的那一格已經被換掉');
   });
 
   assert.deepEqual(failures, [], '瀏覽器不該有錯誤');

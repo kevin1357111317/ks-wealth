@@ -13,7 +13,7 @@ import {
 } from './financial-core.js?v=hide-sold-out-1';
 import { calculatePortfolio, decodePortfolioBootstrap } from './portfolio-core.js?v=owner-scope-1';
 import { calculateUsd } from './usd-core.js?v=usd-1';
-import { calculateGold } from './gold-core.js?v=gold-3';
+import { calculateGold } from './gold-core.js?v=gold-given-away-1';
 import { calculateLoanCashflow } from './loan-core.js?v=cashflow-1';
 
 // App / Supabase -------------------------------------------------------------
@@ -1054,7 +1054,7 @@ const gramFormat = value => masked
   : new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 4 }).format(toFiniteNumber(value));
 
 function goldTransactionRow(row) {
-  return `<div class="portfolioTx goldTx"><div class="portfolioTxWhen"><b>${escapeHtml(row.name)}</b><small>${escapeHtml(row.date)}${row.note ? ` · ${escapeHtml(row.note)}` : ''}</small></div><div class="portfolioTxAmount"><b class="negative">−NT$ ${formatNumber(row.costTwd)}</b><small>${gramFormat(row.grams)} g${row.workmanshipTwd ? ` · 含工錢 NT$ ${formatNumber(row.workmanshipTwd)}` : ''}${row.includeInPerformance ? '' : ' · 不計入年化'}</small></div></div>`;
+  return `<div class="portfolioTx goldTx"><div class="portfolioTxWhen"><b>${escapeHtml(row.name)}</b><small>${escapeHtml(row.date)}${row.note ? ` · ${escapeHtml(row.note)}` : ''}</small></div><div class="portfolioTxAmount"><b class="negative">−NT$ ${formatNumber(row.costTwd)}</b><small>${gramFormat(row.grams)} g${row.workmanshipTwd ? ` · 含工錢 NT$ ${formatNumber(row.workmanshipTwd)}` : ''}${!row.stillHeld ? ' · 已送出，只留紀錄' : row.includeInPerformance ? '' : ' · 不計入年化'}</small></div></div>`;
 }
 
 // 目前重量與市值沿用資產頁的即時黃金行情；成本與投入時點來自 KLFAN 黃金工作表。
@@ -1062,10 +1062,12 @@ function goldPage() {
   const model = ownerGoldModel(analysisOwner);
   const rows = [...model.rows].reverse();
   const resultTone = model.trackedProfitTwd >= 0 ? 'up' : 'down';
+  // 送出去的克數不進部位也不進核對，只在後面補一句說有這幾筆紀錄在
+  const givenNote = model.givenGrams ? `；另有 ${gramFormat(model.givenGrams)} g 已送出，只留紀錄` : '';
   const reconciliation = model.reconciled
-    ? `<div class="goldReconcile ok"><b>重量已核對</b><span>成本台帳與資產頁都是 ${gramFormat(model.holdingGrams)} g${model.excludedGrams ? `；其中 ${gramFormat(model.excludedGrams)} g 不計入年化` : ''}</span></div>`
-    : `<div class="goldReconcile warn"><b>尚有 ${gramFormat(model.untrackedGrams)} g 缺少買進成本</b><span>資產頁 ${gramFormat(model.holdingGrams)} g；台帳已記錄 ${gramFormat(model.trackedGrams + model.excludedGrams)} g。下方報酬不把差額當成零成本。</span></div>`;
-  shell(`<div class="portfolioView"><div class="portfolioSummary"><div class="portfolioMetric"><span>目前黃金部位</span><b>${gramFormat(model.holdingGrams)} g</b><small>${model.transactions} 筆成本紀錄</small></div><div class="portfolioMetric"><span>目前台幣市值</span><b>NT$ ${formatNumber(model.currentValueTwd)}</b><small>每公克約 NT$ ${formatNumber(model.pricePerGram)}</small></div><div class="portfolioMetric"><span>納入年化投入成本</span><b>NT$ ${formatNumber(model.trackedCostTwd)}</b><small>${gramFormat(model.trackedGrams)} g</small></div><div class="portfolioMetric"><span>納入年化目前價值</span><b>NT$ ${formatNumber(model.trackedValueTwd)}</b><small>目前金價＋工錢 NT$ ${formatNumber(model.retainedWorkmanshipTwd)}</small></div><div class="portfolioMetric"><span>納入年化損益</span><b class="${resultTone}">NT$ ${formatNumber(model.trackedProfitTwd)}</b><small>${formatPercent(model.trackedReturnRate)}</small></div><div class="portfolioMetric"><span>年化報酬率</span><b class="${resultTone}">${formatPercent(model.xirr)}</b><small>排除標記不計入的紀錄</small></div></div>${reconciliation}<div class="sectionHead"><span>買進紀錄${model.firstTradeDate ? ` · 自 ${escapeHtml(model.firstTradeDate)}` : ''}</span><b>${model.transactions} 筆</b></div><div class="portfolioTxList">${rows.length ? rows.map(goldTransactionRow).join('') : '<div class="portfolioEmpty">還沒有黃金成本紀錄。</div>'}</div></div>`, `${ownerName(analysisOwner)}黃金分析`);
+    ? `<div class="goldReconcile ok"><b>重量已核對</b><span>成本台帳與資產頁都是 ${gramFormat(model.holdingGrams)} g${model.excludedGrams ? `；其中 ${gramFormat(model.excludedGrams)} g 不計入年化` : ''}${givenNote}</span></div>`
+    : `<div class="goldReconcile warn"><b>尚有 ${gramFormat(model.untrackedGrams)} g 缺少買進成本</b><span>資產頁 ${gramFormat(model.holdingGrams)} g；台帳已記錄 ${gramFormat(model.trackedGrams + model.excludedGrams)} g。下方報酬不把差額當成零成本${givenNote}。</span></div>`;
+  shell(`<div class="portfolioView"><div class="portfolioSummary"><div class="portfolioMetric"><span>目前黃金部位</span><b>${gramFormat(model.holdingGrams)} g</b><small>${model.heldTransactions} 筆成本紀錄</small></div><div class="portfolioMetric"><span>目前台幣市值</span><b>NT$ ${formatNumber(model.currentValueTwd)}</b><small>每公克約 NT$ ${formatNumber(model.pricePerGram)}</small></div><div class="portfolioMetric"><span>納入年化投入成本</span><b>NT$ ${formatNumber(model.trackedCostTwd)}</b><small>${gramFormat(model.trackedGrams)} g</small></div><div class="portfolioMetric"><span>納入年化目前價值</span><b>NT$ ${formatNumber(model.trackedValueTwd)}</b><small>目前金價＋工錢 NT$ ${formatNumber(model.retainedWorkmanshipTwd)}</small></div><div class="portfolioMetric"><span>納入年化損益</span><b class="${resultTone}">NT$ ${formatNumber(model.trackedProfitTwd)}</b><small>${formatPercent(model.trackedReturnRate)}</small></div><div class="portfolioMetric"><span>年化報酬率</span><b class="${resultTone}">${formatPercent(model.xirr)}</b><small>排除標記不計入的紀錄</small></div></div>${reconciliation}<div class="sectionHead"><span>買進紀錄${model.firstTradeDate ? ` · 自 ${escapeHtml(model.firstTradeDate)}` : ''}</span><b>${model.transactions} 筆</b></div><div class="portfolioTxList">${rows.length ? rows.map(goldTransactionRow).join('') : '<div class="portfolioEmpty">還沒有黃金成本紀錄。</div>'}</div></div>`, `${ownerName(analysisOwner)}黃金分析`);
 }
 
 function ownerLoanRows(ownerScope) {
