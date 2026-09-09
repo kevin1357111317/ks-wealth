@@ -69,7 +69,6 @@ export function calculateGold(transactions, goldItems, today = localIsoDate()) {
     untrackedGrams,
     reconciled: Math.abs(holdingGrams - accountedGrams) < 0.0001,
     transactions: rows.length,
-    heldTransactions: heldRows.length,
     performanceTransactions: performanceRows.length,
     firstTradeDate: rows[0]?.date ?? null,
   };

@@ -18,7 +18,6 @@ const klfan = [
 test('依 KLFAN 黃金交易重算，不沿用漏掉兩筆 2.5g 的舊快取', () => {
   const model = calculateGold(klfan, [{ market: 'GOLD', quantity: 199.3105, amount_twd: 882215 }], '2026-09-09');
   assert.equal(model.transactions, 7);
-  assert.equal(model.heldTransactions, 5);
   assert.equal(model.performanceTransactions, 5);
   assert.equal(model.trackedGrams, 199.3105);
   assert.equal(model.excludedGrams, 0);
@@ -73,6 +72,10 @@ test('黃金分析入口、資料表與頁面已接進 App', async () => {
   assert.match(app, /目前金價＋工錢/);
   assert.match(app, /不計入年化/);
   assert.match(app, /已送出，只留紀錄/);
+  // 對得起來的時候不再畫「重量已核對」那一格 —— 克數跟投入成本那一格重複了
+  assert.doesNotMatch(app, /重量已核對/);
+  assert.doesNotMatch(app, /目前黃金部位/);
+  assert.doesNotMatch(app, /每公克約/);
   assert.match(migration, /create table if not exists public\.gold_transactions/);
   assert.match(migration, /grant select, insert, update, delete on public\.gold_transactions to authenticated/);
   // 資產頁的重量一定要跟著扣，不然核對那一格會一直喊少 5g
