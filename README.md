@@ -16,12 +16,33 @@
 - `financial-core.js`：金額正規化、範圍篩選與彙總計算
 - `auth-tools.js`：密碼重設等 Auth 輔助流程
 - `sheet-gesture.js`：手機 Sheet 關閉手勢
+- `app-version.js`：正式版號的唯一來源，並在標題右邊掛版號膠囊（規則見 `VERSIONING.md`）
+- `loan-ui-fix.js`、`loan-month-summary.js`：貸款畫面的後處理層，見下一節
 - `v3.css`：主要手機優先 UI
 - `v3-trends.css`：趨勢、分類卡片與目前「布布一二的家」主題樣式
 - `supabase/functions/`：市場行情與每日快照等後端 Edge Functions
 - `supabase/migrations/`：資料庫 schema 歷史；不代表每個 proposed migration 都已套用
 
 `app.js` 與 `style.css` 是舊版保留檔案，目前沒有被正式 `index.html` 引用。
+
+### 貸款畫面有兩層後處理，不是 app-v3 畫完就結束
+
+`loan-ui-fix.js` 與 `loan-month-summary.js` 都掛 `MutationObserver` 在 `#root` 上，等
+`app-v3.js` 的 `render()` 畫完再改 DOM。**改貸款畫面時只看 `app-v3.js` 的樣板會對不上實際
+畫面**：
+
+- `loan-ui-fix.js`：把卡片頭的欄位搬進展開的明細、拿掉重複的格子，而且「貸款年限」是
+  從已繳期數的**分母**推出來的（所以排程抓不齊時年限會跟著錯，見「排程要分頁抓」那節）
+- `loan-month-summary.js`：把摘要的「每月還款／平均每天」換成「本月剩餘還款」，自己帶
+  publishable key、從 localStorage 讀 auth token，直接打 PostgREST 算當月還沒扣的期數，
+  結果存在 localStorage 當天快取
+
+第二支不走 `app-v3.js` 的 supabase client，所以測試裡的假 client 攔不到它 —— 瀏覽器測試
+看到的那一格會停在「更新中…」，斷言要對著這個狀態寫，不要對著 `app-v3.js` 的原始樣板寫。
+
+observer 會被自己的改動再次觸發，兩支都各自用「同一個節點不重複改寫」的方式擋住
+（`dataset.remainingMonthKey`、文字比對）。卡片收放的捲動釘位要等到它們都安靜下來才量得準，
+所以 `pinLoanCard()` 是「量到穩定為止」而不是固定幀數。
 
 ## 資料與計算
 
@@ -368,6 +389,15 @@ select name, count(*) filter (where entry_type = 'payment') from ranked where rn
 
 餘額沒被寫壞（另一支遷移後來蓋回去了），但那些欄位是垃圾。現在天數與利息都夾在 0 以上，
 `prev` 也只會往前走不會倒退。
+
+### 最後一期繳完自動結清
+
+`apply_due_loan_payments()` 跑完一筆貸款之後，如果本金已經歸零**而且**沒有任何還沒套用的
+payment 排程，就把 `status` 轉成 `closed`、`autopay` 關掉、`amount_twd` 歸零。
+`closed_on` 用最後一筆實際套用的應繳日，不是使用者晚幾天才打開 App 的那天。
+
+兩個條件要同時成立才結清：只看餘額歸零的話，寬限期或資料異常會誤判；只看排程跑完的話，
+有殘餘本金也會被清掉。
 
 ### 繳款日自動扣款
 
