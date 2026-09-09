@@ -18,8 +18,8 @@ export function normalizeGoldTransaction(row) {
   };
 }
 
-// 每筆買進視為台幣流出，並在今天用目前可變現金價做最後一筆流入。
-// 工錢已包含在買進成本；沒有真實回售估價前，不假設工錢可以回收。
+// 每筆買進視為台幣流出，並在今天用目前金價加上保留工錢做最後一筆流入。
+// 工錢已包含在買進成本，期末價值依使用者的資產估值口徑加回。
 export function calculateGold(transactions, goldItems, today = localIsoDate()) {
   const rows = (transactions ?? []).map(normalizeGoldTransaction)
     .filter(row => row.date && row.costTwd > 0 && row.grams > 0)
@@ -34,7 +34,8 @@ export function calculateGold(transactions, goldItems, today = localIsoDate()) {
   const excludedGrams = excludedRows.reduce((sum, row) => sum + row.grams, 0);
   const trackedCostTwd = performanceRows.reduce((sum, row) => sum + row.costTwd, 0);
   const workmanshipTwd = rows.reduce((sum, row) => sum + row.workmanshipTwd, 0);
-  const trackedValueTwd = pricePerGram > 0 ? trackedGrams * pricePerGram : 0;
+  const retainedWorkmanshipTwd = performanceRows.reduce((sum, row) => sum + row.workmanshipTwd, 0);
+  const trackedValueTwd = pricePerGram > 0 ? trackedGrams * pricePerGram + retainedWorkmanshipTwd : 0;
   const trackedProfitTwd = trackedValueTwd - trackedCostTwd;
   const cashflows = performanceRows.map(row => ({ date: row.date, amount: -row.costTwd }));
   if (trackedValueTwd > 0) cashflows.push({ date: today, amount: trackedValueTwd });
@@ -49,6 +50,7 @@ export function calculateGold(transactions, goldItems, today = localIsoDate()) {
     excludedGrams,
     trackedCostTwd,
     workmanshipTwd,
+    retainedWorkmanshipTwd,
     trackedValueTwd,
     trackedProfitTwd,
     trackedReturnRate: trackedCostTwd > 0 ? trackedProfitTwd / trackedCostTwd : null,
