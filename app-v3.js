@@ -21,8 +21,10 @@ import {
   buildHealthInsights,
   buildHealthModel,
   healthReferenceBoundaries,
+  healthReferenceMarkers,
+  healthReferenceState,
   selectHealthTrendKeys,
-} from './health-core.js?v=V3P5';
+} from './health-core.js?v=V3P6';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -985,22 +987,27 @@ function healthTrendCard(model, report, key) {
   const selected = model.metric(report, key);
   if (!series.length || !selected) return '';
   const boundaries = healthReferenceBoundaries(selected);
+  const referenceMarkers = healthReferenceMarkers(selected);
   const values = series.map(point => point.value).concat(boundaries);
   let min = Math.min(...values);
   let max = Math.max(...values);
-  const pad = Math.max((max - min) * .24, Math.abs(max || 1) * .045, .5);
+  const pad = Math.max((max - min) * .2, Math.abs(max || 1) * .045, .5);
   min -= pad;
   max += pad;
-  const x = index => series.length === 1 ? 140 : 16 + index * (268 / (series.length - 1));
-  const y = value => 91 - ((value - min) / (max - min || 1)) * 70;
+  const x = index => series.length === 1 ? 170 : 20 + index * (300 / (series.length - 1));
+  const y = value => 145 - ((value - min) / (max - min || 1)) * 112;
   const points = series.map((point, index) => `${x(index)},${y(point.value)}`).join(' ');
-  const ref = boundaries
-    .map(boundary => `<line class="healthRef" x1="16" y1="${y(boundary)}" x2="284" y2="${y(boundary)}"/>`)
+  const rangeBand = referenceMarkers.length === 2
+    ? `<rect class="healthRefBand" x="20" y="${Math.min(...referenceMarkers.map(marker => y(marker.value)))}" width="300" height="${Math.abs(y(referenceMarkers[0].value) - y(referenceMarkers[1].value))}"/>`
+    : '';
+  const ref = referenceMarkers
+    .map(marker => `<g><line class="healthRef" x1="20" y1="${y(marker.value)}" x2="320" y2="${y(marker.value)}"/><text class="healthRefLabel" x="316" y="${Math.max(14, y(marker.value) - 5)}" text-anchor="end">${marker.label} ${new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 2 }).format(marker.value)}</text></g>`)
     .join('');
-  const labels = series.map((point, index) => `<text x="${x(index)}" y="107" text-anchor="middle">${point.year}</text>`).join('');
-  const dots = series.map((point, index) => `<circle class="healthDot" cx="${x(index)}" cy="${y(point.value)}" r="4"/>`).join('');
-  const normal = selected.status === 'normal' || selected.status === 'info';
-  return `<article class="healthTrendCard"><div class="healthTrendHead"><div><span>${escapeHtml(selected.label)}</span><b>${healthMetricValue(selected)}</b></div><i class="healthTrendStatus ${normal ? 'normal' : ''}">${healthStatusText(selected.status)}</i></div><svg viewBox="0 0 300 112" role="img" aria-label="${escapeHtml(selected.label)}歷年趨勢"><line class="healthGrid" x1="16" y1="91" x2="284" y2="91"/>${ref}<polyline class="healthLine" points="${points}"/>${dots}${labels}</svg></article>`;
+  const labels = series.map((point, index) => `<text class="healthYearLabel" x="${x(index)}" y="174" text-anchor="middle">${point.year}</text>`).join('');
+  const dots = series.map((point, index) => `<circle class="healthDot" cx="${x(index)}" cy="${y(point.value)}" r="5"/>`).join('');
+  const rangeState = healthReferenceState(selected) ?? healthStatusText(selected.status);
+  const normal = rangeState === '參考範圍內' || (!healthReferenceState(selected) && (selected.status === 'normal' || selected.status === 'info'));
+  return `<article class="healthTrendCard"><div class="healthTrendHead"><div><span>${escapeHtml(selected.label)}</span><b>${healthMetricValue(selected)}</b></div><i class="healthTrendStatus ${normal ? 'normal' : ''}">${rangeState}</i></div><svg viewBox="0 0 340 180" role="img" aria-label="${escapeHtml(selected.label)}歷年趨勢，${escapeHtml(rangeState)}"><line class="healthGrid" x1="20" y1="145" x2="320" y2="145"/>${rangeBand}${ref}<polyline class="healthLine" points="${points}"/>${dots}${labels}</svg></article>`;
 }
 
 function healthValueChip(model, report, key) {

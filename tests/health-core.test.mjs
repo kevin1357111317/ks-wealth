@@ -6,6 +6,8 @@ import {
   buildHealthInsights,
   buildHealthModel,
   healthReferenceBoundaries,
+  healthReferenceMarkers,
+  healthReferenceState,
   selectHealthTrendKeys,
 } from '../health-core.js';
 
@@ -44,6 +46,13 @@ test('a missing metric in one year is skipped instead of breaking the trend', ()
 test('a two-sided reference range keeps both lower and upper chart lines', () => {
   assert.deepEqual(healthReferenceBoundaries({ reference_low: 80, reference_high: 100 }), [80, 100]);
   assert.deepEqual(healthReferenceBoundaries({ reference_low: null, reference_high: 9 }), [9]);
+  assert.deepEqual(healthReferenceMarkers({ reference_low: 80, reference_high: 100 }), [
+    { kind: 'low', label: '下限', value: 80 },
+    { kind: 'high', label: '上限', value: 100 },
+  ]);
+  assert.equal(healthReferenceState({ value_numeric: 72, reference_low: 80, reference_high: 100 }), '低於下限');
+  assert.equal(healthReferenceState({ value_numeric: 90, reference_low: 80, reference_high: 100 }), '參考範圍內');
+  assert.equal(healthReferenceState({ value_numeric: 110, reference_low: 80, reference_high: 100 }), '高於上限');
 });
 
 test('trend selection prioritizes abnormal metrics with two or more years', () => {
