@@ -46,3 +46,9 @@ test('health opens with a couple comparison before individual trends', () => {
   assert.match(source, /buildHealthComparison/);
   assert.match(source, /一起看差異，不排名/);
 });
+
+test('couple health card is the first card on the family dashboard', () => {
+  const dashboard = source.slice(source.indexOf('function dashboard()'), source.indexOf('function distributionPanel'));
+  const rendered = dashboard.slice(dashboard.indexOf('shell(`'));
+  assert.ok(rendered.indexOf('${healthEntry}') < rendered.indexOf('<section class="portfolioHero">'));
+});
