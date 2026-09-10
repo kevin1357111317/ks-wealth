@@ -23,8 +23,8 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   healthReferenceState,
-  selectHealthTrendKeys,
-} from './health-core.js?v=V3P6';
+  selectCoupleHealthTrendGroups,
+} from './health-core.js?v=V3P7';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -982,32 +982,70 @@ function healthMetricValue(metric) {
   return `${value}${metric.unit ? ` ${escapeHtml(metric.unit)}` : ''}`;
 }
 
-function healthTrendCard(model, report, key) {
-  const series = model.series(key);
-  const selected = model.metric(report, key);
-  if (!series.length || !selected) return '';
-  const boundaries = healthReferenceBoundaries(selected);
-  const referenceMarkers = healthReferenceMarkers(selected);
-  const values = series.map(point => point.value).concat(boundaries);
+const healthNumber = value => new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 2 }).format(value);
+
+function healthMetricReference(metric) {
+  const markers = healthReferenceMarkers(metric);
+  const low = markers.find(marker => marker.kind === 'low')?.value;
+  const high = markers.find(marker => marker.kind === 'high')?.value;
+  if (low !== undefined && high !== undefined) return `參考 ${healthNumber(low)}–${healthNumber(high)}`;
+  if (low !== undefined) return `下限 ${healthNumber(low)}`;
+  if (high !== undefined) return `上限 ${healthNumber(high)}`;
+  return '未提供參考值';
+}
+
+function coupleTrendPerson(metric, name, ownerScope) {
+  if (!metric) return `<div class="healthTrendPerson ${ownerScope} missing"><span><i></i>${name}</span><b>—</b><small>尚無資料</small></div>`;
+  const state = healthReferenceState(metric) ?? healthStatusText(metric.status);
+  return `<div class="healthTrendPerson ${ownerScope}"><span><i></i>${name}</span><b>${healthMetricValue(metric)}</b><small>${escapeHtml(state)} · ${escapeHtml(healthMetricReference(metric))}</small></div>`;
+}
+
+function coupleHealthTrendCard(husbandModel, wifeModel, key) {
+  const husbandSeries = husbandModel.series(key);
+  const wifeSeries = wifeModel.series(key);
+  const husbandMetric = husbandSeries.at(-1)?.metric ?? null;
+  const wifeMetric = wifeSeries.at(-1)?.metric ?? null;
+  const selected = husbandMetric ?? wifeMetric;
+  if (!selected || (husbandSeries.length < 2 && wifeSeries.length < 2)) return '';
+  const years = [...new Set([...husbandSeries, ...wifeSeries].map(point => point.year))].sort((a, b) => a - b);
+  const referenceMap = new Map();
+  [['husband', husbandMetric], ['wife', wifeMetric]].forEach(([ownerScope, metric]) => {
+    healthReferenceMarkers(metric).forEach(marker => {
+      const id = `${marker.kind}:${marker.value}`;
+      const found = referenceMap.get(id) ?? { ...marker, owners: [] };
+      found.owners.push(ownerScope);
+      referenceMap.set(id, found);
+    });
+  });
+  const referenceMarkers = [...referenceMap.values()];
+  const boundaries = [...new Set(referenceMarkers.map(marker => marker.value))];
+  const values = [...husbandSeries, ...wifeSeries].map(point => point.value).concat(boundaries);
   let min = Math.min(...values);
   let max = Math.max(...values);
   const pad = Math.max((max - min) * .2, Math.abs(max || 1) * .045, .5);
   min -= pad;
   max += pad;
-  const x = index => series.length === 1 ? 170 : 20 + index * (300 / (series.length - 1));
+  const x = year => years.length === 1 ? 170 : 20 + years.indexOf(year) * (300 / (years.length - 1));
   const y = value => 145 - ((value - min) / (max - min || 1)) * 112;
-  const points = series.map((point, index) => `${x(index)},${y(point.value)}`).join(' ');
-  const rangeBand = referenceMarkers.length === 2
-    ? `<rect class="healthRefBand" x="20" y="${Math.min(...referenceMarkers.map(marker => y(marker.value)))}" width="300" height="${Math.abs(y(referenceMarkers[0].value) - y(referenceMarkers[1].value))}"/>`
+  const husbandBoundaries = healthReferenceBoundaries(husbandMetric);
+  const wifeBoundaries = healthReferenceBoundaries(wifeMetric);
+  const bandBoundaries = !husbandMetric ? wifeBoundaries : !wifeMetric ? husbandBoundaries
+    : JSON.stringify(husbandBoundaries) === JSON.stringify(wifeBoundaries) ? husbandBoundaries : [];
+  const rangeBand = bandBoundaries.length === 2
+    ? `<rect class="healthRefBand" x="20" y="${Math.min(...bandBoundaries.map(y))}" width="300" height="${Math.abs(y(bandBoundaries[0]) - y(bandBoundaries[1]))}"/>`
     : '';
   const ref = referenceMarkers
-    .map(marker => `<g><line class="healthRef" x1="20" y1="${y(marker.value)}" x2="320" y2="${y(marker.value)}"/><text class="healthRefLabel" x="316" y="${Math.max(14, y(marker.value) - 5)}" text-anchor="end">${marker.label} ${new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 2 }).format(marker.value)}</text></g>`)
+    .map(marker => {
+      const shared = marker.owners.length === 2;
+      const ownerScope = shared ? 'shared' : marker.owners[0];
+      const ownerLabel = shared ? '' : ownerScope === 'husband' ? '鎧麟' : '佳軒';
+      const left = ownerScope === 'wife';
+      return `<g class="healthCoupleRef ${ownerScope}"><line x1="20" y1="${y(marker.value)}" x2="320" y2="${y(marker.value)}"/><text x="${left ? 24 : 316}" y="${Math.max(14, y(marker.value) - 5)}" text-anchor="${left ? 'start' : 'end'}">${ownerLabel}${marker.label} ${healthNumber(marker.value)}</text></g>`;
+    })
     .join('');
-  const labels = series.map((point, index) => `<text class="healthYearLabel" x="${x(index)}" y="174" text-anchor="middle">${point.year}</text>`).join('');
-  const dots = series.map((point, index) => `<circle class="healthDot" cx="${x(index)}" cy="${y(point.value)}" r="5"/>`).join('');
-  const rangeState = healthReferenceState(selected) ?? healthStatusText(selected.status);
-  const normal = rangeState === '參考範圍內' || (!healthReferenceState(selected) && (selected.status === 'normal' || selected.status === 'info'));
-  return `<article class="healthTrendCard"><div class="healthTrendHead"><div><span>${escapeHtml(selected.label)}</span><b>${healthMetricValue(selected)}</b></div><i class="healthTrendStatus ${normal ? 'normal' : ''}">${rangeState}</i></div><svg viewBox="0 0 340 180" role="img" aria-label="${escapeHtml(selected.label)}歷年趨勢，${escapeHtml(rangeState)}"><line class="healthGrid" x1="20" y1="145" x2="320" y2="145"/>${rangeBand}${ref}<polyline class="healthLine" points="${points}"/>${dots}${labels}</svg></article>`;
+  const plot = (series, ownerScope) => `${series.length >= 2 ? `<polyline class="healthCoupleLine ${ownerScope}" points="${series.map(point => `${x(point.year)},${y(point.value)}`).join(' ')}"/>` : ''}${series.map(point => `<circle class="healthCoupleDot ${ownerScope}" cx="${x(point.year)}" cy="${y(point.value)}" r="5"/>`).join('')}`;
+  const labels = years.map(year => `<text class="healthYearLabel" x="${x(year)}" y="174" text-anchor="middle">${year}</text>`).join('');
+  return `<article class="healthTrendCard healthCoupleTrendCard"><div class="healthTrendHead"><span>${escapeHtml(selected.label)}</span></div><div class="healthTrendPeople">${coupleTrendPerson(husbandMetric, '鎧麟', 'husband')}${coupleTrendPerson(wifeMetric, '佳軒', 'wife')}</div><svg viewBox="0 0 340 180" role="img" aria-label="${escapeHtml(selected.label)}夫妻歷年趨勢"><line class="healthGrid" x1="20" y1="145" x2="320" y2="145"/>${rangeBand}${ref}${plot(husbandSeries, 'husband')}${plot(wifeSeries, 'wife')}${labels}</svg></article>`;
 }
 
 function healthValueChip(model, report, key) {
@@ -1075,8 +1113,13 @@ function healthComparisonPage() {
   const husbandFocus = buildHealthInsights(husbandModel, 'husband').slice(0, 3);
   const wifeFocus = buildHealthInsights(wifeModel, 'wife').slice(0, 3);
   const focusCard = (name, rows, ownerScope) => `<article class="healthCompareFocus ${ownerScope}"><span>${name}目前優先事項</span>${rows.map(row => `<div><b>${escapeHtml(row.title)}</b><small>${escapeHtml(row.action)}</small></div>`).join('')}</article>`;
+  const trendGroups = selectCoupleHealthTrendGroups(husbandModel, wifeModel);
+  const coupleTrends = trendGroups.map(group => {
+    const cards = group.keys.map(key => coupleHealthTrendCard(husbandModel, wifeModel, key)).filter(Boolean).join('');
+    return cards ? `<section class="healthTrendCategory"><div class="healthTrendCategoryHead"><span>${escapeHtml(group.title)}</span><b>${group.keys.length} 項</b></div><div class="healthTrendGrid">${cards}</div></section>` : '';
+  }).join('');
 
-  shell(`<div class="healthView">${healthOwnerControl()}<section class="healthCoupleScore"><div class="healthCoupleHead"><span>2026 夫妻健康度</span><b>一起看差異，不排名</b></div><div class="healthCoupleGrid">${scoreCards}</div><p>這是依現有健檢、年齡、備孕與生活型態整理的健康管理分數，不是疾病風險量表；資料不完整時約有 ±4 分差異。</p></section><div class="sectionHead"><span>六大面向評分</span><b>合計 100 分</b></div><section class="healthBreakdown"><div class="healthCompareHeader"><span>評分類別</span><b>鎧麟</b><b>佳軒</b></div>${dimensions}</section><div class="sectionHead"><span>共同檢驗項目</span><b>最新年度</b></div><section class="healthCompareTable"><div class="healthCompareHeader"><span>指標</span><b>鎧麟</b><b>佳軒</b></div>${metricRows}<p>每個人的參考區間可能因性別與實驗室不同；「較高」不一定比較健康，請以各自狀態標示判讀。</p></section><div class="sectionHead"><span>各自優先事項</span><b>先處理會影響決策的項目</b></div><div class="healthCompareFocusGrid">${focusCard('鎧麟', husbandFocus, 'husband')}${focusCard('佳軒', wifeFocus, 'wife')}</div></div>`, '夫妻健康比較');
+  shell(`<div class="healthView">${healthOwnerControl()}<section class="healthCoupleScore"><div class="healthCoupleHead"><span>2026 夫妻健康度</span><b>一起看差異，不排名</b></div><div class="healthCoupleGrid">${scoreCards}</div><p>這是依現有健檢、年齡、備孕與生活型態整理的健康管理分數，不是疾病風險量表；資料不完整時約有 ±4 分差異。</p></section><div class="sectionHead"><span>六大面向評分</span><b>合計 100 分</b></div><section class="healthBreakdown"><div class="healthCompareHeader"><span>評分類別</span><b>鎧麟</b><b>佳軒</b></div>${dimensions}</section><div class="sectionHead"><span>共同檢驗項目</span><b>最新年度</b></div><section class="healthCompareTable"><div class="healthCompareHeader"><span>指標</span><b>鎧麟</b><b>佳軒</b></div>${metricRows}<p>每個人的參考區間可能因性別與實驗室不同；「較高」不一定比較健康，請以各自狀態標示判讀。</p></section><div class="sectionHead"><span>各自優先事項</span><b>先處理會影響決策的項目</b></div><div class="healthCompareFocusGrid">${focusCard('鎧麟', husbandFocus, 'husband')}${focusCard('佳軒', wifeFocus, 'wife')}</div>${coupleTrends ? `<div class="sectionHead healthTrendSectionHead"><span>夫妻歷年趨勢</span><b>鎧麟 vs 佳軒</b></div><div class="healthCoupleTrendLegend"><span class="husband"><i></i>鎧麟</span><span class="wife"><i></i>佳軒</span><small>同一指標疊在一起比較；參考區間不同時分色標示。</small></div><div class="healthTrendCategories">${coupleTrends}</div>` : ''}</div>`, '夫妻健康比較');
   bindHealthControls();
 }
 
@@ -1097,13 +1140,11 @@ function healthPage() {
   const score = latestScore?.value_numeric === null || latestScore?.value_numeric === undefined ? '' : `<section class="healthScore"><div><span>健康管理評分</span><b>${healthMetricValue(latestScore)}<small>/ 100</small></b></div><p>依目前提供的健檢、年齡與備孕重點整理，不是疾病風險量表。</p></section>`;
   const advice = `<section class="healthAdvice"><div class="healthAdviceHead"><div><span>${model.latest.checkup_year} 年重點</span><h2>今年與未來的改善方向</h2></div></div><div class="healthActionList">${insights.map(insight => `<article class="healthAction ${insight.tone}"><div class="healthActionTop"><i class="healthBadge">${escapeHtml(insight.badge)}</i><b>${escapeHtml(insight.title)}</b></div><p>${escapeHtml(insight.body)}</p><strong>具體行動｜${escapeHtml(insight.action)}</strong></article>`).join('')}</div><p class="healthDisclaimer">依健檢趨勢提供優先順序，不等同診斷；若有不適、懷孕或醫師已有不同指示，以臨床評估為準。</p></section>`;
   const yearControl = `<div class="seg healthYearSeg">${model.reports.map(row => `<button data-health-year="${row.checkup_year}" class="${row.checkup_year === selectedYear ? 'on' : ''}">${row.checkup_year}</button>`).join('')}</div>`;
-  const trends = selectHealthTrendKeys(model, analysisOwner)
-    .map(key => healthTrendCard(model, report, key)).filter(Boolean).join('');
   const domains = buildHealthDomains(model, report, analysisOwner)
     .map(domain => healthDomainCard(model, report, domain.title, domain.status, domain.keys, domain.copy))
     .join('');
 
-  shell(`<div class="healthView">${healthOwnerControl()}${score}${advice}${yearControl}<div class="sectionHead"><span>重要指標趨勢</span><b>${model.reports.length} 個年度</b></div><div class="healthTrendGrid">${trends}</div><div class="sectionHead"><span>${selectedYear} 年重點指標</span><b>${report.source_label ? escapeHtml(report.source_label) : '年度健檢'}</b></div><div class="healthDomainList">${domains}</div></div>`, `${ownerName(analysisOwner)}健康報告`);
+  shell(`<div class="healthView">${healthOwnerControl()}${score}${advice}${yearControl}<div class="sectionHead"><span>${selectedYear} 年重點指標</span><b>${report.source_label ? escapeHtml(report.source_label) : '年度健檢'}</b></div><div class="healthDomainList">${domains}</div></div>`, `${ownerName(analysisOwner)}健康報告`);
   bindHealthControls();
 }
 

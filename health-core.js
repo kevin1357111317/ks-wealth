@@ -26,6 +26,13 @@ export const HEALTH_COMPARISON_METRICS = [
   { key: 'mcv', label: '平均紅血球容積' },
 ];
 
+export const HEALTH_TREND_CATEGORIES = [
+  { key: 'blood', title: '血液與造血', keys: ['wbc', 'anc', 'neutrophil', 'rbc', 'hemoglobin', 'hematocrit', 'mcv', 'mch', 'mchc', 'platelet', 'rdw_cv'] },
+  { key: 'metabolic', title: '血糖、血脂與體位', keys: ['fasting_glucose', 'hba1c', 'total_cholesterol', 'ldl_c', 'hdl_c', 'triglyceride', 'non_hdl_c', 'body_weight', 'bmi', 'waist', 'body_fat'] },
+  { key: 'organ', title: '肝膽與腎臟功能', keys: ['ast', 'alt', 'ggt', 'alp', 'total_bilirubin', 'direct_bilirubin', 'bun', 'creatinine', 'egfr', 'uric_acid'] },
+  { key: 'fertility', title: '備孕與荷爾蒙', keys: ['afp', 'tsh', 'free_t4', 'amh', 'semen_volume', 'semen_concentration', 'semen_progressive_motility', 'semen_morphology'] },
+];
+
 export function healthReferenceBoundaries(metric) {
   return [...new Set(healthReferenceMarkers(metric).map(marker => marker.value))];
 }
@@ -111,6 +118,22 @@ export function selectHealthTrendKeys(model, ownerScope, limit = 6) {
   const otherAbnormal = candidates
     .filter(key => !preferred.includes(key) && isAbnormal(model.metric(model.latest, key)));
   return [...new Set([...priorityAbnormal, ...otherAbnormal, ...preferredAvailable])].slice(0, limit);
+}
+
+export function selectCoupleHealthTrendGroups(husbandModel, wifeModel) {
+  const selected = [...new Set([
+    ...selectHealthTrendKeys(husbandModel, 'husband'),
+    ...selectHealthTrendKeys(wifeModel, 'wife'),
+  ])];
+  const assigned = new Set();
+  const groups = HEALTH_TREND_CATEGORIES.map(category => {
+    const keys = category.keys.filter(key => selected.includes(key));
+    keys.forEach(key => assigned.add(key));
+    return { key: category.key, title: category.title, keys };
+  }).filter(group => group.keys.length);
+  const other = selected.filter(key => !assigned.has(key));
+  if (other.length) groups.push({ key: 'other', title: '其他重要指標', keys: other });
+  return groups;
 }
 
 export function buildHealthInsights(model, ownerScope) {

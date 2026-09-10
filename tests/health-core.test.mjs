@@ -8,6 +8,7 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   healthReferenceState,
+  selectCoupleHealthTrendGroups,
   selectHealthTrendKeys,
 } from '../health-core.js';
 
@@ -144,4 +145,23 @@ test('three annual checkups render three-point trends and trend-aware advice', (
   const advice = buildHealthInsights(model, 'husband');
   assert.match(advice.find(row => /白血球/.test(row.title)).body, /2024.*2025.*2026/);
   assert.match(advice.find(row => /血糖持平/.test(row.title)).body, /三酸甘油脂/);
+});
+
+test('couple trend groups use the union of both partners and keep health categories', () => {
+  const checkups = ['husband', 'wife'].flatMap(owner_scope => [2025, 2026]
+    .map(year => ({ id: `${owner_scope}-${year}`, owner_scope, checkup_year: year })));
+  const rows = [
+    ['husband', 'wbc', 4.0, 'low'],
+    ['husband', 'total_cholesterol', 170, 'normal'],
+    ['wife', 'mcv', 76, 'low'],
+    ['wife', 'afp', 11, 'high'],
+  ].flatMap(([owner, metric_key, value, status]) => [2025, 2026].map((year, index) => ({
+    checkup_id: `${owner}-${year}`, metric_key, value_numeric: value + index, status,
+  })));
+  const groups = selectCoupleHealthTrendGroups(
+    buildHealthModel(checkups, rows, 'husband'),
+    buildHealthModel(checkups, rows, 'wife'),
+  );
+  assert.deepEqual(groups.map(group => group.title), ['血液與造血', '血糖、血脂與體位', '備孕與荷爾蒙']);
+  assert.deepEqual(groups.flatMap(group => group.keys), ['wbc', 'mcv', 'total_cholesterol', 'afp']);
 });
