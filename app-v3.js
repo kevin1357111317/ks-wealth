@@ -24,7 +24,7 @@ import {
   healthReferenceMarkers,
   healthReferenceState,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3P7';
+} from './health-core.js?v=V3P9';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -1043,7 +1043,11 @@ function coupleHealthTrendCard(husbandModel, wifeModel, key) {
       return `<g class="healthCoupleRef ${ownerScope}"><line x1="20" y1="${y(marker.value)}" x2="320" y2="${y(marker.value)}"/><text x="${left ? 24 : 316}" y="${Math.max(14, y(marker.value) - 5)}" text-anchor="${left ? 'start' : 'end'}">${ownerLabel}${marker.label} ${healthNumber(marker.value)}</text></g>`;
     })
     .join('');
-  const plot = (series, ownerScope) => `${series.length >= 2 ? `<polyline class="healthCoupleLine ${ownerScope}" points="${series.map(point => `${x(point.year)},${y(point.value)}`).join(' ')}"/>` : ''}${series.map(point => `<circle class="healthCoupleDot ${ownerScope}" cx="${x(point.year)}" cy="${y(point.value)}" r="5"/>`).join('')}`;
+  // 兩條線除了顏色不同，點的形狀也不同（鎧麟圓點、佳軒菱形），色弱或黑白列印時還分得出來。
+  const dot = (ownerScope, cx, cy) => ownerScope === 'husband'
+    ? `<circle class="healthCoupleDot husband" cx="${cx}" cy="${cy}" r="5"/>`
+    : `<polygon class="healthCoupleDot wife" points="${cx},${cy - 6.2} ${cx + 6.2},${cy} ${cx},${cy + 6.2} ${cx - 6.2},${cy}"/>`;
+  const plot = (series, ownerScope) => `${series.length >= 2 ? `<polyline class="healthCoupleLine ${ownerScope}" points="${series.map(point => `${x(point.year)},${y(point.value)}`).join(' ')}"/>` : ''}${series.map(point => dot(ownerScope, x(point.year), y(point.value))).join('')}`;
   const labels = years.map(year => `<text class="healthYearLabel" x="${x(year)}" y="174" text-anchor="middle">${year}</text>`).join('');
   return `<article class="healthTrendCard healthCoupleTrendCard"><div class="healthTrendHead"><span>${escapeHtml(selected.label)}</span></div><div class="healthTrendPeople">${coupleTrendPerson(husbandMetric, '鎧麟', 'husband')}${coupleTrendPerson(wifeMetric, '佳軒', 'wife')}</div><svg viewBox="0 0 340 180" role="img" aria-label="${escapeHtml(selected.label)}夫妻歷年趨勢"><line class="healthGrid" x1="20" y1="145" x2="320" y2="145"/>${rangeBand}${ref}${plot(husbandSeries, 'husband')}${plot(wifeSeries, 'wife')}${labels}</svg></article>`;
 }
@@ -1119,7 +1123,7 @@ function healthComparisonPage() {
     return cards ? `<section class="healthTrendCategory"><div class="healthTrendCategoryHead"><span>${escapeHtml(group.title)}</span><b>${group.keys.length} 項</b></div><div class="healthTrendGrid">${cards}</div></section>` : '';
   }).join('');
 
-  shell(`<div class="healthView">${healthOwnerControl()}<section class="healthCoupleScore"><div class="healthCoupleHead"><span>2026 夫妻健康度</span><b>一起看差異，不排名</b></div><div class="healthCoupleGrid">${scoreCards}</div><p>這是依現有健檢、年齡、備孕與生活型態整理的健康管理分數，不是疾病風險量表；資料不完整時約有 ±4 分差異。</p></section><div class="sectionHead"><span>六大面向評分</span><b>合計 100 分</b></div><section class="healthBreakdown"><div class="healthCompareHeader"><span>評分類別</span><b>鎧麟</b><b>佳軒</b></div>${dimensions}</section><div class="sectionHead"><span>共同檢驗項目</span><b>最新年度</b></div><section class="healthCompareTable"><div class="healthCompareHeader"><span>指標</span><b>鎧麟</b><b>佳軒</b></div>${metricRows}<p>每個人的參考區間可能因性別與實驗室不同；「較高」不一定比較健康，請以各自狀態標示判讀。</p></section><div class="sectionHead"><span>各自優先事項</span><b>先處理會影響決策的項目</b></div><div class="healthCompareFocusGrid">${focusCard('鎧麟', husbandFocus, 'husband')}${focusCard('佳軒', wifeFocus, 'wife')}</div>${coupleTrends ? `<div class="sectionHead healthTrendSectionHead"><span>夫妻歷年趨勢</span><b>鎧麟 vs 佳軒</b></div><div class="healthCoupleTrendLegend"><span class="husband"><i></i>鎧麟</span><span class="wife"><i></i>佳軒</span><small>同一指標疊在一起比較；參考區間不同時分色標示。</small></div><div class="healthTrendCategories">${coupleTrends}</div>` : ''}</div>`, '夫妻健康總覽');
+  shell(`<div class="healthView">${healthOwnerControl()}<section class="healthCoupleScore"><div class="healthCoupleHead"><span>2026 夫妻健康度</span><b>一起看差異，不排名</b></div><div class="healthCoupleGrid">${scoreCards}</div><p>這是依現有健檢、年齡、備孕與生活型態整理的健康管理分數，不是疾病風險量表；資料不完整時約有 ±4 分差異。</p></section><div class="sectionHead"><span>六大面向評分</span><b>合計 100 分</b></div><section class="healthBreakdown"><div class="healthCompareHeader"><span>評分類別</span><b>鎧麟</b><b>佳軒</b></div>${dimensions}</section><div class="sectionHead"><span>共同檢驗項目</span><b>最新年度</b></div><section class="healthCompareTable"><div class="healthCompareHeader"><span>指標</span><b>鎧麟</b><b>佳軒</b></div>${metricRows}<p>參考區間已統一成國際通用成人標準，男女有別的項目分開標示；「較高」不一定比較健康，請以各自狀態標示判讀。</p></section><div class="sectionHead"><span>各自優先事項</span><b>先處理會影響決策的項目</b></div><div class="healthCompareFocusGrid">${focusCard('鎧麟', husbandFocus, 'husband')}${focusCard('佳軒', wifeFocus, 'wife')}</div>${coupleTrends ? `<div class="sectionHead healthTrendSectionHead"><span>夫妻歷年趨勢</span><b>鎧麟 vs 佳軒</b></div><div class="healthCoupleTrendLegend"><span class="husband"><i></i>鎧麟</span><span class="wife"><i></i>佳軒</span><small>參考區間統一採國際通用成人標準；男女本來就不同的項目（血色素、ALT、肌酸酐等）才分成兩條線。</small></div><div class="healthTrendCategories">${coupleTrends}</div>` : ''}</div>`, '夫妻健康總覽');
   bindHealthControls();
 }
 

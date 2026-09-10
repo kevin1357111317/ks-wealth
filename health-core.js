@@ -1,3 +1,5 @@
+import { applyHealthReferenceSpec } from './health-reference.js?v=V3P9';
+
 const numberOrNull = value => value === null || value === undefined || value === ''
   ? null
   : Number.isFinite(Number(value)) ? Number(value) : null;
@@ -64,12 +66,12 @@ export function buildHealthModel(checkups, metrics, ownerScope) {
       checkup_year: Number(report.checkup_year),
       metrics: (metrics ?? [])
         .filter(metric => metric.checkup_id === report.id)
-        .map(metric => ({
+        .map(metric => applyHealthReferenceSpec({
           ...metric,
           value_numeric: numberOrNull(metric.value_numeric),
           reference_low: numberOrNull(metric.reference_low),
           reference_high: numberOrNull(metric.reference_high),
-        }))
+        }, ownerScope))
         .sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0)),
     }))
     .sort((a, b) => a.checkup_year - b.checkup_year);
