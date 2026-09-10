@@ -5,6 +5,26 @@ const numberOrNull = value => value === null || value === undefined || value ===
 const isAbnormal = metric => metric && !['normal', 'info'].includes(metric.status);
 const isLow = metric => metric?.status === 'low';
 
+export const HEALTH_SCORE_DIMENSIONS = [
+  { key: 'score_cardio_metabolic', label: '心血管／代謝', max: 20 },
+  { key: 'score_organ_function', label: '肝腎／尿液與器官', max: 20 },
+  { key: 'score_blood', label: '血液系統', max: 20 },
+  { key: 'score_endocrine_structure', label: '內分泌／結構', max: 10 },
+  { key: 'score_fertility', label: '備孕準備度', max: 20 },
+  { key: 'score_lifestyle', label: '工作型態／生活韌性', max: 10 },
+];
+
+export const HEALTH_COMPARISON_METRICS = [
+  { key: 'hba1c', label: '糖化血色素' },
+  { key: 'ldl_c', label: 'LDL 膽固醇' },
+  { key: 'hdl_c', label: 'HDL 膽固醇' },
+  { key: 'triglyceride', label: '三酸甘油脂' },
+  { key: 'alt', label: 'ALT 肝功能' },
+  { key: 'egfr', label: '腎絲球過濾率' },
+  { key: 'hemoglobin', label: '血色素' },
+  { key: 'mcv', label: '平均紅血球容積' },
+];
+
 export function healthReferenceBoundaries(metric) {
   return [...new Set([metric?.reference_low, metric?.reference_high]
     .map(numberOrNull)
@@ -37,6 +57,26 @@ export function buildHealthModel(checkups, metrics, ownerScope) {
     .map(point => ({ year: point.year, value: point.metric.value_numeric, metric: point.metric }));
 
   return { reports, latest, metric, series };
+}
+
+export function buildHealthComparison(husbandModel, wifeModel) {
+  const profile = model => {
+    const report = model?.latest ?? null;
+    const score = model?.metric(report, 'management_score')?.value_numeric ?? null;
+    const dimensions = HEALTH_SCORE_DIMENSIONS.map(dimension => ({
+      ...dimension,
+      metric: model?.metric(report, dimension.key) ?? null,
+    }));
+    return { report, score, dimensions };
+  };
+  const husband = profile(husbandModel);
+  const wife = profile(wifeModel);
+  const metrics = HEALTH_COMPARISON_METRICS.map(item => ({
+    ...item,
+    husband: husbandModel?.metric(husband.report, item.key) ?? null,
+    wife: wifeModel?.metric(wife.report, item.key) ?? null,
+  })).filter(item => item.husband || item.wife);
+  return { husband, wife, metrics };
 }
 
 export function selectHealthTrendKeys(model, ownerScope, limit = 6) {

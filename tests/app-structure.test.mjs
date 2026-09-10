@@ -39,3 +39,10 @@ test('auth helpers and the app reuse one Supabase auth client', () => {
   assert.match(source, /window\.KS_SUPABASE_CLIENT \?\? createClient/);
   assert.match(html, /auth-tools\.js\?v=[\w-]+/);
 });
+
+test('health opens with a couple comparison before individual trends', () => {
+  assert.match(source, /let healthViewMode = 'compare'/);
+  assert.match(source, /data-health-view="compare"/);
+  assert.match(source, /buildHealthComparison/);
+  assert.match(source, /一起看差異，不排名/);
+});
