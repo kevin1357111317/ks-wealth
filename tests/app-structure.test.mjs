@@ -62,3 +62,16 @@ test('health trend charts label reference bounds and expand on phones', () => {
   assert.match(healthCss, /@media\(max-width:520px\)\{\.healthTrendGrid\{grid-template-columns:1fr\}/);
   assert.match(healthCss, /\.healthTrendHead b\{[^}]*font-size:\.84rem/);
 });
+
+test('health trends live at the bottom of couple comparison and overlay both partners', () => {
+  const comparisonPage = source.slice(source.indexOf('function healthComparisonPage'), source.indexOf('function healthPage'));
+  const personalPage = source.slice(source.indexOf('function healthPage'), source.indexOf('function ownerPortfolioModel'));
+  assert.match(comparisonPage, /selectCoupleHealthTrendGroups/);
+  assert.match(comparisonPage, /coupleHealthTrendCard\(husbandModel, wifeModel, key\)/);
+  assert.ok(comparisonPage.indexOf('各自優先事項') < comparisonPage.indexOf('夫妻歷年趨勢'));
+  assert.doesNotMatch(personalPage, /重要指標趨勢|healthTrendGrid/);
+  assert.match(source, /healthCoupleLine \$\{ownerScope\}/);
+  assert.match(source, /尚無資料/);
+  assert.match(healthCss, /\.healthCoupleLine\.husband/);
+  assert.match(healthCss, /\.healthCoupleLine\.wife/);
+});
