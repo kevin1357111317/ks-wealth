@@ -102,6 +102,16 @@ export function buildHealthInsights(model, ownerScope) {
   const abnormal = key => isAbnormal(row(key));
   const insights = [];
 
+  if (row('ldct_thymic_tissue') || row('ldct_pericardial_effusion')) {
+    insights.push({
+      tone: 'priority',
+      badge: '門診確認',
+      title: '低劑量肺部 CT 有建議專科追蹤的項目',
+      body: '影像報告在前縱隔腔與心包膜項目提出進一步追蹤建議；這些是影像描述，仍需由醫師結合原始影像與症狀確認。',
+      action: '攜帶影像光碟與報告安排胸腔科，並由心臟科／家醫科評估是否需心臟超音波。若出現胸痛、呼吸困難、昏厥或明顯心悸，立即就醫。',
+    });
+  }
+
   if (isLow(row('mcv')) || isLow(row('mch'))) {
     insights.push({
       tone: 'priority',
@@ -190,6 +200,7 @@ export function buildHealthDomains(model, report, ownerScope) {
     domain('尿液檢查', ['urine_turbidity', 'urine_leukocyte', 'urine_protein'], '重新採樣確認', '目前正常', '若出現白血球或蛋白，先用正確中段尿複查，再區分污染或泌尿道問題。'),
     domain('血脂結構', ['total_cholesterol', 'ldl_c', 'hdl_c', 'triglyceride', 'non_hdl_c'], '整體風險判讀', '維持目前狀態', '總膽固醇要連同 LDL、非 HDL、三酸甘油脂與整體風險一起看。'),
   ] : [
+    domain('低劑量肺部 CT', ['ldct_exam', 'ldct_lung_pleura', 'ldct_calcified_lymph_nodes', 'ldct_thymic_tissue', 'ldct_arterial_ligament_calcification', 'ldct_pericardial_effusion'], '安排專科確認', '目前無急迫警訊', '把舊發炎相關變化與需要確認的胸腺／心包膜發現分開追蹤；以原始影像及專科判讀為準。'),
     domain('血液與免疫', ['wbc', 'anc', 'hemoglobin', 'hematocrit', 'platelet'], '輕度異常追蹤', '目前正常', '白血球需搭配 ANC 與症狀判讀；血色素與 MCV 正常時，不像典型貧血。'),
     domain('肝膽功能', ['total_bilirubin', 'direct_bilirubin', 'ast', 'alt', 'ggt', 'alp'], '定期複驗', '目前正常', '膽紅素要搭配分型、肝酵素與影像追蹤，不直接用單一數值下診斷。'),
     domain('心血管與代謝', ['bmi', 'waist', 'body_fat', 'fasting_glucose', 'hba1c', 'ldl_c'], '調整生活型態', '維持目前狀態', '體位、血糖與血脂整體一起看，長期重點是睡眠、運動與避免久坐。'),

@@ -66,15 +66,19 @@ test('husband advice and domains use his actual follow-up items', () => {
     { checkup_id: 'h-2026', metric_key: 'wbc', value_numeric: 3.93, status: 'low' },
     { checkup_id: 'h-2026', metric_key: 'neutrophil', value_numeric: 54.4, status: 'normal' },
     { checkup_id: 'h-2026', metric_key: 'total_bilirubin', value_numeric: 1.3, status: 'high' },
+    { checkup_id: 'h-2026', metric_key: 'ldct_thymic_tissue', value_text: '需專科確認的影像發現', status: 'watch' },
+    { checkup_id: 'h-2026', metric_key: 'ldct_pericardial_effusion', value_text: '需專科確認的影像發現', status: 'watch' },
     { checkup_id: 'h-2026', metric_key: 'thoracic_scoliosis', value_text: '胸椎脊柱側彎', status: 'watch' },
   ];
   const model = buildHealthModel(husbandReports, husbandMetrics, 'husband');
   const insights = buildHealthInsights(model, 'husband');
   assert.match(insights.map(row => row.title).join('、'), /白血球/);
   assert.match(insights.map(row => row.title).join('、'), /膽紅素/);
+  assert.match(insights[0].title, /低劑量肺部 CT/);
+  assert.match(insights[0].action, /胸腔科/);
   assert.match(insights.map(row => row.body).join('、'), /2\.14/);
   assert.deepEqual(buildHealthDomains(model, model.latest, 'husband').map(row => row.title), [
-    '血液與免疫', '肝膽功能', '影像與結構',
+    '低劑量肺部 CT', '血液與免疫', '肝膽功能', '影像與結構',
   ]);
 });
 
