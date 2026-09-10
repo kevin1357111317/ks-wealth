@@ -22,7 +22,7 @@ import {
   buildHealthModel,
   healthReferenceBoundaries,
   selectHealthTrendKeys,
-} from './health-core.js?v=V3P2';
+} from './health-core.js?v=V3P4';
 
 // App / Supabase -------------------------------------------------------------
 
