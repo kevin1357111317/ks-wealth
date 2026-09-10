@@ -22,6 +22,7 @@
 - `v3-trends.css`：趨勢、分類卡片與目前「布布一二的家」主題樣式
 - `health-core.js`、`health.css`：夫妻健檢年度資料整理、重點建議與重要指標趨勢
 - 影像健檢會保留結構化發現；首頁只優先顯示報告明確建議就醫確認或會影響後續決策的項目
+- 不同院所的同義檢驗會沿用同一指標鍵，讓跨年度趨勢保持連續
 - `supabase/functions/`：市場行情與每日快照等後端 Edge Functions
 - `supabase/migrations/`：已套用或用來重建正式 schema 的 migration 歷史
 - `supabase/proposals/`：不可直接執行的歷史提案與研究筆記

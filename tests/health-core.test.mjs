@@ -115,3 +115,24 @@ test('couple comparison keeps both scores, dimensions and shared metrics', () =>
   assert.equal(result.wife.dimensions.find(row => row.key === 'score_blood').metric.value_numeric, 14);
   assert.deepEqual(result.metrics.map(row => row.key), ['hba1c']);
 });
+
+test('three annual checkups render three-point trends and trend-aware advice', () => {
+  const checkups = [2024, 2025, 2026].map(year => ({ id: `h-${year}`, owner_scope: 'husband', checkup_year: year }));
+  const values = {
+    2024: { wbc: 4.2, anc: 2.2, fasting_glucose: 85, total_cholesterol: 170, triglyceride: 70 },
+    2025: { wbc: 4.1, anc: 2.0, fasting_glucose: 85, total_cholesterol: 165, triglyceride: 65 },
+    2026: { wbc: 4.3, anc: 2.3, fasting_glucose: 86, total_cholesterol: 160, triglyceride: 60 },
+  };
+  const rows = checkups.flatMap(report => Object.entries(values[report.checkup_year]).map(([metric_key, value_numeric]) => ({
+    checkup_id: report.id,
+    metric_key,
+    value_numeric,
+    status: metric_key === 'wbc' ? 'low' : 'normal',
+  })));
+  const model = buildHealthModel(checkups, rows, 'husband');
+  assert.deepEqual(model.series('wbc').map(point => point.year), [2024, 2025, 2026]);
+  assert.deepEqual(selectHealthTrendKeys(model, 'husband').slice(0, 3), ['wbc', 'fasting_glucose', 'total_cholesterol']);
+  const advice = buildHealthInsights(model, 'husband');
+  assert.match(advice.find(row => /白血球/.test(row.title)).body, /2024.*2025.*2026/);
+  assert.match(advice.find(row => /血糖持平/.test(row.title)).body, /三酸甘油脂/);
+});
