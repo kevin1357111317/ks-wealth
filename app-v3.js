@@ -1061,7 +1061,7 @@ function healthDomainCard(model, report, title, status, keys, copy) {
 }
 
 function healthOwnerControl() {
-  return `<div class="seg healthPersonSeg"><button data-health-view="compare" class="${healthViewMode === 'compare' ? 'on' : ''}">夫妻比較</button><button data-health-view="husband" class="${healthViewMode === 'husband' ? 'on' : ''}">鎧麟</button><button data-health-view="wife" class="${healthViewMode === 'wife' ? 'on' : ''}">佳軒</button></div>`;
+  return `<div class="seg healthPersonSeg"><button data-health-view="compare" class="${healthViewMode === 'compare' ? 'on' : ''}">夫妻總覽</button><button data-health-view="husband" class="${healthViewMode === 'husband' ? 'on' : ''}">鎧麟</button><button data-health-view="wife" class="${healthViewMode === 'wife' ? 'on' : ''}">佳軒</button></div>`;
 }
 
 function bindHealthControls() {
@@ -1097,7 +1097,7 @@ function healthComparisonPage() {
   const wifeModel = buildHealthModel(healthCheckups, healthMetrics, 'wife');
   const comparison = buildHealthComparison(husbandModel, wifeModel);
   if (!comparison.husband.report && !comparison.wife.report) {
-    shell(`<div class="healthView">${healthOwnerControl()}<div class="healthEmpty"><b>尚未匯入夫妻健檢資料</b><span>提供報告並完成核對後，就會加入比較。</span></div></div>`, '夫妻健康比較');
+    shell(`<div class="healthView">${healthOwnerControl()}<div class="healthEmpty"><b>尚未匯入夫妻健檢資料</b><span>提供報告並完成核對後，就會加入比較。</span></div></div>`, '夫妻健康總覽');
     bindHealthControls();
     return;
   }
@@ -1119,7 +1119,7 @@ function healthComparisonPage() {
     return cards ? `<section class="healthTrendCategory"><div class="healthTrendCategoryHead"><span>${escapeHtml(group.title)}</span><b>${group.keys.length} 項</b></div><div class="healthTrendGrid">${cards}</div></section>` : '';
   }).join('');
 
-  shell(`<div class="healthView">${healthOwnerControl()}<section class="healthCoupleScore"><div class="healthCoupleHead"><span>2026 夫妻健康度</span><b>一起看差異，不排名</b></div><div class="healthCoupleGrid">${scoreCards}</div><p>這是依現有健檢、年齡、備孕與生活型態整理的健康管理分數，不是疾病風險量表；資料不完整時約有 ±4 分差異。</p></section><div class="sectionHead"><span>六大面向評分</span><b>合計 100 分</b></div><section class="healthBreakdown"><div class="healthCompareHeader"><span>評分類別</span><b>鎧麟</b><b>佳軒</b></div>${dimensions}</section><div class="sectionHead"><span>共同檢驗項目</span><b>最新年度</b></div><section class="healthCompareTable"><div class="healthCompareHeader"><span>指標</span><b>鎧麟</b><b>佳軒</b></div>${metricRows}<p>每個人的參考區間可能因性別與實驗室不同；「較高」不一定比較健康，請以各自狀態標示判讀。</p></section><div class="sectionHead"><span>各自優先事項</span><b>先處理會影響決策的項目</b></div><div class="healthCompareFocusGrid">${focusCard('鎧麟', husbandFocus, 'husband')}${focusCard('佳軒', wifeFocus, 'wife')}</div>${coupleTrends ? `<div class="sectionHead healthTrendSectionHead"><span>夫妻歷年趨勢</span><b>鎧麟 vs 佳軒</b></div><div class="healthCoupleTrendLegend"><span class="husband"><i></i>鎧麟</span><span class="wife"><i></i>佳軒</span><small>同一指標疊在一起比較；參考區間不同時分色標示。</small></div><div class="healthTrendCategories">${coupleTrends}</div>` : ''}</div>`, '夫妻健康比較');
+  shell(`<div class="healthView">${healthOwnerControl()}<section class="healthCoupleScore"><div class="healthCoupleHead"><span>2026 夫妻健康度</span><b>一起看差異，不排名</b></div><div class="healthCoupleGrid">${scoreCards}</div><p>這是依現有健檢、年齡、備孕與生活型態整理的健康管理分數，不是疾病風險量表；資料不完整時約有 ±4 分差異。</p></section><div class="sectionHead"><span>六大面向評分</span><b>合計 100 分</b></div><section class="healthBreakdown"><div class="healthCompareHeader"><span>評分類別</span><b>鎧麟</b><b>佳軒</b></div>${dimensions}</section><div class="sectionHead"><span>共同檢驗項目</span><b>最新年度</b></div><section class="healthCompareTable"><div class="healthCompareHeader"><span>指標</span><b>鎧麟</b><b>佳軒</b></div>${metricRows}<p>每個人的參考區間可能因性別與實驗室不同；「較高」不一定比較健康，請以各自狀態標示判讀。</p></section><div class="sectionHead"><span>各自優先事項</span><b>先處理會影響決策的項目</b></div><div class="healthCompareFocusGrid">${focusCard('鎧麟', husbandFocus, 'husband')}${focusCard('佳軒', wifeFocus, 'wife')}</div>${coupleTrends ? `<div class="sectionHead healthTrendSectionHead"><span>夫妻歷年趨勢</span><b>鎧麟 vs 佳軒</b></div><div class="healthCoupleTrendLegend"><span class="husband"><i></i>鎧麟</span><span class="wife"><i></i>佳軒</span><small>同一指標疊在一起比較；參考區間不同時分色標示。</small></div><div class="healthTrendCategories">${coupleTrends}</div>` : ''}</div>`, '夫妻健康總覽');
   bindHealthControls();
 }
 
