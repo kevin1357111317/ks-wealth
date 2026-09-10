@@ -914,7 +914,7 @@ function dashboard() {
     ? `已整理 ${healthOwners} 人 · 最新 ${latestHealthYear} 年 · 查看重點與趨勢`
     : '整理夫妻歷年健檢、異常趨勢與備孕行動';
   const healthEntry = `<button class="healthHomeEntry" data-open-health><div><small>FAMILY HEALTH</small><b>夫妻健康報告</b><span>${healthCopy}</span></div><i>♡</i></button>`;
-  shell(`<section class="portfolioHero"><div class="heroLabel"><span>家庭淨資產</span><span>老公＋老婆</span></div><div class="bigMoney">${formatMoney(family.netWorth)}</div><div class="miniStats"><div><span>家庭總資產</span><b>NT$ ${formatNumber(family.totalAssets)}</b></div><div><span>家庭總負債</span><b>NT$ ${formatNumber(family.totalLiabilities)}</b></div></div></section>${healthEntry}${trendChart(familyTrendRows(family.netWorth))}${distributionPanel(distributionRows, distributionTotal, distributionTitle, distributionKind)}${ownerDistribution}`, '家庭');
+  shell(`${healthEntry}<section class="portfolioHero"><div class="heroLabel"><span>家庭淨資產</span><span>老公＋老婆</span></div><div class="bigMoney">${formatMoney(family.netWorth)}</div><div class="miniStats"><div><span>家庭總資產</span><b>NT$ ${formatNumber(family.totalAssets)}</b></div><div><span>家庭總負債</span><b>NT$ ${formatNumber(family.totalLiabilities)}</b></div></div></section>${trendChart(familyTrendRows(family.netWorth))}${distributionPanel(distributionRows, distributionTotal, distributionTitle, distributionKind)}${ownerDistribution}`, '家庭');
   root.querySelector('[data-open-health]').onclick = () => {
     healthViewMode = 'compare';
     openAnalysis('health', husbandHealth.latest ? 'husband' : 'wife');
