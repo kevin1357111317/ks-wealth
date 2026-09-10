@@ -128,10 +128,12 @@ test('couple comparison keeps both scores, dimensions and shared metrics', () =>
 
 test('three annual checkups render three-point trends and trend-aware advice', () => {
   const checkups = [2024, 2025, 2026].map(year => ({ id: `h-${year}`, owner_scope: 'husband', checkup_year: year }));
+  // 白血球要真的低於統一標準下限（4.0）才算異常 —— 狀態現在是依數值重算的，
+  // 報告上寫 low 但數值在區間內不會再被當成異常。
   const values = {
-    2024: { wbc: 4.2, anc: 2.2, fasting_glucose: 85, total_cholesterol: 170, triglyceride: 70 },
-    2025: { wbc: 4.1, anc: 2.0, fasting_glucose: 85, total_cholesterol: 165, triglyceride: 65 },
-    2026: { wbc: 4.3, anc: 2.3, fasting_glucose: 86, total_cholesterol: 160, triglyceride: 60 },
+    2024: { wbc: 3.73, anc: 2.2, fasting_glucose: 85, total_cholesterol: 170, triglyceride: 70 },
+    2025: { wbc: 3.58, anc: 2.0, fasting_glucose: 85, total_cholesterol: 165, triglyceride: 65 },
+    2026: { wbc: 3.93, anc: 2.3, fasting_glucose: 86, total_cholesterol: 160, triglyceride: 60 },
   };
   const rows = checkups.flatMap(report => Object.entries(values[report.checkup_year]).map(([metric_key, value_numeric]) => ({
     checkup_id: report.id,
