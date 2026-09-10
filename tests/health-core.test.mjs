@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  buildHealthComparison,
   buildHealthDomains,
   buildHealthInsights,
   buildHealthModel,
@@ -85,4 +86,28 @@ test('a low hemoglobin alone does not claim a microcytic pattern', () => {
     { checkup_id: 'only', metric_key: 'mcv', value_numeric: 88, status: 'normal' },
   ], 'wife');
   assert.doesNotMatch(buildHealthInsights(model, 'wife')[0].title, /小球性/);
+});
+
+test('couple comparison keeps both scores, dimensions and shared metrics', () => {
+  const checkups = [
+    { id: 'husband', owner_scope: 'husband', checkup_year: 2026 },
+    { id: 'wife', owner_scope: 'wife', checkup_year: 2026 },
+  ];
+  const comparisonMetrics = [
+    { checkup_id: 'husband', metric_key: 'management_score', value_numeric: 89, status: 'info' },
+    { checkup_id: 'wife', metric_key: 'management_score', value_numeric: 84, status: 'info' },
+    { checkup_id: 'husband', metric_key: 'score_blood', value_numeric: 17, status: 'info' },
+    { checkup_id: 'wife', metric_key: 'score_blood', value_numeric: 14, status: 'info' },
+    { checkup_id: 'husband', metric_key: 'hba1c', value_numeric: 5.4, status: 'normal' },
+    { checkup_id: 'wife', metric_key: 'hba1c', value_numeric: 5.4, status: 'normal' },
+  ];
+  const result = buildHealthComparison(
+    buildHealthModel(checkups, comparisonMetrics, 'husband'),
+    buildHealthModel(checkups, comparisonMetrics, 'wife'),
+  );
+  assert.equal(result.husband.score, 89);
+  assert.equal(result.wife.score, 84);
+  assert.equal(result.husband.dimensions.find(row => row.key === 'score_blood').metric.value_numeric, 17);
+  assert.equal(result.wife.dimensions.find(row => row.key === 'score_blood').metric.value_numeric, 14);
+  assert.deepEqual(result.metrics.map(row => row.key), ['hba1c']);
 });

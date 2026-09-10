@@ -16,12 +16,13 @@ import { calculateUsd } from './usd-core.js?v=usd-1';
 import { calculateGold } from './gold-core.js?v=gold-trim-1';
 import { calculateLoanCashflow } from './loan-core.js?v=cashflow-1';
 import {
+  buildHealthComparison,
   buildHealthDomains,
   buildHealthInsights,
   buildHealthModel,
   healthReferenceBoundaries,
   selectHealthTrendKeys,
-} from './health-core.js?v=V3P1';
+} from './health-core.js?v=V3P2';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -97,6 +98,7 @@ let goldTransactions = [];
 let healthCheckups = [];
 let healthMetrics = [];
 let healthSelectedYear = null;
+let healthViewMode = 'compare';
 let loanAccounts = [];
 // 還款排程有 837 列，只有貸款分析頁要用，跟台帳一樣點進去才載。
 let loanSchedule = [];
@@ -536,6 +538,7 @@ async function applySession(nextSession) {
   healthCheckups = [];
   healthMetrics = [];
   healthSelectedYear = null;
+  healthViewMode = 'compare';
   expandedStock = null;
   analysisPushed = false;
   analysisReturnScroll = 0;
@@ -912,7 +915,10 @@ function dashboard() {
     : '整理夫妻歷年健檢、異常趨勢與備孕行動';
   const healthEntry = `<button class="healthHomeEntry" data-open-health><div><small>FAMILY HEALTH</small><b>夫妻健康報告</b><span>${healthCopy}</span></div><i>♡</i></button>`;
   shell(`<section class="portfolioHero"><div class="heroLabel"><span>家庭淨資產</span><span>老公＋老婆</span></div><div class="bigMoney">${formatMoney(family.netWorth)}</div><div class="miniStats"><div><span>家庭總資產</span><b>NT$ ${formatNumber(family.totalAssets)}</b></div><div><span>家庭總負債</span><b>NT$ ${formatNumber(family.totalLiabilities)}</b></div></div></section>${healthEntry}${trendChart(familyTrendRows(family.netWorth))}${distributionPanel(distributionRows, distributionTotal, distributionTitle, distributionKind)}${ownerDistribution}`, '家庭');
-  root.querySelector('[data-open-health]').onclick = () => openAnalysis('health', husbandHealth.latest ? 'husband' : 'wife');
+  root.querySelector('[data-open-health]').onclick = () => {
+    healthViewMode = 'compare';
+    openAnalysis('health', husbandHealth.latest ? 'husband' : 'wife');
+  };
 }
 
 function distributionPanel(rows, total, title, kind) {
@@ -1010,12 +1016,13 @@ function healthDomainCard(model, report, title, status, keys, copy) {
 }
 
 function healthOwnerControl() {
-  return `<div class="seg healthPersonSeg"><button data-health-owner="husband" class="${analysisOwner === 'husband' ? 'on' : ''}">老公</button><button data-health-owner="wife" class="${analysisOwner === 'wife' ? 'on' : ''}">老婆</button></div>`;
+  return `<div class="seg healthPersonSeg"><button data-health-view="compare" class="${healthViewMode === 'compare' ? 'on' : ''}">夫妻比較</button><button data-health-view="husband" class="${healthViewMode === 'husband' ? 'on' : ''}">鎧麟</button><button data-health-view="wife" class="${healthViewMode === 'wife' ? 'on' : ''}">佳軒</button></div>`;
 }
 
 function bindHealthControls() {
-  root.querySelectorAll('[data-health-owner]').forEach(button => { button.onclick = () => {
-    analysisOwner = button.dataset.healthOwner;
+  root.querySelectorAll('[data-health-view]').forEach(button => { button.onclick = () => {
+    healthViewMode = button.dataset.healthView;
+    if (healthViewMode !== 'compare') analysisOwner = healthViewMode;
     healthSelectedYear = null;
     render();
     window.scrollTo(0, 0);
@@ -1026,7 +1033,48 @@ function bindHealthControls() {
   }; });
 }
 
+const healthScoreLabel = score => score >= 90 ? '狀態很好' : score >= 80 ? '整體良好' : score >= 70 ? '需要加強追蹤' : '優先安排評估';
+
+function healthCoupleScoreCard(profile, name, ownerScope) {
+  const score = profile.score;
+  if (score === null) return `<article class="healthCouplePerson ${ownerScope}"><span>${name}</span><b>—</b><small>尚無評分</small></article>`;
+  return `<article class="healthCouplePerson ${ownerScope}"><span>${name}</span><b>${score}<i>/100</i></b><div class="healthScoreMeter"><i style="width:${Math.max(0, Math.min(score, 100))}%"></i></div><small>${healthScoreLabel(score)} · 約 ±4 分</small></article>`;
+}
+
+function healthCompareValue(metric) {
+  if (!metric) return '<div class="healthCompareValue missing"><b>—</b><small>未提供</small></div>';
+  const normal = metric.status === 'normal' || metric.status === 'info';
+  return `<div class="healthCompareValue"><b>${healthMetricValue(metric)}</b><small class="${normal ? 'normal' : ''}">${healthStatusText(metric.status)}</small></div>`;
+}
+
+function healthComparisonPage() {
+  const husbandModel = buildHealthModel(healthCheckups, healthMetrics, 'husband');
+  const wifeModel = buildHealthModel(healthCheckups, healthMetrics, 'wife');
+  const comparison = buildHealthComparison(husbandModel, wifeModel);
+  if (!comparison.husband.report && !comparison.wife.report) {
+    shell(`<div class="healthView">${healthOwnerControl()}<div class="healthEmpty"><b>尚未匯入夫妻健檢資料</b><span>提供報告並完成核對後，就會加入比較。</span></div></div>`, '夫妻健康比較');
+    bindHealthControls();
+    return;
+  }
+
+  const scoreCards = `${healthCoupleScoreCard(comparison.husband, '鎧麟', 'husband')}${healthCoupleScoreCard(comparison.wife, '佳軒', 'wife')}`;
+  const dimensions = comparison.husband.dimensions.map((dimension, index) => {
+    const husbandMetric = dimension.metric;
+    const wifeMetric = comparison.wife.dimensions[index]?.metric;
+    if (!husbandMetric && !wifeMetric) return '';
+    return `<div class="healthBreakdownRow"><span>${escapeHtml(dimension.label)}<small>滿分 ${dimension.max}</small></span><b>${husbandMetric?.value_numeric ?? '—'}</b><b>${wifeMetric?.value_numeric ?? '—'}</b></div>`;
+  }).join('');
+  const metricRows = comparison.metrics.map(item => `<div class="healthCompareRow"><span>${escapeHtml(item.label)}</span>${healthCompareValue(item.husband)}${healthCompareValue(item.wife)}</div>`).join('');
+  const husbandFocus = buildHealthInsights(husbandModel, 'husband').slice(0, 2);
+  const wifeFocus = buildHealthInsights(wifeModel, 'wife').slice(0, 3);
+  const focusCard = (name, rows, ownerScope) => `<article class="healthCompareFocus ${ownerScope}"><span>${name}目前優先事項</span>${rows.map(row => `<div><b>${escapeHtml(row.title)}</b><small>${escapeHtml(row.action)}</small></div>`).join('')}</article>`;
+
+  shell(`<div class="healthView">${healthOwnerControl()}<section class="healthCoupleScore"><div class="healthCoupleHead"><span>2026 夫妻健康度</span><b>一起看差異，不排名</b></div><div class="healthCoupleGrid">${scoreCards}</div><p>這是依現有健檢、年齡、備孕與生活型態整理的健康管理分數，不是疾病風險量表；資料不完整時約有 ±4 分差異。</p></section><div class="sectionHead"><span>六大面向評分</span><b>合計 100 分</b></div><section class="healthBreakdown"><div class="healthCompareHeader"><span>評分類別</span><b>鎧麟</b><b>佳軒</b></div>${dimensions}</section><div class="sectionHead"><span>共同檢驗項目</span><b>最新年度</b></div><section class="healthCompareTable"><div class="healthCompareHeader"><span>指標</span><b>鎧麟</b><b>佳軒</b></div>${metricRows}<p>每個人的參考區間可能因性別與實驗室不同；「較高」不一定比較健康，請以各自狀態標示判讀。</p></section><div class="sectionHead"><span>各自優先事項</span><b>先處理會影響決策的項目</b></div><div class="healthCompareFocusGrid">${focusCard('鎧麟', husbandFocus, 'husband')}${focusCard('佳軒', wifeFocus, 'wife')}</div></div>`, '夫妻健康比較');
+  bindHealthControls();
+}
+
 function healthPage() {
+  if (healthViewMode === 'compare') return healthComparisonPage();
   const model = buildHealthModel(healthCheckups, healthMetrics, analysisOwner);
   if (!model.latest) {
     shell(`<div class="healthView">${healthOwnerControl()}<div class="healthEmpty"><b>尚未匯入${ownerName(analysisOwner)}健檢資料</b><span>提供報告並完成核對後，就會加入年度趨勢。</span></div></div>`, `${ownerName(analysisOwner)}健康報告`);
