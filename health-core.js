@@ -27,9 +27,26 @@ export const HEALTH_COMPARISON_METRICS = [
 ];
 
 export function healthReferenceBoundaries(metric) {
-  return [...new Set([metric?.reference_low, metric?.reference_high]
-    .map(numberOrNull)
-    .filter(value => value !== null))];
+  return [...new Set(healthReferenceMarkers(metric).map(marker => marker.value))];
+}
+
+export function healthReferenceMarkers(metric) {
+  const low = numberOrNull(metric?.reference_low);
+  const high = numberOrNull(metric?.reference_high);
+  return [
+    low === null ? null : { kind: 'low', label: '下限', value: low },
+    high === null ? null : { kind: 'high', label: '上限', value: high },
+  ].filter(Boolean);
+}
+
+export function healthReferenceState(metric) {
+  const value = numberOrNull(metric?.value_numeric);
+  const low = numberOrNull(metric?.reference_low);
+  const high = numberOrNull(metric?.reference_high);
+  if (value === null || (low === null && high === null)) return null;
+  if (low !== null && value < low) return '低於下限';
+  if (high !== null && value > high) return '高於上限';
+  return '參考範圍內';
 }
 
 export function buildHealthModel(checkups, metrics, ownerScope) {

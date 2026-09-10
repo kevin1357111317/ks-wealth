@@ -5,6 +5,7 @@ import test from 'node:test';
 const source = await readFile(new URL('../app-v3.js', import.meta.url), 'utf8');
 const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 const authTools = await readFile(new URL('../auth-tools.js', import.meta.url), 'utf8');
+const healthCss = await readFile(new URL('../health.css', import.meta.url), 'utf8');
 
 test('initial data renders before realtime and background quotes', () => {
   const resolver = source.slice(source.indexOf('async function resolveMembership'), source.indexOf('async function applySession'));
@@ -51,4 +52,13 @@ test('couple health card is the first card on the family dashboard', () => {
   const dashboard = source.slice(source.indexOf('function dashboard()'), source.indexOf('function distributionPanel'));
   const rendered = dashboard.slice(dashboard.indexOf('shell(`'));
   assert.ok(rendered.indexOf('${healthEntry}') < rendered.indexOf('<section class="portfolioHero">'));
+});
+
+test('health trend charts label reference bounds and expand on phones', () => {
+  assert.match(source, /healthReferenceMarkers/);
+  assert.match(source, /marker\.label/);
+  assert.match(source, /viewBox="0 0 340 180"/);
+  assert.match(source, /healthReferenceState/);
+  assert.match(healthCss, /@media\(max-width:520px\)\{\.healthTrendGrid\{grid-template-columns:1fr\}/);
+  assert.match(healthCss, /\.healthTrendHead b\{[^}]*font-size:\.84rem/);
 });
