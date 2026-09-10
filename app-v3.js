@@ -22,7 +22,7 @@ import {
   buildHealthModel,
   healthReferenceBoundaries,
   selectHealthTrendKeys,
-} from './health-core.js?v=V3P4';
+} from './health-core.js?v=V3P5';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -1065,7 +1065,7 @@ function healthComparisonPage() {
     return `<div class="healthBreakdownRow"><span>${escapeHtml(dimension.label)}<small>滿分 ${dimension.max}</small></span><b>${husbandMetric?.value_numeric ?? '—'}</b><b>${wifeMetric?.value_numeric ?? '—'}</b></div>`;
   }).join('');
   const metricRows = comparison.metrics.map(item => `<div class="healthCompareRow"><span>${escapeHtml(item.label)}</span>${healthCompareValue(item.husband)}${healthCompareValue(item.wife)}</div>`).join('');
-  const husbandFocus = buildHealthInsights(husbandModel, 'husband').slice(0, 2);
+  const husbandFocus = buildHealthInsights(husbandModel, 'husband').slice(0, 3);
   const wifeFocus = buildHealthInsights(wifeModel, 'wife').slice(0, 3);
   const focusCard = (name, rows, ownerScope) => `<article class="healthCompareFocus ${ownerScope}"><span>${name}目前優先事項</span>${rows.map(row => `<div><b>${escapeHtml(row.title)}</b><small>${escapeHtml(row.action)}</small></div>`).join('')}</article>`;
 

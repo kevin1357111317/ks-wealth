@@ -4,6 +4,7 @@ const numberOrNull = value => value === null || value === undefined || value ===
 
 const isAbnormal = metric => metric && !['normal', 'info'].includes(metric.status);
 const isLow = metric => metric?.status === 'low';
+const seriesText = series => series.map(point => `${point.year}：${point.value}`).join(' → ');
 
 export const HEALTH_SCORE_DIMENSIONS = [
   { key: 'score_cardio_metabolic', label: '心血管／代謝', max: 20 },
@@ -83,7 +84,7 @@ export function selectHealthTrendKeys(model, ownerScope, limit = 6) {
   if (!model.latest) return [];
   const preferred = ownerScope === 'wife'
     ? ['mcv', 'hemoglobin', 'afp', 'total_cholesterol', 'egfr', 'hba1c', 'body_weight']
-    : ['wbc', 'total_bilirubin', 'direct_bilirubin', 'ldl_c', 'hba1c', 'body_weight', 'body_fat'];
+    : ['wbc', 'direct_bilirubin', 'total_bilirubin', 'fasting_glucose', 'total_cholesterol', 'triglyceride', 'creatinine', 'hemoglobin', 'mcv', 'platelet', 'ldl_c', 'hba1c', 'body_weight', 'body_fat'];
   const ignored = new Set(['age', 'management_score']);
   const candidates = model.latest.metrics
     .filter(metric => !ignored.has(metric.metric_key) && model.series(metric.metric_key).length >= 2)
@@ -127,18 +128,42 @@ export function buildHealthInsights(model, ownerScope) {
     const neutrophil = value('neutrophil');
     const anc = value('anc') ?? (Number.isFinite(wbc) && Number.isFinite(neutrophil)
       ? wbc * neutrophil / 100 : null);
+    const wbcSeries = model.series('wbc');
+    const ancSeries = model.series('anc');
     insights.push({
       tone: 'watch', badge: '持續追蹤', title: '白血球輕度偏低，先看趨勢與 ANC',
-      body: `白血球目前 ${value('wbc') ?? '—'} ×10³/µL${anc === null ? '' : `，推算 ANC 約 ${anc.toFixed(2)} ×10³/µL`}。目前較像穩定的輕度偏低，不能只憑單次數值判定疾病。`,
+      body: wbcSeries.length >= 3
+        ? `白血球三年趨勢為 ${seriesText(wbcSeries)} ×10³/µL${ancSeries.length ? `；ANC 為 ${seriesText(ancSeries)} ×10³/µL，未呈持續下滑` : ''}。白血球持續略低。`
+        : `白血球目前 ${value('wbc') ?? '—'} ×10³/µL${anc === null ? '' : `，推算 ANC 約 ${anc.toFixed(2)} ×10³/µL`}。目前較像穩定的輕度偏低，不能只憑單次數值判定疾病。`,
       action: '健康狀態良好時於 1–3 個月重驗 CBC；若反覆發燒、感染、口腔潰瘍，或 WBC／ANC 繼續下降，提早至家醫科或血液科評估。',
     });
   }
 
   if (abnormal('total_bilirubin') || abnormal('direct_bilirubin')) {
+    const totalSeries = model.series('total_bilirubin');
+    const directSeries = model.series('direct_bilirubin');
     insights.push({
       tone: 'watch', badge: '持續追蹤', title: '膽紅素輕度偏高，搭配分型與肝功能追蹤',
-      body: `總膽紅素 ${value('total_bilirubin') ?? '—'}、直接膽紅素 ${value('direct_bilirubin') ?? '—'} mg/dL；目前 AST／ALT 與腹部超音波沒有同步警訊。`,
+      body: totalSeries.length >= 3
+        ? `總膽紅素三年為 ${seriesText(totalSeries)} mg/dL${directSeries.length ? `，直接膽紅素為 ${seriesText(directSeries)} mg/dL` : ''}；數值小幅波動，AST／ALT 持續正常。`
+        : `總膽紅素 ${value('total_bilirubin') ?? '—'}、直接膽紅素 ${value('direct_bilirubin') ?? '—'} mg/dL；目前 AST／ALT 與腹部超音波沒有同步警訊。`,
       action: '3–6 個月或下次門診重驗總／直接／間接膽紅素與肝功能。若眼白變黃、深色尿、灰白便或右上腹痛，提早看肝膽胃腸科。',
+    });
+  }
+
+  if (ownerScope === 'husband' && row('semen_concentration') && row('semen_progressive_motility')) {
+    insights.push({
+      tone: 'good', badge: '備孕基準', title: '精液主要參數均達這份報告的參考值',
+      body: `精液量 ${value('semen_volume') ?? '—'} mL、精蟲濃度 ${value('semen_concentration') ?? '—'} ×10⁶/mL、前進運動 ${value('semen_progressive_motility') ?? '—'}%、正常型態 ${value('semen_morphology') ?? '—'}%。`,
+      action: '保留為備孕基準。精液參數會波動；若規律未避孕仍未懷孕，依生殖醫學／泌尿科建議決定是否複驗，夫妻同步評估。',
+    });
+  }
+
+  if (ownerScope === 'husband' && model.series('fasting_glucose').length >= 3) {
+    insights.push({
+      tone: 'good', badge: '三年穩定', title: '血糖持平，血脂與肝腎功能維持良好',
+      body: `飯前血糖為 ${seriesText(model.series('fasting_glucose'))} mg/dL；總膽固醇為 ${seriesText(model.series('total_cholesterol'))} mg/dL，三酸甘油脂為 ${seriesText(model.series('triglyceride'))} mg/dL。`,
+      action: '維持目前體重、規律運動與飲食型態；長時間工作每 30–60 分鐘起身活動，年度健檢繼續用相同指標觀察即可。',
     });
   }
 
@@ -201,6 +226,9 @@ export function buildHealthDomains(model, report, ownerScope) {
     domain('血脂結構', ['total_cholesterol', 'ldl_c', 'hdl_c', 'triglyceride', 'non_hdl_c'], '整體風險判讀', '維持目前狀態', '總膽固醇要連同 LDL、非 HDL、三酸甘油脂與整體風險一起看。'),
   ] : [
     domain('低劑量肺部 CT', ['ldct_exam', 'ldct_lung_pleura', 'ldct_calcified_lymph_nodes', 'ldct_thymic_tissue', 'ldct_arterial_ligament_calcification', 'ldct_pericardial_effusion'], '安排專科確認', '目前無急迫警訊', '把舊發炎相關變化與需要確認的胸腺／心包膜發現分開追蹤；以原始影像及專科判讀為準。'),
+    domain('男性備孕', ['semen_volume', 'semen_liquefaction', 'semen_ph', 'semen_progressive_motility', 'semen_nonprogressive_motility', 'semen_immotile', 'semen_concentration', 'semen_morphology', 'semen_wbc', 'semen_rbc'], '依醫師建議複驗', '主要參數達參考值', '精液分析是單次基準而非受孕保證；若有需要，依生殖醫學／泌尿科建議複驗並同步評估夫妻雙方。'),
+    domain('尿液檢查', ['urine_appearance', 'urine_leukocyte', 'urine_nitrite', 'urine_glucose', 'urine_protein', 'urine_ph', 'urine_occult_blood', 'urine_specific_gravity', 'urine_wbc_microscopy', 'urine_rbc_microscopy', 'urine_crystal', 'urine_bacteria'], '補水後複驗觀察', '目前正常', '結晶體需搭配尿液酸鹼值、潛血、蛋白、細菌與症狀判讀；單次結果不直接等同結石。'),
+    domain('感染篩檢與免疫', ['hbs_ag', 'anti_hbs', 'anti_hcv', 'vdrl', 'hiv', 'chlamydia_igg', 'g6pd'], '依醫師評估', '目前無異常', '保留肝炎、感染篩檢與抗體結果，作為備孕及日後醫療紀錄。'),
     domain('血液與免疫', ['wbc', 'anc', 'hemoglobin', 'hematocrit', 'platelet'], '輕度異常追蹤', '目前正常', '白血球需搭配 ANC 與症狀判讀；血色素與 MCV 正常時，不像典型貧血。'),
     domain('肝膽功能', ['total_bilirubin', 'direct_bilirubin', 'ast', 'alt', 'ggt', 'alp'], '定期複驗', '目前正常', '膽紅素要搭配分型、肝酵素與影像追蹤，不直接用單一數值下診斷。'),
     domain('心血管與代謝', ['bmi', 'waist', 'body_fat', 'fasting_glucose', 'hba1c', 'ldl_c'], '調整生活型態', '維持目前狀態', '體位、血糖與血脂整體一起看，長期重點是睡眠、運動與避免久坐。'),
