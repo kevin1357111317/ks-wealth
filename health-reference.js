@@ -81,7 +81,7 @@ export const HEALTH_REFERENCE_SPEC = {
     female: range(35, 104, '女性 35–104'),
   },
   total_bilirubin: { source: '常用實驗室成人區間', both: range(0.2, 1.2, '0.2–1.2') },
-  direct_bilirubin: { source: '常用實驗室成人區間', both: range(null, 0.3, '≤0.3') },
+  direct_bilirubin: { source: '常用實驗室成人區間', both: range(0, 0.3, '0–0.3') },
   albumin: { source: '常用實驗室成人區間', both: range(3.5, 5, '3.5–5.0') },
   total_protein: { source: '常用實驗室成人區間', both: range(6.4, 8.3, '6.4–8.3') },
 
