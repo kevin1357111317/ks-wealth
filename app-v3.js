@@ -24,7 +24,7 @@ import {
   healthReferenceMarkers,
   healthReferenceState,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3P13';
+} from './health-core.js?v=V3P14';
 
 // App / Supabase -------------------------------------------------------------
 
