@@ -24,7 +24,7 @@ import {
   healthReferenceMarkers,
   healthReferenceState,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3P16';
+} from './health-core.js?v=V3P17';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -1127,7 +1127,7 @@ function healthComparisonPage() {
     return cards ? `<section class="healthTrendCategory"><div class="healthTrendCategoryHead"><span>${escapeHtml(group.title)}</span><b>${group.keys.length} 項</b></div><div class="healthTrendGrid">${cards}</div></section>` : '';
   }).join('');
 
-  shell(`<div class="healthView">${healthOwnerControl()}<section class="healthCoupleScore"><div class="healthCoupleHead"><span>2026 夫妻健康度</span><b>一起看差異，不排名</b></div><div class="healthCoupleGrid">${scoreCards}</div><p>這是依現有健檢、年齡、備孕與生活型態整理的健康管理分數，不是疾病風險量表；資料不完整時約有 ±4 分差異。</p></section><div class="sectionHead"><span>六大面向評分</span><b>合計 100 分</b></div><section class="healthBreakdown"><div class="healthCompareHeader"><span>評分類別</span><b>鎧麟</b><b>佳軒</b></div>${dimensions}</section><div class="sectionHead"><span>共同檢驗項目</span><b>最新年度</b></div><section class="healthCompareTable"><div class="healthCompareHeader"><span>指標</span><b>鎧麟</b><b>佳軒</b></div>${metricRows}<p>參考區間已統一成國際通用成人標準，男女有別的項目分開標示；「較高」不一定比較健康，請以各自狀態標示判讀。</p></section><div class="sectionHead"><span>各自優先事項</span><b>先處理會影響決策的項目</b></div><div class="healthCompareFocusGrid">${focusCard('鎧麟', husbandFocus, 'husband')}${focusCard('佳軒', wifeFocus, 'wife')}</div>${coupleTrends ? `<div class="sectionHead healthTrendSectionHead"><span>夫妻歷年趨勢</span><b>鎧麟 vs 佳軒</b></div><div class="healthCoupleTrendLegend"><span class="husband"><i></i>鎧麟｜藍色實線・圓點</span><span class="wife"><i></i>佳軒｜橘色虛線・菱形</span><small>參考區間統一採國際通用成人標準；男女本來就不同的項目（血色素、ALT、肌酸酐等）才分成兩條線。</small></div><div class="healthTrendCategories">${coupleTrends}</div>` : ''}</div>`, '夫妻健康總覽');
+  shell(`<div class="healthView">${healthOwnerControl()}<section class="healthCoupleScore"><div class="healthCoupleHead"><span>2026 夫妻健康度</span><b>一起看差異，不排名</b></div><div class="healthCoupleGrid">${scoreCards}</div><p>這是依現有健檢、年齡、備孕與生活型態整理的健康管理分數，不是疾病風險量表；資料不完整時約有 ±4 分差異。</p></section><div class="sectionHead"><span>六大面向評分</span><b>合計 100 分</b></div><section class="healthBreakdown"><div class="healthCompareHeader"><span>評分類別</span><b>鎧麟</b><b>佳軒</b></div>${dimensions}</section><div class="sectionHead"><span>共同檢驗項目</span><b>最新年度</b></div><section class="healthCompareTable"><div class="healthCompareHeader"><span>指標</span><b>鎧麟</b><b>佳軒</b></div>${metricRows}<p>參考區間已統一成國際通用成人標準，男女有別的項目分開標示；「較高」不一定比較健康，請以各自狀態標示判讀。</p></section><div class="sectionHead"><span>各自優先事項</span><b>先處理會影響決策的項目</b></div><div class="healthCompareFocusGrid">${focusCard('鎧麟', husbandFocus, 'husband')}${focusCard('佳軒', wifeFocus, 'wife')}</div>${coupleTrends ? `<div class="sectionHead healthTrendSectionHead"><span>夫妻歷年趨勢</span><b>鎧麟 vs 佳軒</b></div><div class="healthCoupleTrendLegend"><span class="husband"><i></i>鎧麟｜藍色實線・圓點</span><span class="wife"><i></i>佳軒｜橘色實線・菱形</span><small>參考區間統一採國際通用成人標準；男女本來就不同的項目（血色素、ALT、肌酸酐等）才分成兩條線。</small></div><div class="healthTrendCategories">${coupleTrends}</div>` : ''}</div>`, '夫妻健康總覽');
   bindHealthControls();
 }
 

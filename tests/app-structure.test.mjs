@@ -77,7 +77,7 @@ test('health trends live at the bottom of couple comparison and overlay both par
   assert.match(source, /尚無資料/);
   assert.match(healthCss, /\.healthCoupleLine\.husband/);
   assert.match(healthCss, /\.healthCoupleLine\.wife/);
-  assert.match(healthCss, /\.healthCoupleLine\.wife\{[^}]*stroke-dasharray/);
+  assert.doesNotMatch(healthCss, /\.healthCoupleLine\.wife\{[^}]*stroke-dasharray/);
   assert.match(comparisonPage, /鎧麟｜藍色實線・圓點/);
-  assert.match(comparisonPage, /佳軒｜橘色虛線・菱形/);
+  assert.match(comparisonPage, /佳軒｜橘色實線・菱形/);
 });
