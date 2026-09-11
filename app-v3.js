@@ -24,7 +24,7 @@ import {
   healthReferenceMarkers,
   healthReferenceState,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3P14';
+} from './health-core.js?v=V3P15';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -994,10 +994,11 @@ function healthMetricReference(metric) {
   return '未提供參考值';
 }
 
-function coupleTrendPerson(metric, name, ownerScope) {
+function coupleTrendPerson(metric, name, ownerScope, measuredYear, currentYear) {
   if (!metric) return `<div class="healthTrendPerson ${ownerScope} missing"><span><i></i>${name}</span><b>—</b><small>尚無資料</small></div>`;
   const state = healthReferenceState(metric) ?? healthStatusText(metric.status);
-  return `<div class="healthTrendPerson ${ownerScope}"><span><i></i>${name}</span><b>${healthMetricValue(metric)}</b><small>${escapeHtml(state)} · ${escapeHtml(healthMetricReference(metric))}</small></div>`;
+  const yearLabel = measuredYear && measuredYear !== currentYear ? `最近檢測 ${measuredYear} · ` : '';
+  return `<div class="healthTrendPerson ${ownerScope}"><span><i></i>${name}</span><b>${healthMetricValue(metric)}</b><small>${yearLabel}${escapeHtml(state)} · ${escapeHtml(healthMetricReference(metric))}</small></div>`;
 }
 
 function coupleHealthTrendCard(husbandModel, wifeModel, key) {
@@ -1049,7 +1050,7 @@ function coupleHealthTrendCard(husbandModel, wifeModel, key) {
     : `<polygon class="healthCoupleDot wife" points="${cx},${cy - 6.2} ${cx + 6.2},${cy} ${cx},${cy + 6.2} ${cx - 6.2},${cy}"/>`;
   const plot = (series, ownerScope) => `${series.length >= 2 ? `<polyline class="healthCoupleLine ${ownerScope}" points="${series.map(point => `${x(point.year)},${y(point.value)}`).join(' ')}"/>` : ''}${series.map(point => dot(ownerScope, x(point.year), y(point.value))).join('')}`;
   const labels = years.map(year => `<text class="healthYearLabel" x="${x(year)}" y="174" text-anchor="middle">${year}</text>`).join('');
-  return `<article class="healthTrendCard healthCoupleTrendCard"><div class="healthTrendHead"><span>${escapeHtml(selected.label)}</span></div><div class="healthTrendPeople">${coupleTrendPerson(husbandMetric, '鎧麟', 'husband')}${coupleTrendPerson(wifeMetric, '佳軒', 'wife')}</div><svg viewBox="0 0 340 180" role="img" aria-label="${escapeHtml(selected.label)}夫妻歷年趨勢"><line class="healthGrid" x1="20" y1="145" x2="320" y2="145"/>${rangeBand}${ref}${plot(husbandSeries, 'husband')}${plot(wifeSeries, 'wife')}${labels}</svg></article>`;
+  return `<article class="healthTrendCard healthCoupleTrendCard"><div class="healthTrendHead"><span>${escapeHtml(selected.label)}</span></div><div class="healthTrendPeople">${coupleTrendPerson(husbandMetric, '鎧麟', 'husband', husbandSeries.at(-1)?.year, husbandModel.latest?.checkup_year)}${coupleTrendPerson(wifeMetric, '佳軒', 'wife', wifeSeries.at(-1)?.year, wifeModel.latest?.checkup_year)}</div><svg viewBox="0 0 340 180" role="img" aria-label="${escapeHtml(selected.label)}夫妻歷年趨勢"><line class="healthGrid" x1="20" y1="145" x2="320" y2="145"/>${rangeBand}${ref}${plot(husbandSeries, 'husband')}${plot(wifeSeries, 'wife')}${labels}</svg></article>`;
 }
 
 function healthValueChip(model, report, key) {
