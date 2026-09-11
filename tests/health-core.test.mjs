@@ -92,6 +92,20 @@ test('husband advice and domains use his actual follow-up items', () => {
   ]);
 });
 
+test('a historical carotid plaque remains visible even when the latest report omits it', () => {
+  const checkups = [
+    { id: 'h-2024', owner_scope: 'husband', checkup_year: 2024 },
+    { id: 'h-2026', owner_scope: 'husband', checkup_year: 2026 },
+  ];
+  const model = buildHealthModel(checkups, [
+    { checkup_id: 'h-2024', metric_key: 'carotid_plaque', value_text: '左側總頸動脈輕度動脈粥狀硬化變化', status: 'watch' },
+    { checkup_id: 'h-2026', metric_key: 'fasting_glucose', value_numeric: 86, status: 'normal' },
+  ], 'husband');
+  const insight = buildHealthInsights(model, 'husband').find(row => /頸動脈/.test(row.title));
+  assert.equal(insight.title, '2024 頸動脈超音波曾見輕度斑塊');
+  assert.match(insight.body, /左側總頸動脈/);
+});
+
 test('a low hemoglobin alone does not claim a microcytic pattern', () => {
   const model = buildHealthModel([
     { id: 'only', owner_scope: 'wife', checkup_year: 2026 },
@@ -164,6 +178,6 @@ test('couple trend groups use the union of both partners and keep health categor
     buildHealthModel(checkups, rows, 'husband'),
     buildHealthModel(checkups, rows, 'wife'),
   );
-  assert.deepEqual(groups.map(group => group.title), ['血液與造血', '血糖、血脂與體位', '備孕與荷爾蒙']);
+  assert.deepEqual(groups.map(group => group.title), ['血液與造血', '血糖、血脂與體位', '腫瘤標記追蹤']);
   assert.deepEqual(groups.flatMap(group => group.keys), ['wbc', 'mcv', 'total_cholesterol', 'afp']);
 });
