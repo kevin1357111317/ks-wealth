@@ -70,13 +70,26 @@ test('狀態跟著統一區間重算，不留報告原本的判定', () => {
 });
 
 test('沒有國際統一標準的項目保留原報告數值', () => {
-  // 腫瘤標記、感染篩檢是方法決定的切點，不能拿別家的硬套。
-  const wife = model('wife', [
-    { metric_key: 'afp', value_numeric: 9.4, reference_low: null, reference_high: 9, status: 'high' },
+  // CEA、CA19-9、PSA 這些是方法決定的切點，不能拿別家的硬套。
+  const husband = model('husband', [
+    { metric_key: 'cea', value_numeric: 1.2, reference_low: 0, reference_high: 4.7, status: 'normal' },
   ]);
-  const metric = wife.metric(wife.latest, 'afp');
-  assert.equal(metric.reference_high, 9);
-  assert.equal(metric.status, 'high');
+  const metric = husband.metric(husband.latest, 'cea');
+  assert.equal(metric.reference_high, 4.7);
+  assert.equal(metric.status, 'normal');
+});
+
+test('AFP 兩邊的實驗室切點不同，統一成 0–10', () => {
+  const husband = model('husband', [
+    { metric_key: 'afp', value_numeric: 5.73, reference_low: 0, reference_high: 7, status: 'normal' },
+  ]);
+  const wife = model('wife', [
+    { metric_key: 'afp', value_numeric: 12, reference_low: null, reference_high: 9, status: 'high' },
+  ]);
+  const his = husband.metric(husband.latest, 'afp');
+  const hers = wife.metric(wife.latest, 'afp');
+  assert.deepEqual([his.reference_low, his.reference_high, his.status], [0, 10, 'normal']);
+  assert.deepEqual([hers.reference_low, hers.reference_high, hers.status], [0, 10, 'high']);
 });
 
 test('只有文字結果的項目不會被改寫', () => {
