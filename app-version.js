@@ -1,6 +1,6 @@
 // KS Wealth 正式版號的唯一來源。
 // 規則：大更新 V1 -> V2；小更新 V1 -> V1P1 -> V1P2。
-const APP_VERSION = 'V3P15';
+const APP_VERSION = 'V3P16';
 
 window.KS_APP_VERSION = APP_VERSION;
 document.documentElement.dataset.appVersion = APP_VERSION;

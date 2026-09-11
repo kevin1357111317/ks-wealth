@@ -24,7 +24,7 @@ import {
   healthReferenceMarkers,
   healthReferenceState,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3P15';
+} from './health-core.js?v=V3P16';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -1039,9 +1039,12 @@ function coupleHealthTrendCard(husbandModel, wifeModel, key) {
     .map(marker => {
       const shared = marker.owners.length === 2;
       const ownerScope = shared ? 'shared' : marker.owners[0];
-      const ownerLabel = shared ? '' : ownerScope === 'husband' ? '鎧麟' : '佳軒';
-      const left = ownerScope === 'wife';
-      return `<g class="healthCoupleRef ${ownerScope}"><line x1="20" y1="${y(marker.value)}" x2="320" y2="${y(marker.value)}"/><text x="${left ? 24 : 316}" y="${Math.max(14, y(marker.value) - 5)}" text-anchor="${left ? 'start' : 'end'}">${ownerLabel}${marker.label} ${healthNumber(marker.value)}</text></g>`;
+      // 夫妻參考值不同時只保留各自顏色的界線，避免四組上下限文字疊在數據線上。
+      // 兩人共用同一界線時才顯示一次數字，讓圖仍有可判讀的基準。
+      const label = shared
+        ? `<text x="316" y="${Math.max(14, y(marker.value) - 5)}" text-anchor="end">${marker.label} ${healthNumber(marker.value)}</text>`
+        : '';
+      return `<g class="healthCoupleRef ${ownerScope}"><line x1="20" y1="${y(marker.value)}" x2="320" y2="${y(marker.value)}"/>${label}</g>`;
     })
     .join('');
   // 兩條線除了顏色不同，點的形狀也不同（鎧麟圓點、佳軒菱形），色弱或黑白列印時還分得出來。

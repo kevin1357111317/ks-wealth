@@ -54,9 +54,12 @@ test('couple health card is the first card on the family dashboard', () => {
   assert.ok(rendered.indexOf('${healthEntry}') < rendered.indexOf('<section class="portfolioHero">'));
 });
 
-test('health trend charts label reference bounds and expand on phones', () => {
+test('health trend charts keep reference lines but hide per-person bound labels', () => {
+  const trendCard = source.slice(source.indexOf('function coupleHealthTrendCard'), source.indexOf('function healthValueChip'));
   assert.match(source, /healthReferenceMarkers/);
-  assert.match(source, /marker\.label/);
+  assert.match(trendCard, /const label = shared/);
+  assert.doesNotMatch(trendCard, /ownerLabel/);
+  assert.match(trendCard, /healthCoupleRef \$\{ownerScope\}/);
   assert.match(source, /viewBox="0 0 340 180"/);
   assert.match(source, /healthReferenceState/);
   assert.match(healthCss, /@media\(max-width:520px\)\{\.healthTrendGrid\{grid-template-columns:1fr\}/);
