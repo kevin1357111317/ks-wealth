@@ -92,6 +92,19 @@ test('AFP 兩邊的實驗室切點不同，統一成 0–10', () => {
   assert.deepEqual([hers.reference_low, hers.reference_high, hers.status], [0, 10, 'high']);
 });
 
+test('直接膽紅素補上 0 下限，只有偏高會被標出來', () => {
+  const husband = model('husband', [
+    { metric_key: 'direct_bilirubin', value_numeric: 0.6, reference_low: 0.1, reference_high: 0.5, status: 'high' },
+  ]);
+  const metric = husband.metric(husband.latest, 'direct_bilirubin');
+  assert.deepEqual([metric.reference_low, metric.reference_high, metric.status], [0, 0.3, 'high']);
+  // 0.1 在某些實驗室的下限上，但直接膽紅素低沒有臨床意義，不能標成偏低。
+  const low = model('husband', [
+    { metric_key: 'direct_bilirubin', value_numeric: 0.05, reference_low: 0.1, reference_high: 0.5, status: 'low' },
+  ]);
+  assert.equal(low.metric(low.latest, 'direct_bilirubin').status, 'normal');
+});
+
 test('只有文字結果的項目不會被改寫', () => {
   const metric = { metric_key: 'urine_protein', value_text: 'Negative', value_numeric: null, status: 'positive' };
   assert.equal(applyHealthReferenceSpec(metric, 'wife'), metric);
