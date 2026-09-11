@@ -7,6 +7,9 @@
 // AFP 是例外 —— 兩人的報告一個寫 0–7 一個寫 <9，圖上會多出兩條意義一樣的線，
 // 所以統一成常見成人切點 0–10；兩邊的判定都不受影響。
 //
+// 只有上限有臨床意義的指標（直接膽紅素、總膽固醇、三酸甘油脂）下限寫 0：那是
+// 刻度起點不是警戒線，用意是讓圖上畫得出正常區間的底色，不會有人因為偏低被標紅。
+//
 // 標準來源：
 // - CBC：成人血液學常用參考區間（Wintrobe／MSD Manual）
 // - 血糖與糖化血色素：ADA
@@ -49,7 +52,7 @@ export const HEALTH_REFERENCE_SPEC = {
   // 血糖與血脂
   fasting_glucose: { source: 'ADA 正常空腹血糖', both: range(70, 99, '70–99') },
   hba1c: { source: 'ADA 正常糖化血色素', both: range(null, 5.7, '<5.7') },
-  total_cholesterol: { source: 'NCEP ATP III 理想值', both: range(null, 200, '<200') },
+  total_cholesterol: { source: 'NCEP ATP III 理想值', both: range(0, 200, '0–200') },
   ldl_c: { source: 'NCEP ATP III（<100 最理想）', both: range(null, 130, '<130') },
   non_hdl_c: { source: 'AHA 理想值', both: range(null, 130, '<130') },
   hdl_c: {
@@ -57,7 +60,7 @@ export const HEALTH_REFERENCE_SPEC = {
     male: range(40, null, '男性 ≥40'),
     female: range(50, null, '女性 ≥50'),
   },
-  triglyceride: { source: 'NCEP ATP III 理想值', both: range(null, 150, '<150') },
+  triglyceride: { source: 'NCEP ATP III 理想值', both: range(0, 150, '0–150') },
 
   // 肝膽功能
   ast: {
