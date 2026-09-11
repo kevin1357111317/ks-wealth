@@ -178,6 +178,37 @@ test('couple trend groups use the union of both partners and keep health categor
     buildHealthModel(checkups, rows, 'husband'),
     buildHealthModel(checkups, rows, 'wife'),
   );
-  assert.deepEqual(groups.map(group => group.title), ['血液與造血', '血糖、血脂與體位', '腫瘤標記追蹤']);
+  assert.deepEqual(groups.map(group => group.title), ['血液與造血', '血糖與血脂', '腫瘤標記追蹤']);
   assert.deepEqual(groups.flatMap(group => group.keys), ['wbc', 'mcv', 'total_cholesterol', 'afp']);
+});
+
+test('historical muscle measurements remain in trends when the latest checkup did not repeat body composition', () => {
+  const checkups = [2023, 2024, 2026].map(year => ({ id: `h-${year}`, owner_scope: 'husband', checkup_year: year }));
+  const model = buildHealthModel(checkups, [
+    { checkup_id: 'h-2023', metric_key: 'skeletal_muscle_mass', label: '骨骼肌量', value_numeric: 20.3, unit: 'kg', status: 'low' },
+    { checkup_id: 'h-2024', metric_key: 'skeletal_muscle_mass', label: '骨骼肌量', value_numeric: 20.4, unit: 'kg', status: 'low' },
+    { checkup_id: 'h-2023', metric_key: 'body_fat', label: '體脂率', value_numeric: 15, unit: '%', status: 'normal' },
+    { checkup_id: 'h-2024', metric_key: 'body_fat', label: '體脂率', value_numeric: 17.5, unit: '%', status: 'normal' },
+    { checkup_id: 'h-2026', metric_key: 'body_fat', label: '體脂率', value_numeric: 18.8, unit: '%', status: 'normal' },
+  ], 'husband');
+
+  assert.ok(selectHealthTrendKeys(model, 'husband').includes('skeletal_muscle_mass'));
+  assert.equal(selectCoupleHealthTrendGroups(model, buildHealthModel([], [], 'wife'))
+    .find(group => group.key === 'body').title, '體位與肌肉');
+  assert.match(buildHealthInsights(model, 'husband').find(row => /肌肉量/.test(row.title)).body, /2023.*2024/);
+});
+
+test('retinal follow-up and an unrepeated low vitamin D result stay visible as historical priorities', () => {
+  const checkups = [2023, 2025, 2026].map(year => ({ id: `h-${year}`, owner_scope: 'husband', checkup_year: year }));
+  const model = buildHealthModel(checkups, [
+    { checkup_id: 'h-2023', metric_key: 'vitamin_d_25oh', value_numeric: 12.1, unit: 'ng/mL', status: 'low' },
+    { checkup_id: 'h-2025', metric_key: 'retinal_hole_right', value_text: '右眼小裂孔，已雷射', status: 'watch' },
+    { checkup_id: 'h-2026', metric_key: 'retinal_tear_followup', value_text: '右眼疑似裂孔持續追蹤', status: 'watch' },
+  ], 'husband');
+  const insights = buildHealthInsights(model, 'husband');
+
+  assert.match(insights[0].title, /視網膜/);
+  assert.match(insights[0].action, /飛蚊.*閃光.*簾幕/);
+  assert.match(insights.find(row => /維生素 D/.test(row.title)).badge, /尚未複查/);
+  assert.equal(buildHealthDomains(model, model.latest, 'husband')[0].title, '眼睛與視網膜');
 });

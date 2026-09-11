@@ -1,4 +1,4 @@
-import { applyHealthReferenceSpec } from './health-reference.js?v=V3P14';
+import { applyHealthReferenceSpec } from './health-reference.js?v=V3P15';
 
 const numberOrNull = value => value === null || value === undefined || value === ''
   ? null
@@ -30,7 +30,8 @@ export const HEALTH_COMPARISON_METRICS = [
 
 export const HEALTH_TREND_CATEGORIES = [
   { key: 'blood', title: '血液與造血', keys: ['wbc', 'anc', 'neutrophil', 'rbc', 'hemoglobin', 'hematocrit', 'mcv', 'mch', 'mchc', 'platelet', 'rdw_cv'] },
-  { key: 'metabolic', title: '血糖、血脂與體位', keys: ['fasting_glucose', 'hba1c', 'total_cholesterol', 'ldl_c', 'hdl_c', 'triglyceride', 'non_hdl_c', 'body_weight', 'bmi', 'waist', 'body_fat'] },
+  { key: 'metabolic', title: '血糖與血脂', keys: ['fasting_glucose', 'hba1c', 'total_cholesterol', 'ldl_c', 'hdl_c', 'triglyceride', 'non_hdl_c'] },
+  { key: 'body', title: '體位與肌肉', keys: ['body_weight', 'bmi', 'waist', 'body_fat', 'body_fat_mass', 'lean_body_mass', 'muscle_mass', 'skeletal_muscle_mass', 'visceral_fat_area', 'waist_hip_ratio'] },
   { key: 'organ', title: '肝膽與腎臟功能', keys: ['ast', 'alt', 'ggt', 'alp', 'total_bilirubin', 'direct_bilirubin', 'bun', 'creatinine', 'egfr', 'uric_acid'] },
   { key: 'tumor', title: '腫瘤標記追蹤', keys: ['afp', 'cea', 'ca19_9', 'psa', 'ca125', 'ca15_3'] },
   { key: 'fertility', title: '備孕與荷爾蒙', keys: ['tsh', 'free_t4', 'amh', 'semen_volume', 'semen_concentration', 'semen_progressive_motility', 'semen_morphology'] },
@@ -107,20 +108,20 @@ export function buildHealthComparison(husbandModel, wifeModel) {
   return { husband, wife, metrics };
 }
 
-export function selectHealthTrendKeys(model, ownerScope, limit = 6) {
+export function selectHealthTrendKeys(model, ownerScope, limit = 10) {
   if (!model.latest) return [];
   const preferred = ownerScope === 'wife'
     ? ['mcv', 'hemoglobin', 'afp', 'total_cholesterol', 'egfr', 'hba1c', 'body_weight']
-    : ['wbc', 'direct_bilirubin', 'total_bilirubin', 'fasting_glucose', 'total_cholesterol', 'triglyceride', 'creatinine', 'hemoglobin', 'mcv', 'platelet', 'ldl_c', 'hba1c', 'body_weight', 'body_fat'];
+    : ['wbc', 'direct_bilirubin', 'total_bilirubin', 'afp', 'skeletal_muscle_mass', 'body_fat', 'fasting_glucose', 'total_cholesterol', 'triglyceride', 'creatinine', 'hemoglobin', 'mcv', 'platelet', 'ldl_c', 'hba1c', 'body_weight'];
   const ignored = new Set(['age', 'management_score']);
-  const candidates = model.latest.metrics
-    .filter(metric => !ignored.has(metric.metric_key) && model.series(metric.metric_key).length >= 2)
-    .map(metric => metric.metric_key);
+  const candidates = [...new Set(model.reports.flatMap(report => report.metrics.map(metric => metric.metric_key)))]
+    .filter(key => !ignored.has(key) && model.series(key).length >= 2);
+  const latestMetric = key => model.series(key).at(-1)?.metric ?? null;
   const preferredAvailable = preferred.filter(key => candidates.includes(key));
-  const priorityAbnormal = preferredAvailable.filter(key => isAbnormal(model.metric(model.latest, key)));
+  const priorityAbnormal = preferredAvailable.filter(key => isAbnormal(latestMetric(key)));
   const otherAbnormal = candidates
-    .filter(key => !preferred.includes(key) && isAbnormal(model.metric(model.latest, key)));
-  return [...new Set([...priorityAbnormal, ...otherAbnormal, ...preferredAvailable])].slice(0, limit);
+    .filter(key => !preferred.includes(key) && isAbnormal(latestMetric(key)));
+  return [...new Set([...priorityAbnormal, ...preferredAvailable, ...otherAbnormal])].slice(0, limit);
 }
 
 export function selectCoupleHealthTrendGroups(husbandModel, wifeModel) {
@@ -148,6 +149,17 @@ export function buildHealthInsights(model, ownerScope) {
     .find(item => item.metric) ?? null;
   const abnormal = key => isAbnormal(row(key));
   const insights = [];
+
+  const retinalFollowup = ownerScope === 'husband'
+    ? latestFinding('retinal_tear_followup') ?? latestFinding('retinal_hole_right')
+    : null;
+  if (retinalFollowup) {
+    insights.push({
+      tone: 'priority', badge: '眼科追蹤', title: '右眼視網膜曾雷射，2026 年仍有疑似裂孔需追蹤',
+      body: '2025 年曾因右眼飛蚊、閃光發現小裂孔並接受雷射；2026 年紀錄仍提到疑似裂孔。先前視力、眼壓或黃斑 OCT 正常，不能取代散瞳周邊視網膜檢查。',
+      action: '依眼科／視網膜專科安排回診。若突然增加大量飛蚊、閃光、黑影像簾幕遮住視野或視力下降，不等下次預約，當天急診眼科評估。',
+    });
+  }
 
   if (row('ldct_thymic_tissue') || row('ldct_pericardial_effusion')) {
     insights.push({
@@ -188,7 +200,7 @@ export function buildHealthInsights(model, ownerScope) {
     const wbcSeries = model.series('wbc');
     const ancSeries = model.series('anc');
     insights.push({
-      tone: 'watch', badge: '持續追蹤', title: '白血球輕度偏低，先看趨勢與 ANC',
+      tone: 'watch', badge: '四年追蹤', title: '白血球四年持續略低，但 ANC 目前穩定',
       body: wbcSeries.length >= 3
         ? `白血球歷年趨勢為 ${seriesText(wbcSeries)} ×10³/µL${ancSeries.length ? `；ANC 為 ${seriesText(ancSeries)} ×10³/µL，未呈持續下滑` : ''}。白血球持續略低。`
         : `白血球目前 ${value('wbc') ?? '—'} ×10³/µL${anc === null ? '' : `，推算 ANC 約 ${anc.toFixed(2)} ×10³/µL`}。目前較像穩定的輕度偏低，不能只憑單次數值判定疾病。`,
@@ -208,6 +220,26 @@ export function buildHealthInsights(model, ownerScope) {
     });
   }
 
+  const skeletalSeries = ownerScope === 'husband' ? model.series('skeletal_muscle_mass') : [];
+  if (skeletalSeries.length >= 2 && isLow(skeletalSeries.at(-1).metric)) {
+    const leanSeries = model.series('lean_body_mass');
+    const bodyFatSeries = model.series('body_fat');
+    insights.push({
+      tone: 'watch', badge: '體組成趨勢', title: '體重正常，但 2023–2024 肌肉量持續偏低',
+      body: `骨骼肌量為 ${seriesText(skeletalSeries)} kg${leanSeries.length >= 2 ? `，除脂體重為 ${seriesText(leanSeries)} kg` : ''}${bodyFatSeries.length >= 2 ? `；體脂率同期為 ${seriesText(bodyFatSeries)}%` : ''}。不同機器的體組成數值會有誤差，適合看方向而非當成診斷。`,
+      action: '在膝部術後復健允許範圍內，每週至少 2 次漸進式阻力訓練，三餐平均分配蛋白質；下次盡量用同一台儀器、相近水分與空腹條件複測。',
+    });
+  }
+
+  const vitaminD = ownerScope === 'husband' ? latestFinding('vitamin_d_25oh') : null;
+  if (vitaminD && isLow(vitaminD.metric) && vitaminD.report.checkup_year < model.latest.checkup_year) {
+    insights.push({
+      tone: 'watch', badge: '尚未複查', title: `${vitaminD.report.checkup_year} 年維生素 D 偏低，後續報告未見複驗`,
+      body: `25-OH 維生素 D 為 ${vitaminD.metric.value_numeric ?? '—'} ${vitaminD.metric.unit ?? 'ng/mL'}；目前資料無法確認是否已改善。`,
+      action: '下次抽血加入 25-OH vitamin D，並把日曬、飲食與正在使用的補充品告知醫師；補充劑量依複驗結果與醫師建議調整。',
+    });
+  }
+
   if (ownerScope === 'husband' && row('semen_concentration') && row('semen_progressive_motility')) {
     insights.push({
       tone: 'good', badge: '備孕基準', title: '精液主要參數均達這份報告的參考值',
@@ -217,9 +249,10 @@ export function buildHealthInsights(model, ownerScope) {
   }
 
   if (ownerScope === 'husband' && model.series('fasting_glucose').length >= 3) {
+    const ldlSeries = model.series('ldl_c');
     insights.push({
       tone: 'good', badge: '多年穩定', title: '血糖持平，血脂與肝腎功能維持良好',
-      body: `飯前血糖為 ${seriesText(model.series('fasting_glucose'))} mg/dL；總膽固醇為 ${seriesText(model.series('total_cholesterol'))} mg/dL，三酸甘油脂為 ${seriesText(model.series('triglyceride'))} mg/dL。`,
+      body: `飯前血糖為 ${seriesText(model.series('fasting_glucose'))} mg/dL；總膽固醇為 ${seriesText(model.series('total_cholesterol'))} mg/dL，三酸甘油脂為 ${seriesText(model.series('triglyceride'))} mg/dL${ldlSeries.length >= 3 ? `，LDL 為 ${seriesText(ldlSeries)} mg/dL` : ''}。`,
       action: '維持目前體重、規律運動與飲食型態；長時間工作每 30–60 分鐘起身活動，年度健檢繼續用相同指標觀察即可。',
     });
   }
@@ -259,8 +292,8 @@ export function buildHealthInsights(model, ownerScope) {
 
   if (ownerScope === 'husband' && row('thoracic_scoliosis')?.value_text) {
     insights.push({
-      tone: 'good', badge: '日常維持', title: '代謝狀態良好，留意久坐與胸椎側彎',
-      body: '血糖、血脂、體位與腎功能整體良好；胸椎側彎已連續出現在胸部 X 光報告。',
+      tone: 'good', badge: '日常維持', title: '胸椎側彎持續出現，重點是症狀與功能',
+      body: '胸椎側彎已連續出現在影像報告；2023 年另曾記錄 C5–C7 第一級滑脫，但 2024 年比較欄未再標示滑脫。',
       action: '維持每週 150 分鐘有氧與 2 次阻力訓練，每 30–60 分鐘起身活動；若出現背痛、麻木、無力或活動受限，再安排復健科評估。',
     });
   }
@@ -282,12 +315,15 @@ export function buildHealthDomains(model, report, ownerScope) {
     domain('尿液檢查', ['urine_turbidity', 'urine_leukocyte', 'urine_protein'], '重新採樣確認', '目前正常', '若出現白血球或蛋白，先用正確中段尿複查，再區分污染或泌尿道問題。'),
     domain('血脂結構', ['total_cholesterol', 'ldl_c', 'hdl_c', 'triglyceride', 'non_hdl_c'], '整體風險判讀', '維持目前狀態', '總膽固醇要連同 LDL、非 HDL、三酸甘油脂與整體風險一起看。'),
   ] : [
+    domain('眼睛與視網膜', ['retinal_hole_right', 'retinal_tear_followup', 'right_visual_acuity_corrected', 'left_visual_acuity_corrected', 'right_iop', 'left_iop', 'retinal_oct'], '持續眼底追蹤', '目前正常', '視力、眼壓與黃斑 OCT 正常不代表周邊視網膜沒有裂孔；曾雷射或疑似裂孔時，仍依視網膜專科安排散瞳追蹤。'),
     domain('低劑量肺部 CT', ['ldct_exam', 'ldct_lung_pleura', 'ldct_calcified_lymph_nodes', 'ldct_thymic_tissue', 'ldct_arterial_ligament_calcification', 'ldct_pericardial_effusion'], '安排專科確認', '目前無急迫警訊', '把舊發炎相關變化與需要確認的胸腺／心包膜發現分開追蹤；以原始影像及專科判讀為準。'),
     domain('男性備孕', ['semen_volume', 'semen_liquefaction', 'semen_ph', 'semen_progressive_motility', 'semen_nonprogressive_motility', 'semen_immotile', 'semen_concentration', 'semen_morphology', 'semen_wbc', 'semen_rbc'], '依醫師建議複驗', '主要參數達參考值', '精液分析是單次基準而非受孕保證；若有需要，依生殖醫學／泌尿科建議複驗並同步評估夫妻雙方。'),
     domain('尿液檢查', ['urine_appearance', 'urine_leukocyte', 'urine_nitrite', 'urine_glucose', 'urine_protein', 'urine_ph', 'urine_occult_blood', 'urine_specific_gravity', 'urine_wbc_microscopy', 'urine_rbc_microscopy', 'urine_crystal', 'urine_bacteria'], '補水後複驗觀察', '目前正常', '結晶體需搭配尿液酸鹼值、潛血、蛋白、細菌與症狀判讀；單次結果不直接等同結石。'),
     domain('感染篩檢與免疫', ['hbs_ag', 'anti_hbs', 'anti_hcv', 'vdrl', 'hiv', 'chlamydia_igg', 'g6pd'], '依醫師評估', '目前無異常', '保留肝炎、感染篩檢與抗體結果，作為備孕及日後醫療紀錄。'),
     domain('血液與免疫', ['wbc', 'anc', 'hemoglobin', 'hematocrit', 'platelet'], '輕度異常追蹤', '目前正常', '白血球需搭配 ANC 與症狀判讀；血色素與 MCV 正常時，不像典型貧血。'),
     domain('肝膽功能', ['total_bilirubin', 'direct_bilirubin', 'ast', 'alt', 'ggt', 'alp'], '定期複驗', '目前正常', '膽紅素要搭配分型、肝酵素與影像追蹤，不直接用單一數值下診斷。'),
+    domain('體位與肌肉', ['body_weight', 'bmi', 'waist', 'body_fat', 'body_fat_mass', 'lean_body_mass', 'muscle_mass', 'skeletal_muscle_mass', 'visceral_fat_area', 'waist_hip_ratio'], '肌肉量需加強', '維持目前狀態', '體重與 BMI 正常仍可能有肌肉量不足；跨年比較盡量使用同一台儀器，並搭配肌力與腰圍判讀。'),
+    domain('營養狀態', ['vitamin_d_25oh', 'total_protein', 'albumin'], '安排複驗', '目前正常', '維生素 D 曾偏低但後續未見複驗；蛋白質與白蛋白正常不代表維生素 D 已恢復。'),
     domain('心血管與代謝', ['bmi', 'waist', 'body_fat', 'fasting_glucose', 'hba1c', 'ldl_c', 'carotid_plaque'], '持續追蹤風險', '維持目前狀態', '體位、血糖與血脂整體一起看；若曾有頸動脈斑塊，應把影像與血壓、血脂及生活型態一併交由醫師評估。'),
     domain('消化系統', ['gastroscopy', 'colonoscopy'], '依症狀追蹤', '目前無急迫警訊', '保留胃鏡與大腸鏡發現；若胃食道逆流、腹痛、血便或排便習慣改變，提早回胃腸科。'),
     domain('影像與結構', ['thoracic_scoliosis', 'cervical_scoliosis', 'cervical_spondylolisthesis', 'lumbar_sacralization', 'lumbar_spina_bifida_occulta', 'pelvic_phlebolith', 'chest_xray', 'abdominal_ultrasound', 'thyroid_ultrasound', 'resting_ecg'], '有症狀再評估', '目前無急迫警訊', '影像以長期變化和症狀為主；穩定脊椎發現若無不適，可先從姿勢、核心肌力與規律活動管理。'),
