@@ -92,6 +92,17 @@ test('AFP 兩邊的實驗室切點不同，統一成 0–10', () => {
   assert.deepEqual([hers.reference_low, hers.reference_high, hers.status], [0, 10, 'high']);
 });
 
+test('血脂的 0 下限只是刻度起點，低不算異常', () => {
+  const wife = model('wife', [
+    { metric_key: 'total_cholesterol', value_numeric: 218, reference_low: null, reference_high: 200, status: 'high' },
+    { metric_key: 'triglyceride', value_numeric: 32, reference_low: null, reference_high: 150, status: 'normal' },
+  ]);
+  const cholesterol = wife.metric(wife.latest, 'total_cholesterol');
+  const triglyceride = wife.metric(wife.latest, 'triglyceride');
+  assert.deepEqual([cholesterol.reference_low, cholesterol.reference_high, cholesterol.status], [0, 200, 'high']);
+  assert.deepEqual([triglyceride.reference_low, triglyceride.reference_high, triglyceride.status], [0, 150, 'normal']);
+});
+
 test('直接膽紅素補上 0 下限，只有偏高會被標出來', () => {
   const husband = model('husband', [
     { metric_key: 'direct_bilirubin', value_numeric: 0.6, reference_low: 0.1, reference_high: 0.5, status: 'high' },

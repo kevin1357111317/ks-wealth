@@ -1,4 +1,4 @@
-import { applyHealthReferenceSpec } from './health-reference.js?v=V3P11';
+import { applyHealthReferenceSpec } from './health-reference.js?v=V3P12';
 
 const numberOrNull = value => value === null || value === undefined || value === ''
   ? null
