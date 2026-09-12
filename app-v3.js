@@ -22,7 +22,6 @@ import {
   buildHealthModel,
   healthReferenceBoundaries,
   healthReferenceMarkers,
-  healthReferenceState,
   selectCoupleHealthTrendGroups,
 } from './health-core.js?v=V3P17';
 
@@ -984,23 +983,6 @@ function healthMetricValue(metric) {
 
 const healthNumber = value => new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 2 }).format(value);
 
-function healthMetricReference(metric) {
-  const markers = healthReferenceMarkers(metric);
-  const low = markers.find(marker => marker.kind === 'low')?.value;
-  const high = markers.find(marker => marker.kind === 'high')?.value;
-  if (low !== undefined && high !== undefined) return `參考 ${healthNumber(low)}–${healthNumber(high)}`;
-  if (low !== undefined) return `下限 ${healthNumber(low)}`;
-  if (high !== undefined) return `上限 ${healthNumber(high)}`;
-  return '未提供參考值';
-}
-
-function coupleTrendPerson(metric, name, ownerScope, measuredYear, currentYear) {
-  if (!metric) return `<div class="healthTrendPerson ${ownerScope} missing"><span><i></i>${name}</span><b>—</b><small>尚無資料</small></div>`;
-  const state = healthReferenceState(metric) ?? healthStatusText(metric.status);
-  const yearLabel = measuredYear && measuredYear !== currentYear ? `最近檢測 ${measuredYear} · ` : '';
-  return `<div class="healthTrendPerson ${ownerScope}"><span><i></i>${name}</span><b>${healthMetricValue(metric)}</b><small>${yearLabel}${escapeHtml(state)} · ${escapeHtml(healthMetricReference(metric))}</small></div>`;
-}
-
 function coupleHealthTrendCard(husbandModel, wifeModel, key) {
   const husbandSeries = husbandModel.series(key);
   const wifeSeries = wifeModel.series(key);
@@ -1053,7 +1035,13 @@ function coupleHealthTrendCard(husbandModel, wifeModel, key) {
     : `<polygon class="healthCoupleDot wife" points="${cx},${cy - 6.2} ${cx + 6.2},${cy} ${cx},${cy + 6.2} ${cx - 6.2},${cy}"/>`;
   const plot = (series, ownerScope) => `${series.length >= 2 ? `<polyline class="healthCoupleLine ${ownerScope}" points="${series.map(point => `${x(point.year)},${y(point.value)}`).join(' ')}"/>` : ''}${series.map(point => dot(ownerScope, x(point.year), y(point.value))).join('')}`;
   const labels = years.map(year => `<text class="healthYearLabel" x="${x(year)}" y="174" text-anchor="middle">${year}</text>`).join('');
-  return `<article class="healthTrendCard healthCoupleTrendCard"><div class="healthTrendHead"><span>${escapeHtml(selected.label)}</span></div><div class="healthTrendPeople">${coupleTrendPerson(husbandMetric, '鎧麟', 'husband', husbandSeries.at(-1)?.year, husbandModel.latest?.checkup_year)}${coupleTrendPerson(wifeMetric, '佳軒', 'wife', wifeSeries.at(-1)?.year, wifeModel.latest?.checkup_year)}</div><svg viewBox="0 0 340 180" role="img" aria-label="${escapeHtml(selected.label)}夫妻歷年趨勢"><line class="healthGrid" x1="20" y1="145" x2="320" y2="145"/>${rangeBand}${ref}${plot(husbandSeries, 'husband')}${plot(wifeSeries, 'wife')}${labels}</svg></article>`;
+  const datum = years.map((year, index) => {
+    const husbandPoint = husbandSeries.find(point => point.year === year);
+    const wifePoint = wifeSeries.find(point => point.year === year);
+    return `<g data-health-trend-point data-index="${index}" data-year="${year}" data-x="${x(year)}" data-husband-y="${husbandPoint ? y(husbandPoint.value) : ''}" data-wife-y="${wifePoint ? y(wifePoint.value) : ''}" data-husband-value="${husbandPoint ? healthMetricValue(husbandPoint.metric) : '—'}" data-wife-value="${wifePoint ? healthMetricValue(wifePoint.metric) : '—'}"></g>`;
+  }).join('');
+  const selection = `<g class="healthTrendSelection" data-health-trend-selection hidden><line class="healthTrendGuide" data-health-trend-guide y1="18" y2="145"/><circle class="healthTrendSelectedDot husband" data-health-trend-husband r="9" hidden/><circle class="healthTrendSelectedDot wife" data-health-trend-wife r="9" hidden/><g class="healthTrendTooltip" data-health-trend-tooltip><rect class="healthTrendTooltipBox" x="-105" y="0" width="210" height="62" rx="12"/><text class="healthTrendTooltipYear" data-health-trend-tooltip-year x="0" y="17" text-anchor="middle"></text><circle class="healthTrendTooltipKey husband" cx="-84" cy="36" r="3.5"/><text class="healthTrendTooltipValue husband" data-health-trend-tooltip-husband x="-74" y="40"></text><rect class="healthTrendTooltipKey wife" x="-87.5" y="48.5" width="7" height="7" transform="rotate(45 -84 52)"/><text class="healthTrendTooltipValue wife" data-health-trend-tooltip-wife x="-74" y="56"></text></g></g>`;
+  return `<article class="healthTrendCard healthCoupleTrendCard"><div class="healthTrendHead"><span>${escapeHtml(selected.label)}</span><small>點選年份查看數值</small></div><svg data-health-trend-chart viewBox="0 0 340 180" role="img" tabindex="0" aria-label="${escapeHtml(selected.label)}夫妻歷年趨勢，點選或左右滑動可查看各年數值"><line class="healthGrid" x1="20" y1="145" x2="320" y2="145"/>${rangeBand}${ref}${plot(husbandSeries, 'husband')}${plot(wifeSeries, 'wife')}${labels}${datum}<rect class="healthTrendHit" x="12" y="8" width="316" height="158"/>${selection}</svg></article>`;
 }
 
 function healthValueChip(model, report, key) {
@@ -1084,6 +1072,69 @@ function bindHealthControls() {
     healthSelectedYear = Number(button.dataset.healthYear);
     render();
   }; });
+  bindHealthTrendCharts();
+  root.querySelector('.healthView')?.addEventListener('pointerdown', event => {
+    if (event.target.closest('[data-health-trend-chart]')) return;
+    root.querySelectorAll('[data-health-trend-selection]').forEach(selection => selection.setAttribute('hidden', ''));
+  }, { passive: true });
+}
+
+function selectHealthTrendPoint(chart, point) {
+  const selection = chart.querySelector('[data-health-trend-selection]');
+  if (!selection || !point) return;
+  const pointX = Number(point.dataset.x);
+  const pointY = value => value === '' ? null : Number(value);
+  const husbandY = pointY(point.dataset.husbandY);
+  const wifeY = pointY(point.dataset.wifeY);
+  const visibleYs = [husbandY, wifeY].filter(Number.isFinite);
+  const tooltipX = Math.max(125, Math.min(215, pointX));
+  const tooltipY = visibleYs.length && Math.min(...visibleYs) < 82 ? 76 : 10;
+  selection.dataset.index = point.dataset.index;
+  selection.removeAttribute('hidden');
+  selection.querySelector('[data-health-trend-guide]').setAttribute('x1', pointX);
+  selection.querySelector('[data-health-trend-guide]').setAttribute('x2', pointX);
+  [['husband', husbandY], ['wife', wifeY]].forEach(([ownerScope, pointY]) => {
+    const marker = selection.querySelector(`[data-health-trend-${ownerScope}]`);
+    if (!Number.isFinite(pointY)) return marker.setAttribute('hidden', '');
+    marker.removeAttribute('hidden');
+    marker.setAttribute('cx', pointX);
+    marker.setAttribute('cy', pointY);
+  });
+  selection.querySelector('[data-health-trend-tooltip]').setAttribute('transform', `translate(${tooltipX} ${tooltipY})`);
+  selection.querySelector('[data-health-trend-tooltip-year]').textContent = `${point.dataset.year} 年`;
+  selection.querySelector('[data-health-trend-tooltip-husband]').textContent = `鎧麟 ${point.dataset.husbandValue}`;
+  selection.querySelector('[data-health-trend-tooltip-wife]').textContent = `佳軒 ${point.dataset.wifeValue}`;
+}
+
+function showHealthTrendPoint(event, chart) {
+  const bounds = chart.getBoundingClientRect();
+  if (!bounds.width) return;
+  const svgX = (event.clientX - bounds.left) / bounds.width * 340;
+  const points = [...chart.querySelectorAll('[data-health-trend-point]')];
+  const nearest = points.reduce((best, point) => !best
+    || Math.abs(Number(point.dataset.x) - svgX) < Math.abs(Number(best.dataset.x) - svgX) ? point : best, null);
+  selectHealthTrendPoint(chart, nearest);
+}
+
+function bindHealthTrendCharts() {
+  root.querySelectorAll('[data-health-trend-chart]').forEach(chart => {
+    chart.addEventListener('pointerdown', event => showHealthTrendPoint(event, chart), { passive: true });
+    chart.addEventListener('pointermove', event => {
+      if (event.pointerType === 'mouse' || event.buttons === 1) showHealthTrendPoint(event, chart);
+    }, { passive: true });
+    chart.addEventListener('keydown', event => {
+      if (!['ArrowLeft', 'ArrowRight', 'Enter', ' '].includes(event.key)) return;
+      event.preventDefault();
+      const points = [...chart.querySelectorAll('[data-health-trend-point]')];
+      if (!points.length) return;
+      const selection = chart.querySelector('[data-health-trend-selection]');
+      const current = Number(selection?.dataset.index);
+      const next = event.key === 'ArrowLeft' ? Math.max(0, (Number.isFinite(current) ? current : points.length) - 1)
+        : event.key === 'ArrowRight' ? Math.min(points.length - 1, (Number.isFinite(current) ? current : -1) + 1)
+          : Number.isFinite(current) ? current : points.length - 1;
+      selectHealthTrendPoint(chart, points[next]);
+    });
+  });
 }
 
 const healthScoreLabel = score => score >= 90 ? '狀態很好' : score >= 80 ? '整體良好' : score >= 70 ? '需要加強追蹤' : '優先安排評估';
