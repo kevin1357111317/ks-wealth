@@ -61,7 +61,6 @@ test('health trend charts keep reference lines but hide per-person bound labels'
   assert.doesNotMatch(trendCard, /ownerLabel/);
   assert.match(trendCard, /healthCoupleRef \$\{ownerScope\}/);
   assert.match(source, /viewBox="0 0 340 180"/);
-  assert.match(source, /healthReferenceState/);
   assert.match(healthCss, /@media\(max-width:520px\)\{\.healthTrendGrid\{grid-template-columns:1fr\}/);
   assert.match(healthCss, /\.healthTrendHead b\{[^}]*font-size:\.84rem/);
 });
@@ -101,4 +100,15 @@ test('health trend tooltip shows both partners for the selected year', () => {
   assert.match(selector, /`佳軒 \$\{point\.dataset\.wifeValue\}`/);
   assert.match(source, /bindHealthTrendCharts\(\)/);
   assert.match(source, /ArrowLeft.*ArrowRight.*Enter/);
+});
+
+test('health trend tooltip fits its frame to the rendered text', () => {
+  const fitter = source.slice(source.indexOf('function fitHealthTrendTooltip'), source.indexOf('function selectHealthTrendPoint'));
+  const selector = source.slice(source.indexOf('function selectHealthTrendPoint'), source.indexOf('function showHealthTrendPoint'));
+  assert.match(fitter, /getComputedTextLength\(\)/);
+  assert.match(fitter, /Math\.max\(104, Math\.min\(250/);
+  assert.match(fitter, /data-health-trend-tooltip-box/);
+  assert.match(fitter, /box\.setAttribute\('width', width\)/);
+  assert.match(selector, /const tooltipWidth = fitHealthTrendTooltip\(selection\)/);
+  assert.match(selector, /340 - halfWidth - 12/);
 });

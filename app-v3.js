@@ -1040,7 +1040,7 @@ function coupleHealthTrendCard(husbandModel, wifeModel, key) {
     const wifePoint = wifeSeries.find(point => point.year === year);
     return `<g data-health-trend-point data-index="${index}" data-year="${year}" data-x="${x(year)}" data-husband-y="${husbandPoint ? y(husbandPoint.value) : ''}" data-wife-y="${wifePoint ? y(wifePoint.value) : ''}" data-husband-value="${husbandPoint ? healthMetricValue(husbandPoint.metric) : '—'}" data-wife-value="${wifePoint ? healthMetricValue(wifePoint.metric) : '—'}"></g>`;
   }).join('');
-  const selection = `<g class="healthTrendSelection" data-health-trend-selection hidden><line class="healthTrendGuide" data-health-trend-guide y1="18" y2="145"/><circle class="healthTrendSelectedDot husband" data-health-trend-husband r="9" hidden/><circle class="healthTrendSelectedDot wife" data-health-trend-wife r="9" hidden/><g class="healthTrendTooltip" data-health-trend-tooltip><rect class="healthTrendTooltipBox" x="-105" y="0" width="210" height="62" rx="12"/><text class="healthTrendTooltipYear" data-health-trend-tooltip-year x="0" y="17" text-anchor="middle"></text><circle class="healthTrendTooltipKey husband" cx="-84" cy="36" r="3.5"/><text class="healthTrendTooltipValue husband" data-health-trend-tooltip-husband x="-74" y="40"></text><rect class="healthTrendTooltipKey wife" x="-87.5" y="48.5" width="7" height="7" transform="rotate(45 -84 52)"/><text class="healthTrendTooltipValue wife" data-health-trend-tooltip-wife x="-74" y="56"></text></g></g>`;
+  const selection = `<g class="healthTrendSelection" data-health-trend-selection hidden><line class="healthTrendGuide" data-health-trend-guide y1="18" y2="145"/><circle class="healthTrendSelectedDot husband" data-health-trend-husband r="9" hidden/><circle class="healthTrendSelectedDot wife" data-health-trend-wife r="9" hidden/><g class="healthTrendTooltip" data-health-trend-tooltip><rect class="healthTrendTooltipBox" data-health-trend-tooltip-box x="-56" y="0" width="112" height="62" rx="12"/><text class="healthTrendTooltipYear" data-health-trend-tooltip-year x="0" y="17" text-anchor="middle"></text><circle class="healthTrendTooltipKey husband" data-health-trend-tooltip-husband-key cx="-38" cy="36" r="3.5"/><text class="healthTrendTooltipValue husband" data-health-trend-tooltip-husband x="-28" y="40"></text><rect class="healthTrendTooltipKey wife" data-health-trend-tooltip-wife-key x="-41.5" y="48.5" width="7" height="7" transform="rotate(45 -38 52)"/><text class="healthTrendTooltipValue wife" data-health-trend-tooltip-wife x="-28" y="56"></text></g></g>`;
   return `<article class="healthTrendCard healthCoupleTrendCard"><div class="healthTrendHead"><span>${escapeHtml(selected.label)}</span><small>點選年份查看數值</small></div><svg data-health-trend-chart viewBox="0 0 340 180" role="img" tabindex="0" aria-label="${escapeHtml(selected.label)}夫妻歷年趨勢，點選或左右滑動可查看各年數值"><line class="healthGrid" x1="20" y1="145" x2="320" y2="145"/>${rangeBand}${ref}${plot(husbandSeries, 'husband')}${plot(wifeSeries, 'wife')}${labels}${datum}<rect class="healthTrendHit" x="12" y="8" width="316" height="158"/>${selection}</svg></article>`;
 }
 
@@ -1079,6 +1079,37 @@ function bindHealthControls() {
   }, { passive: true });
 }
 
+function fitHealthTrendTooltip(selection) {
+  const box = selection.querySelector('[data-health-trend-tooltip-box]');
+  const year = selection.querySelector('[data-health-trend-tooltip-year]');
+  const husband = selection.querySelector('[data-health-trend-tooltip-husband]');
+  const wife = selection.querySelector('[data-health-trend-tooltip-wife]');
+  const husbandKey = selection.querySelector('[data-health-trend-tooltip-husband-key]');
+  const wifeKey = selection.querySelector('[data-health-trend-tooltip-wife-key]');
+  if (!box || !year || !husband || !wife || !husbandKey || !wifeKey) return 112;
+
+  const textWidth = node => {
+    try { return node.getComputedTextLength(); } catch { return 0; }
+  };
+  // 年份置中；姓名數值列還要預留圖例與左右內距。只依實際文字變寬，不再固定占掉半張圖。
+  const width = Math.max(104, Math.min(250, Math.ceil(Math.max(
+    textWidth(year) + 28,
+    textWidth(husband) + 52,
+    textWidth(wife) + 52,
+  ))));
+  const left = -width / 2;
+  const keyX = left + 18;
+  const valueX = left + 30;
+  box.setAttribute('x', left);
+  box.setAttribute('width', width);
+  husbandKey.setAttribute('cx', keyX);
+  husband.setAttribute('x', valueX);
+  wifeKey.setAttribute('x', keyX - 3.5);
+  wifeKey.setAttribute('transform', `rotate(45 ${keyX} 52)`);
+  wife.setAttribute('x', valueX);
+  return width;
+}
+
 function selectHealthTrendPoint(chart, point) {
   const selection = chart.querySelector('[data-health-trend-selection]');
   if (!selection || !point) return;
@@ -1087,7 +1118,6 @@ function selectHealthTrendPoint(chart, point) {
   const husbandY = pointY(point.dataset.husbandY);
   const wifeY = pointY(point.dataset.wifeY);
   const visibleYs = [husbandY, wifeY].filter(Number.isFinite);
-  const tooltipX = Math.max(125, Math.min(215, pointX));
   const tooltipY = visibleYs.length && Math.min(...visibleYs) < 82 ? 76 : 10;
   selection.dataset.index = point.dataset.index;
   selection.removeAttribute('hidden');
@@ -1100,10 +1130,13 @@ function selectHealthTrendPoint(chart, point) {
     marker.setAttribute('cx', pointX);
     marker.setAttribute('cy', pointY);
   });
-  selection.querySelector('[data-health-trend-tooltip]').setAttribute('transform', `translate(${tooltipX} ${tooltipY})`);
   selection.querySelector('[data-health-trend-tooltip-year]').textContent = `${point.dataset.year} 年`;
   selection.querySelector('[data-health-trend-tooltip-husband]').textContent = `鎧麟 ${point.dataset.husbandValue}`;
   selection.querySelector('[data-health-trend-tooltip-wife]').textContent = `佳軒 ${point.dataset.wifeValue}`;
+  const tooltipWidth = fitHealthTrendTooltip(selection);
+  const halfWidth = tooltipWidth / 2;
+  const tooltipX = Math.max(halfWidth + 12, Math.min(340 - halfWidth - 12, pointX));
+  selection.querySelector('[data-health-trend-tooltip]').setAttribute('transform', `translate(${tooltipX} ${tooltipY})`);
 }
 
 function showHealthTrendPoint(event, chart) {
