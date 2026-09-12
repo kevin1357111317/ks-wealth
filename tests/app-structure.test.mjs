@@ -74,10 +74,31 @@ test('health trends live at the bottom of couple comparison and overlay both par
   assert.ok(comparisonPage.indexOf('各自優先事項') < comparisonPage.indexOf('夫妻歷年趨勢'));
   assert.doesNotMatch(personalPage, /重要指標趨勢|healthTrendGrid/);
   assert.match(source, /healthCoupleLine \$\{ownerScope\}/);
-  assert.match(source, /尚無資料/);
+  assert.match(source, /data-wife-value=.*'—'/);
   assert.match(healthCss, /\.healthCoupleLine\.husband/);
   assert.match(healthCss, /\.healthCoupleLine\.wife/);
   assert.doesNotMatch(healthCss, /\.healthCoupleLine\.wife\{[^}]*stroke-dasharray/);
   assert.match(comparisonPage, /鎧麟｜藍色實線・圓點/);
   assert.match(comparisonPage, /佳軒｜橘色實線・菱形/);
+});
+
+test('health trend values are selected from the chart instead of repeated in summary cards', () => {
+  const trendCard = source.slice(source.indexOf('function coupleHealthTrendCard'), source.indexOf('function healthValueChip'));
+  assert.doesNotMatch(trendCard, /healthTrendPeople|coupleTrendPerson/);
+  assert.match(trendCard, /data-health-trend-chart/);
+  assert.match(trendCard, /data-health-trend-point/);
+  assert.match(trendCard, /data-health-trend-selection/);
+  assert.match(source, /function showHealthTrendPoint/);
+  assert.match(source, /點選或左右滑動可查看各年數值/);
+  assert.match(healthCss, /\.healthTrendHit\{[^}]*pointer-events:all/);
+  assert.match(healthCss, /\.healthTrendSelection\[hidden\]\{display:none\}/);
+});
+
+test('health trend tooltip shows both partners for the selected year', () => {
+  const selector = source.slice(source.indexOf('function selectHealthTrendPoint'), source.indexOf('function showHealthTrendPoint'));
+  assert.match(selector, /data-health-trend-tooltip-year/);
+  assert.match(selector, /`鎧麟 \$\{point\.dataset\.husbandValue\}`/);
+  assert.match(selector, /`佳軒 \$\{point\.dataset\.wifeValue\}`/);
+  assert.match(source, /bindHealthTrendCharts\(\)/);
+  assert.match(source, /ArrowLeft.*ArrowRight.*Enter/);
 });
