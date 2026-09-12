@@ -174,12 +174,20 @@ export function makeClient() {
         },
         update(patch) {
           const q = { rows, patch };
+          const apply = () => {
+            q.rows.forEach(r => Object.assign(r, patch));
+            calls.push({ op: 'update', table, patch, n: q.rows.length });
+            if (table === 'klfan_stocks') q.rows.forEach(r => syncTrigger(r.key));
+          };
           const chain = {
             eq(col, val) { q.rows = q.rows.filter(r => r[col] === val); return chain; },
+            select() { return chain; },
+            maybeSingle() {
+              apply();
+              return Promise.resolve({ data: q.rows[0] ?? null, error: null });
+            },
             then(resolve) {
-              q.rows.forEach(r => Object.assign(r, patch));
-              calls.push({ op: 'update', table, patch, n: q.rows.length });
-              if (table === 'klfan_stocks') q.rows.forEach(r => syncTrigger(r.key));
+              apply();
               return Promise.resolve({ error: null }).then(resolve);
             },
           };
@@ -215,4 +223,3 @@ export function makeClient() {
 }
 export const createClient = () => makeClient();
 globalThis.__fake = { db, calls };
-

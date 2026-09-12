@@ -15,6 +15,7 @@ import { calculatePortfolio, decodePortfolioBootstrap } from './portfolio-core.j
 import { calculateUsd } from './usd-core.js?v=usd-1';
 import { calculateGold } from './gold-core.js?v=gold-trim-1';
 import { calculateLoanCashflow } from './loan-core.js?v=cashflow-1';
+import { buildPersonalTrendRows } from './trend-core.js?v=V3P23';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -69,6 +70,10 @@ let channel = null;
 let realtimeReloadTimer = null;
 let itemReloadTimer = null;
 let loadFlight = null;
+let loadRequested = false;
+let lastSuccessfulLoadAt = 0;
+let itemReloadGeneration = 0;
+let realtimeStatus = 'CLOSED';
 let quoteFlight = null;
 let quoteStatus = 'idle';
 let quoteFailureNote = '';
@@ -273,33 +278,12 @@ function familyTrendRows(currentNetWorth) {
 }
 
 function personalTrendRows(ownerScope, currentNetWorth) {
-  const grouped = new Map();
-  scopeHistory
-    .filter(row => row.owner_scope === ownerScope)
-    .sort((a, b) => a.recorded_on.localeCompare(b.recorded_on))
-    .forEach(row => {
-      const day = grouped.get(row.recorded_on) ?? { recorded_on: row.recorded_on, asset: null, liability: null };
-      day[row.kind] = row.total_twd;
-      grouped.set(row.recorded_on, day);
-    });
-
-  let latestAsset = null;
-  let latestLiability = null;
-  const byDate = new Map(
-    ownerScope === 'husband'
-      ? history.map(row => [row.recorded_on, row.net_worth_twd])
-      : [],
-  );
-  for (const row of grouped.values()) {
-    if (row.asset !== null) latestAsset = row.asset;
-    if (row.liability !== null) latestLiability = row.liability;
-    if (latestAsset !== null && latestLiability !== null) {
-      byDate.set(row.recorded_on, latestAsset - latestLiability);
-    }
-  }
-  byDate.set(taipeiDate(), currentNetWorth);
-  return [...byDate].map(([recorded_on, total_twd]) => ({ recorded_on, total_twd }))
-    .sort((a, b) => a.recorded_on.localeCompare(b.recorded_on));
+  return buildPersonalTrendRows({
+    scopeHistory,
+    ownerScope,
+    currentNetWorth,
+    today: taipeiDate(),
+  });
 }
 
 // Auth / startup -------------------------------------------------------------
@@ -501,6 +485,17 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
   void keepScreenAwake();
   void applyDueLoanPayments();   // App 擺著過了午夜，回來時補扣當天的
+  if (session && member) {
+    // iOS 從背景回來時 WebSocket 與計時器可能已被凍結。超過一分鐘沒有完整載入就補抓；
+    // channel 還沒回到 SUBSCRIBED 時也重建一次，不等待一條可能已經靜默失效的連線。
+    if (Date.now() - lastSuccessfulLoadAt >= QUOTE_FULL_INTERVAL_MS) {
+      void loadData({ blocking: false });
+    }
+    if (realtimeStatus !== 'SUBSCRIBED') {
+      clearRealtime();
+      subscribeRealtime();
+    }
+  }
   // 螢幕關著的那段時間計時器是停的，回來時先補一次。
   if (session && member && Date.now() - quoteLastAt >= QUOTE_FULL_INTERVAL_MS) {
     void refreshQuotes({ reason: 'visible' });
@@ -513,6 +508,17 @@ async function applySession(nextSession) {
   const previousUserId = session?.user?.id ?? null;
   const nextUserId = nextSession?.user?.id ?? null;
   if (previousUserId === nextUserId && member && lifecycle === 'ready') return;
+
+  if (previousUserId !== nextUserId) {
+    // 同一個瀏覽器換帳號時，不能讓下一位先看到上一位的摘要或行情時間。
+    for (let index = localStorage.length - 1; index >= 0; index -= 1) {
+      const key = localStorage.key(index) ?? '';
+      if (key.startsWith('ks-loan-month-summary|') || key.startsWith('ks:last-quote:')) {
+        localStorage.removeItem(key);
+      }
+    }
+    document.dispatchEvent(new CustomEvent('ks:auth-change', { detail: { userId: nextUserId } }));
+  }
 
   clearRealtime();
   stopQuoteAutoRefresh();   // 換人或登出就先停，登入完成後 bootstrap 會重開
@@ -546,6 +552,7 @@ async function applySession(nextSession) {
   quoteData = {};
   quoteStatus = 'idle';
   quoteFlight = null;
+  lastSuccessfulLoadAt = 0;
   if (!session) return authScreen();
   await resolveMembership();
 }
@@ -613,11 +620,10 @@ async function ensureLedger() {
   return ledgerFlight;
 }
 
-async function loadData({ blocking = false } = {}) {
+async function performDataLoad({ blocking = false } = {}) {
   if (!member) return false;
-  if (loadFlight) return loadFlight;
   const householdId = member.household_id;
-  loadFlight = (async () => {
+  return (async () => {
     const [itemResult, familyHistoryResult, householdResult, scopeHistoryResult, usdResult, goldResult,
       loanResult, nextDueResult, healthCheckupResult, healthMetricResult] = await Promise.all([
       sb.from('financial_items').select('*').eq('household_id', householdId).order('sort_order'),
@@ -664,13 +670,32 @@ async function loadData({ blocking = false } = {}) {
       ledgerLoaded = false;
       await ensureLedger();
     }
+    lastSuccessfulLoadAt = Date.now();
     render();
     return true;
   })().catch(error => {
     if (blocking) showBlockingError(error.message || '無法載入家庭資料。');
     else setNonBlockingStatus('同步失敗，將於下次變更時重試。', 'error');
     return false;
-  }).finally(() => {
+  });
+}
+
+async function loadData({ blocking = false } = {}) {
+  if (!member) return false;
+  // 載入途中又收到存檔／Realtime 事件時，舊請求結束後一定再跑一輪；不能把「去重」
+  // 當成「已經讀到最新」。所有等待中的呼叫會等到佇列真正清空才返回。
+  loadRequested = true;
+  if (loadFlight) return loadFlight;
+  loadFlight = (async () => {
+    let loaded = false;
+    let shouldBlock = blocking;
+    do {
+      loadRequested = false;
+      loaded = await performDataLoad({ blocking: shouldBlock });
+      shouldBlock = false;
+    } while (loadRequested && member);
+    return loaded;
+  })().finally(() => {
     loadFlight = null;
   });
   return loadFlight;
@@ -691,10 +716,11 @@ function scheduleItemReload() {
 
 async function reloadItems() {
   if (!member) return;
+  const generation = ++itemReloadGeneration;
   const householdId = member.household_id;
   const { data, error } = await sb.from('financial_items')
     .select('*').eq('household_id', householdId).order('sort_order');
-  if (error || !member || member.household_id !== householdId) return;
+  if (error || generation !== itemReloadGeneration || !member || member.household_id !== householdId) return;
   items = (data ?? []).map(normalizeFinancialItem);
   fxRate = items.find(item => item.fx_rate_twd > 1 && item.quote_currency === 'USD')?.fx_rate_twd ?? fxRate;
   render();
@@ -726,6 +752,7 @@ function subscribeRealtime() {
       event: '*', schema: 'public', table: 'loan_accounts', filter: `household_id=eq.${householdId}`,
     }, scheduleRealtimeReload)
     .subscribe(status => {
+      realtimeStatus = status;
       if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
         setNonBlockingStatus('即時同步暫時中斷，資料仍可使用。', 'error');
       }
@@ -737,6 +764,8 @@ function clearRealtime() {
   clearTimeout(itemReloadTimer);
   realtimeReloadTimer = null;
   itemReloadTimer = null;
+  itemReloadGeneration += 1;
+  realtimeStatus = 'CLOSED';
   if (channel) void sb.removeChannel(channel);
   channel = null;
 }
@@ -778,8 +807,14 @@ const QUOTE_ERROR_COPY = {
 function describeQuoteFailures(results) {
   const failures = (results ?? []).filter(row => row?.status === 'error');
   if (!failures.length) return '';
-  const names = [...new Set(failures.map(row => row.name).filter(Boolean))];
-  const reasons = [...new Set(failures.map(row => QUOTE_ERROR_COPY[row.error] ?? row.error).filter(Boolean))];
+  // 這段文字有一條路徑會跟著 shell 進 innerHTML；名稱是使用者輸入、錯誤也來自遠端，
+  // 先轉成只含純文字的顯示字元，後續走 textContent 時也不會看到 &lt; 之類的實體碼。
+  const safeInlineText = value => String(value).replace(/[<>&]/g, character => ({
+    '<': '＜', '>': '＞', '&': '＆',
+  })[character]);
+  const names = [...new Set(failures.map(row => row.name).filter(Boolean).map(safeInlineText))];
+  const reasons = [...new Set(failures
+    .map(row => QUOTE_ERROR_COPY[row.error] ?? row.error).filter(Boolean).map(safeInlineText))];
   const who = names.length > 3 ? `${names.slice(0, 3).join('、')} 等 ${names.length} 筆` : names.join('、');
   return `${who}：${reasons.join('、')}`;
 }
@@ -2345,9 +2380,12 @@ async function editItem(item, defaultOwner, defaultKind) {
       saveButton.disabled = true;
       saveButton.textContent = '儲存中…';
       const result = item
-        ? await sb.from('financial_items').update(payload).eq('id', item.id).eq('household_id', member.household_id)
+        ? await sb.from('financial_items').update(payload)
+          .eq('id', item.id).eq('household_id', member.household_id).eq('updated_at', item.updated_at)
+          .select('id').maybeSingle()
         : await sb.from('financial_items').insert({ ...payload, created_by: session.user.id });
       if (result.error) throw result.error;
+      if (item && !result.data) throw new Error('這筆資料已在另一台裝置更新，請重新開啟後再修改。');
       backdrop.remove();
       tab = owner;
       pageKind[owner] = kind;

@@ -1,0 +1,8 @@
+project_id = "gbxsnwqbjmgfikpblyot"
+
+[functions.refresh-tw-quotes]
+verify_jwt = true
+
+# pg_cron 以高熵 x-cron-secret 呼叫；函式本身會先驗證 secret hash。
+[functions.daily-wealth-snapshot]
+verify_jwt = false

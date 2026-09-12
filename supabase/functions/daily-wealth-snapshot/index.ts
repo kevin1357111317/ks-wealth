@@ -19,6 +19,19 @@ Deno.serve(async (req: Request) => {
     return json({ error: "unauthorized" }, 401);
   }
 
+  let scheduledRunAt = new Date();
+  try {
+    const body = await req.json();
+    const requestedAt = new Date(String(body?.scheduled_at ?? ""));
+    if (Number.isFinite(requestedAt.getTime())) scheduledRunAt = requestedAt;
+  } catch { /* scheduled_at omitted: validate the actual invocation time */ }
+  const taipeiHour = Number(new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Taipei", hour: "2-digit", hourCycle: "h23",
+  }).format(scheduledRunAt));
+  if (taipeiHour < 5 || taipeiHour > 7) {
+    return json({ error: "outside_snapshot_window", taipeiHour }, 409);
+  }
+
   const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
   const fugleKey = Deno.env.get("FUGLE_MARKETDATA_API_KEY") ?? "";
@@ -100,7 +113,6 @@ Deno.serve(async (req: Request) => {
       amount_twd: amountTwd,
       fx_rate_twd: item.market === "US" ? conversion : 1,
       quote_source: quote.provider,
-      updated_at: new Date().toISOString(),
     }).eq("id", item.id);
     if (error) failed += 1;
     else updated += 1;
@@ -117,7 +129,6 @@ Deno.serve(async (req: Request) => {
       fx_rate_twd: fxRate,
       quote_currency: "USD",
       quote_source: "twelve_data",
-      updated_at: new Date().toISOString(),
     }).eq("id", item.id);
     if (error) failed += 1;
     else updated += 1;
@@ -130,7 +141,7 @@ Deno.serve(async (req: Request) => {
 
   const taipeiToday = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit",
-  }).format(new Date());
+  }).format(scheduledRunAt);
   const snapshotDate = new Date(`${taipeiToday}T00:00:00Z`);
   snapshotDate.setUTCDate(snapshotDate.getUTCDate() - 1);
   const recordedOn = snapshotDate.toISOString().slice(0, 10);
