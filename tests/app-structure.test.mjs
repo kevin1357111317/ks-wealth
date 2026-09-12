@@ -90,7 +90,7 @@ test('health trend values are selected from the chart instead of repeated in sum
   assert.match(source, /function showHealthTrendPoint/);
   assert.match(source, /點選或左右滑動可查看各年數值/);
   assert.match(healthCss, /\.healthTrendHit\{[^}]*pointer-events:all/);
-  assert.match(healthCss, /\.healthTrendSelection\[hidden\]\{display:none\}/);
+  assert.match(healthCss, /\.healthTrendSelection\[hidden\][^\{]*\{display:none\}/);
 });
 
 test('health trend tooltip shows both partners for the selected year', () => {
@@ -100,6 +100,15 @@ test('health trend tooltip shows both partners for the selected year', () => {
   assert.match(selector, /`佳軒 \$\{point\.dataset\.wifeValue\}`/);
   assert.match(source, /bindHealthTrendCharts\(\)/);
   assert.match(source, /ArrowLeft.*ArrowRight.*Enter/);
+});
+
+test('health trends keep only one selection and hide missing-person markers', () => {
+  const selector = source.slice(source.indexOf('function selectHealthTrendPoint'), source.indexOf('function showHealthTrendPoint'));
+  assert.match(selector, /querySelectorAll\('\[data-health-trend-selection\]'\)/);
+  assert.match(selector, /otherSelection !== selection/);
+  assert.match(selector, /otherSelection\.setAttribute\('hidden', ''\)/);
+  assert.match(healthCss, /\.healthTrendSelection\[hidden\],\.healthTrendSelectedDot\[hidden\]\{display:none\}/);
+  assert.match(healthCss, /\.healthCoupleTrendCard svg\{outline:none/);
 });
 
 test('health trend tooltip fits its frame to the rendered text', () => {

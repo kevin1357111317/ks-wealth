@@ -1113,6 +1113,10 @@ function fitHealthTrendTooltip(selection) {
 function selectHealthTrendPoint(chart, point) {
   const selection = chart.querySelector('[data-health-trend-selection]');
   if (!selection || !point) return;
+  // 全頁只保留目前這張圖的選取狀態；切換指標時上一個提示框立即收起。
+  root.querySelectorAll('[data-health-trend-selection]').forEach(otherSelection => {
+    if (otherSelection !== selection) otherSelection.setAttribute('hidden', '');
+  });
   const pointX = Number(point.dataset.x);
   const pointY = value => value === '' ? null : Number(value);
   const husbandY = pointY(point.dataset.husbandY);
