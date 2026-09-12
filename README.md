@@ -107,7 +107,8 @@ G6PD、體脂率這些切點是儀器與方法決定的，硬套別家的標準�
   從已繳期數的**分母**推出來的（所以排程抓不齊時年限會跟著錯，見「排程要分頁抓」那節）
 - `loan-month-summary.js`：把摘要換成「本月剩餘還款」，自己帶 publishable key、從
   localStorage 讀 auth token，直接打 PostgREST 算當月還沒扣的期數。每輪只批次查一次帳戶與
-  一次排程，再依成員／貸款類型分桶；同時觸發的更新共用同一個請求，結果存在 localStorage 當天快取
+  一次排程，再依成員／貸款類型分桶；同時觸發的更新共用同一個請求。當天快取包含 user id，
+  換帳號會清除；同步失敗顯示 `—`，不沿用上一個帳號或過期的數字
 
 第二支不走 `app-v3.js` 的 supabase client，所以測試裡的假 client 攔不到它 —— 瀏覽器測試
 看到的那一格會停在「更新中…」，斷言要對著這個狀態寫，不要對著 `app-v3.js` 的原始樣板寫。
@@ -124,6 +125,7 @@ observer 會被自己的改動再次觸發，兩支都各自用「同一個節�
 - 股票以股數與行情計算；台股為股數 × 台幣市價，美股再乘 USD/TWD。
 - 舊資料仍可由 `original_currency` / `original_amount` fallback 讀取，新增與編輯統一寫入 `native_*`。
 - `net_worth_history` 保存家庭歷史，`financial_scope_history` 保存老公／老婆範圍歷史；今日顯示值只在前端即時計算。
+- 個人淨資產趨勢只使用 `financial_scope_history`；即使家庭歷史更長，也不能拿家庭淨值補個人缺口。
 
 ## 台股／美股走交易台帳
 
@@ -613,6 +615,8 @@ Fugle 的每分鐘上限沒有查到明文；4 檔 × 每 5 秒 = 48 次／分�
   （並且掛 `release` 事件把 `wakeLock` 清成 null，不然下次會以為還握著）
 - 背景分頁的計時器會被瀏覽器降頻，更新了也沒人看，只是耗電跟吃額度
 - 螢幕關著那段時間計時器是停的，所以回前景時如果距離上次完整更新已經超過 60 秒，先補一次
+- 回前景時若 Realtime 還沒回到 `SUBSCRIBED`，重建 channel；完整載入超過 60 秒也補抓一次，
+  避免 iOS 凍結 WebSocket 後一直顯示背景前的資料
 - 台股那一輪不動狀態列 —— 每 5 秒閃一次「更新中」比不更新還糟
 
 `navigator.wakeLock` 拿不到（低電量模式、使用者不給、瀏覽器沒支援）就安靜跳過，照系統原本的
@@ -633,6 +637,13 @@ Fugle 的每分鐘上限沒有查到明文；4 檔 × 每 5 秒 = 48 次／分�
 `realtime` 的 `financial_items` 事件也不能整包重載 —— 每一輪報價更新都會寫它，事件會送回來
 給我們自己，照單全收就等於每分鐘重載一次。那一條改成 `reloadItems()`，只重抓 `financial_items`。
 交易真的變了會由 `klfan_transactions` 的事件帶進來，**那一條才走完整重載**。
+
+完整載入本身使用 single-flight + dirty flag：載入途中再收到存檔或 Realtime 事件，舊請求結束後
+會再跑一輪；`reloadItems()` 則用 generation 只接受最後一個請求的結果，避免亂序回應覆蓋新資料。
+
+行情寫回使用 Edge Function 的 server-side client，且不更新 `updated_by`／`updated_at`：行情是
+系統衍生值，不應冒充人工編輯，也不應每分鐘灌入 `activity_log`。人工表單用原始 `updated_at`
+做 compare-and-set，另一台裝置先改過就提示重新開啟，不靜默覆蓋。
 
 （試過用時間窗把「自己的寫入」濾掉，但別的裝置剛好在窗口內改東西就會漏，所以改成分流。）
 

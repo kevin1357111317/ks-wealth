@@ -46,3 +46,9 @@ commit message 建議直接帶版號，方便日後追蹤。
 
 貸款、股票台帳、美金這幾塊的數字都跟 KLFAN 試算表或銀行 App 核對過，`README.md` 裡有
 對照結果。動到計算邏輯就重新對一次，別只看測試綠。
+
+## Supabase Production 防呆
+
+Production migration history 與 `supabase/migrations/` 尚未完成 reconciliation，禁止直接執行
+`supabase db push`。先讀 `supabase/README.md`，核對 production history；schema 提案只能放
+`supabase/proposals/`，不得建立可執行 migration。

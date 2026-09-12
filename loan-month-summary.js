@@ -1,20 +1,17 @@
 import { LOAN_OWNERS, LOAN_TYPES, loanMonthBucketKey, summarizeRemainingMonth } from './loan-month-core.js?v=V2P4';
+import {
+  LOAN_MONTH_CACHE_PREFIX,
+  loanMonthDataKey,
+  loanMonthStorageKey,
+  readStoredAuth,
+} from './loan-month-cache-core.js?v=V3P23';
 
 const root = document.querySelector('#root');
 const SUPABASE_URL = 'https://gbxsnwqbjmgfikpblyot.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_VtGM8w7CqxDB_3NaROR8OA_H0txX-_I';
 const AUTH_STORAGE_KEY = 'sb-gbxsnwqbjmgfikpblyot-auth-token';
-const CACHE_PREFIX = 'ks-loan-month-summary';
-
-function readAccessToken() {
-  const raw = localStorage.getItem(AUTH_STORAGE_KEY);
-  if (!raw) return '';
-  try {
-    const data = JSON.parse(raw);
-    return data?.access_token || data?.currentSession?.access_token || '';
-  } catch {
-    return '';
-  }
+function readAuth() {
+  return readStoredAuth(localStorage.getItem(AUTH_STORAGE_KEY));
 }
 
 function taipeiDateParts() {
@@ -37,12 +34,8 @@ function todayKey() {
   return ymd(year, month, day);
 }
 
-function dataKey(owner, loanType) {
-  return `${owner}|${loanType}|${todayKey()}`;
-}
-
 function storageKey(key) {
-  return `${CACHE_PREFIX}|${key}`;
+  return loanMonthStorageKey(key);
 }
 
 function readCache(key) {
@@ -86,7 +79,7 @@ function remainingMonthContext() {
 }
 
 async function rest(path, params) {
-  const token = readAccessToken();
+  const token = readAuth().accessToken;
   if (!token) throw new Error('missing session');
   const url = new URL(`${SUPABASE_URL}/rest/v1/${path}`);
   for (const [key, value] of params) url.searchParams.append(key, value);
@@ -166,12 +159,19 @@ function refreshRemainingMonthSummary({ force = false } = {}) {
   if (!context) return;
 
   const { owner, loanType, metric } = context;
-  const key = dataKey(owner, loanType);
+  const { userId } = readAuth();
+  const key = loanMonthDataKey(userId, owner, loanType, todayKey());
   const label = metric.querySelector('span');
   const value = metric.querySelector('b');
   const note = metric.querySelector('small');
 
   setText(label, '本月剩餘還款');
+  if (!key) {
+    setText(value, '—');
+    setText(note, '尚未登入');
+    metric.dataset.remainingMonthKey = '';
+    return;
+  }
 
   // 同一個摘要節點已綁定今天的資料時直接離開，避免 observer 因文字更新再次觸發自己。
   if (!force && metric.dataset.remainingMonthKey === key) return;
@@ -191,17 +191,20 @@ function refreshRemainingMonthSummary({ force = false } = {}) {
     renderResult(metric, result);
   }).catch(() => {
     if (!metric.isConnected || metric.dataset.remainingMonthKey !== key) return;
+    setText(value, '—');
+    setText(note, '同步失敗，請稍後重試');
     metric.dataset.remainingMonthKey = '';
   });
 }
 
 async function prewarmRemainingMonth() {
-  if (!readAccessToken()) return false;
+  const { accessToken, userId } = readAuth();
+  if (!accessToken || !userId) return false;
   try {
     const result = await loadRemainingMonthBatch();
     for (const owner of LOAN_OWNERS) {
       for (const loanType of LOAN_TYPES) {
-        const key = dataKey(owner, loanType);
+        const key = loanMonthDataKey(userId, owner, loanType, todayKey());
         writeCache(key, result[loanMonthBucketKey(owner, loanType)]);
       }
     }
@@ -228,4 +231,20 @@ if (root) {
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
   refreshRemainingMonthSummary({ force: true });
+});
+
+document.addEventListener('ks:auth-change', event => {
+  monthDataFlight = null;
+  for (let index = localStorage.length - 1; index >= 0; index -= 1) {
+    const key = localStorage.key(index) ?? '';
+    if (key.startsWith(`${LOAN_MONTH_CACHE_PREFIX}|`)) localStorage.removeItem(key);
+  }
+  const expectedUserId = event.detail?.userId ?? '';
+  if (!expectedUserId) return;
+  // Auth 事件與 SDK 寫 localStorage 的先後不應影響隔離；只替事件指定的新帳號預熱。
+  setTimeout(() => {
+    if (readAuth().userId !== expectedUserId) return;
+    refreshRemainingMonthSummary({ force: true });
+    void prewarmRemainingMonth();
+  }, 0);
 });

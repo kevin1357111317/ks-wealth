@@ -39,6 +39,10 @@ Deno.serve(async (req: Request) => {
   const cache = serviceRoleKey
     ? createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } })
     : null;
+  if (!cache) return json({ error: "service_role_config_missing" }, 500);
+  // 行情是系統衍生值：用 server-side writer 寫回，避免把每分鐘更新冒充成使用者編輯，
+  // 也讓 audit trigger（只記 auth.uid()）保留給真正的人工變更。
+  const quoteWriter = cache;
 
   const token = authHeader.slice(7);
   const { data: userData, error: userError } = await client.auth.getUser(token);
@@ -289,12 +293,10 @@ Deno.serve(async (req: Request) => {
         return { id: item.id, name: item.name, symbol, market: item.market, status: "price_only", warning: !conversion ? fxError ?? "fx_unavailable" : "quantity_missing", ...quote };
       }
       const amountTwd = Math.round(Number(quote.price) * quantity * conversion);
-      const { error } = await client.from("financial_items").update({
+      const { error } = await quoteWriter.from("financial_items").update({
         amount_twd: amountTwd,
         fx_rate_twd: item.market === "US" ? conversion : 1,
         quote_source: item.market === "US" ? "twelve_data" : "fugle",
-        updated_by: userData.user.id,
-        updated_at: new Date().toISOString(),
       }).eq("id", item.id);
       return error
         ? { id: item.id, name: item.name, symbol, market: item.market, status: "error", error: error.message, ...quote }
@@ -307,13 +309,11 @@ Deno.serve(async (req: Request) => {
       if (!fxRate) return { id: item.id, name: item.name, market: "MANUAL", status: "error", error: fxError ?? "fx_unavailable" };
       const nativeAmount = Number(item.native_amount);
       const amountTwd = Math.round(nativeAmount * fxRate);
-      const { error } = await client.from("financial_items").update({
+      const { error } = await quoteWriter.from("financial_items").update({
         amount_twd: amountTwd,
         fx_rate_twd: fxRate,
         quote_currency: "USD",
         quote_source: "twelve_data",
-        updated_by: userData.user.id,
-        updated_at: new Date().toISOString(),
       }).eq("id", item.id);
       return error
         ? { id: item.id, name: item.name, market: "MANUAL", status: "error", error: error.message }
@@ -331,13 +331,11 @@ Deno.serve(async (req: Request) => {
         return { id: item.id, name: item.name, market: "GOLD", status: "error", error: goldError ?? fxError ?? "gold_unavailable" };
       }
       const amountTwd = goldAmountTwd(grams, xauUsd, fxRate);
-      const { error } = await client.from("financial_items").update({
+      const { error } = await quoteWriter.from("financial_items").update({
         amount_twd: amountTwd,
         fx_rate_twd: fxRate,
         quote_currency: "USD",
         quote_source: "twelve_data",
-        updated_by: userData.user.id,
-        updated_at: new Date().toISOString(),
       }).eq("id", item.id);
       return error
         ? { id: item.id, name: item.name, market: "GOLD", status: "error", error: error.message, currency: "USD", price: xauUsd }
