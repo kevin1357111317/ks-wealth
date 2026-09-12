@@ -125,9 +125,9 @@ observer 會被自己的改動再次觸發，兩支都各自用「同一個節�
 - 股票以股數與行情計算；台股為股數 × 台幣市價，美股再乘 USD/TWD。
 - 舊資料仍可由 `original_currency` / `original_amount` fallback 讀取，新增與編輯統一寫入 `native_*`。
 - `net_worth_history` 保存家庭歷史，`financial_scope_history` 保存老公／老婆範圍歷史；今日顯示值只在前端即時計算。
-- 老公個人淨資產趨勢在老婆首次出現在 `financial_scope_history` 前，沿用當時只屬於老公的
-  `net_worth_history`；從切分日起改用老公 scope。老婆趨勢只從自己的 scope 開始，切分後任一人
-  缺日期都不能用同日家庭淨值補值。
+- 2026-01-01～2026-08-26 原本只屬於老公的歷史已正式回填到 `financial_scope_history`
+  的 `husband/net`；2026-08-27 起夫妻各自用 asset－liability。個人趨勢永遠只讀自己的 scope，
+  家庭趨勢才讀 `net_worth_history`，不在顯示時互相借資料。
 
 ## 台股／美股走交易台帳
 

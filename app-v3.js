@@ -15,7 +15,7 @@ import { calculatePortfolio, decodePortfolioBootstrap } from './portfolio-core.j
 import { calculateUsd } from './usd-core.js?v=usd-1';
 import { calculateGold } from './gold-core.js?v=gold-trim-1';
 import { calculateLoanCashflow } from './loan-core.js?v=cashflow-1';
-import { buildPersonalTrendRows } from './trend-core.js?v=V3P24';
+import { buildPersonalTrendRows } from './trend-core.js?v=V3P25';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -279,7 +279,6 @@ function familyTrendRows(currentNetWorth) {
 
 function personalTrendRows(ownerScope, currentNetWorth) {
   return buildPersonalTrendRows({
-    familyHistory: history,
     scopeHistory,
     ownerScope,
     currentNetWorth,

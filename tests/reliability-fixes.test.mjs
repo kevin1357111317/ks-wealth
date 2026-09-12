@@ -15,15 +15,12 @@ const quotes = await readFile(new URL('../supabase/functions/refresh-tw-quotes/i
 const snapshot = await readFile(new URL('../supabase/functions/daily-wealth-snapshot/index.ts', import.meta.url), 'utf8');
 const config = await readFile(new URL('../supabase/config.toml', import.meta.url), 'utf8');
 const supabaseSafety = await readFile(new URL('../supabase/README.md', import.meta.url), 'utf8');
+const legacyBackfill = await readFile(new URL('../supabase/proposals/20260912_backfill_legacy_husband_net_history.sql', import.meta.url), 'utf8');
 
-test('老公趨勢保留老婆加入前的既有淨值歷史，切分後只用個人 scope', () => {
-  const familyHistory = [
-    { recorded_on: '2026-01-01', net_worth_twd: 29_000_000 },
-    { recorded_on: '2026-08-26', net_worth_twd: 31_500_000 },
-    { recorded_on: '2026-08-27', net_worth_twd: 35_500_000 },
-    { recorded_on: '2026-08-28', net_worth_twd: 35_700_000 },
-  ];
+test('老公趨勢只讀正式歸戶的個人歷史，舊 net 與新資產負債自然接續', () => {
   const scopeHistory = [
+    { recorded_on: '2026-01-01', owner_scope: 'husband', kind: 'net', total_twd: 29_000_000 },
+    { recorded_on: '2026-08-26', owner_scope: 'husband', kind: 'net', total_twd: 31_500_000 },
     { recorded_on: '2026-08-27', owner_scope: 'husband', kind: 'asset', total_twd: 40_000_000 },
     { recorded_on: '2026-08-27', owner_scope: 'husband', kind: 'liability', total_twd: 8_000_000 },
     { recorded_on: '2026-08-29', owner_scope: 'husband', kind: 'asset', total_twd: 40_200_000 },
@@ -31,7 +28,7 @@ test('老公趨勢保留老婆加入前的既有淨值歷史，切分後只用�
     { recorded_on: '2026-08-27', owner_scope: 'wife', kind: 'liability', total_twd: 0 },
   ];
   assert.deepEqual(buildPersonalTrendRows({
-    familyHistory, scopeHistory, ownerScope: 'husband', currentNetWorth: 32_300_000, today: '2026-08-30',
+    scopeHistory, ownerScope: 'husband', currentNetWorth: 32_300_000, today: '2026-08-30',
   }), [
     { recorded_on: '2026-01-01', total_twd: 29_000_000 },
     { recorded_on: '2026-08-26', total_twd: 31_500_000 },
@@ -41,57 +38,17 @@ test('老公趨勢保留老婆加入前的既有淨值歷史，切分後只用�
   ]);
 });
 
-test('老婆趨勢只從自己的 scope 開始，不繼承老婆加入前的家庭歷史', () => {
-  const familyHistory = [
-    { recorded_on: '2026-01-01', net_worth_twd: 29_000_000 },
-    { recorded_on: '2026-08-26', net_worth_twd: 31_500_000 },
-  ];
+test('老婆趨勢只讀老婆 scope，不會拿到老公的舊 net 歷史', () => {
   const scopeHistory = [
+    { recorded_on: '2026-01-01', owner_scope: 'husband', kind: 'net', total_twd: 29_000_000 },
     { recorded_on: '2026-08-27', owner_scope: 'wife', kind: 'asset', total_twd: 4_000_000 },
     { recorded_on: '2026-08-27', owner_scope: 'wife', kind: 'liability', total_twd: 0 },
   ];
   assert.deepEqual(buildPersonalTrendRows({
-    familyHistory, scopeHistory, ownerScope: 'wife', currentNetWorth: 4_100_000, today: '2026-08-28',
+    scopeHistory, ownerScope: 'wife', currentNetWorth: 4_100_000, today: '2026-08-28',
   }), [
     { recorded_on: '2026-08-27', total_twd: 4_000_000 },
     { recorded_on: '2026-08-28', total_twd: 4_100_000 },
-  ]);
-});
-
-test('老婆加入後個人 scope 缺日期時，不可拿同日家庭淨值補老公', () => {
-  const familyHistory = [
-    { recorded_on: '2026-08-26', net_worth_twd: 31_500_000 },
-    { recorded_on: '2026-08-27', net_worth_twd: 35_500_000 },
-    { recorded_on: '2026-08-28', net_worth_twd: 35_700_000 },
-  ];
-  const scopeHistory = [
-    { recorded_on: '2026-08-27', owner_scope: 'husband', kind: 'asset', total_twd: 40_000_000 },
-    { recorded_on: '2026-08-27', owner_scope: 'husband', kind: 'liability', total_twd: 8_000_000 },
-    { recorded_on: '2026-08-27', owner_scope: 'wife', kind: 'asset', total_twd: 4_000_000 },
-    { recorded_on: '2026-08-27', owner_scope: 'wife', kind: 'liability', total_twd: 0 },
-  ];
-  const rows = buildPersonalTrendRows({
-    familyHistory, scopeHistory, ownerScope: 'husband', currentNetWorth: 32_100_000, today: '2026-08-29',
-  });
-  assert.deepEqual(rows, [
-    { recorded_on: '2026-08-26', total_twd: 31_500_000 },
-    { recorded_on: '2026-08-27', total_twd: 32_000_000 },
-    { recorded_on: '2026-08-29', total_twd: 32_100_000 },
-  ]);
-  assert.equal(rows.some(row => row.recorded_on === '2026-08-28'), false);
-});
-
-test('尚未有老婆 scope 時，既有家庭歷史仍全部視為老公歷史', () => {
-  const familyHistory = [
-    { recorded_on: '2026-01-01', net_worth_twd: 29_000_000 },
-    { recorded_on: '2026-08-26', net_worth_twd: 31_500_000 },
-  ];
-  assert.deepEqual(buildPersonalTrendRows({
-    familyHistory, scopeHistory: [], ownerScope: 'husband', currentNetWorth: 31_600_000, today: '2026-08-27',
-  }), [
-    { recorded_on: '2026-01-01', total_twd: 29_000_000 },
-    { recorded_on: '2026-08-26', total_twd: 31_500_000 },
-    { recorded_on: '2026-08-27', total_twd: 31_600_000 },
   ]);
 });
 
@@ -104,7 +61,7 @@ test('個人趨勢同一 owner 的資產或負債單邊更新會沿用上一筆'
     { recorded_on: '2026-08-27', owner_scope: 'wife', kind: 'liability', total_twd: 0 },
   ];
   assert.deepEqual(buildPersonalTrendRows({
-    familyHistory: [], scopeHistory, ownerScope: 'husband', currentNetWorth: 32_300_000, today: '2026-08-29',
+    scopeHistory, ownerScope: 'husband', currentNetWorth: 32_300_000, today: '2026-08-29',
   }), [
     { recorded_on: '2026-08-27', total_twd: 32_000_000 },
     { recorded_on: '2026-08-28', total_twd: 32_200_000 },
@@ -112,13 +69,20 @@ test('個人趨勢同一 owner 的資產或負債單邊更新會沿用上一筆'
   ]);
 });
 
-test('前端個人趨勢會同時傳入家庭舊歷史與個人 scope，由核心切分語意', () => {
+test('前端個人趨勢只傳個人 scope，不再借用家庭歷史', () => {
   const personalResolver = app.slice(
     app.indexOf('function personalTrendRows'),
     app.indexOf('// Auth / startup'),
   );
-  assert.match(personalResolver, /familyHistory:\s*history/);
   assert.match(personalResolver, /scopeHistory/);
+  assert.doesNotMatch(personalResolver, /\bhistory\b/);
+});
+
+test('回填提案把切分日前家庭淨值正式寫成 husband net，且可重跑', () => {
+  assert.match(legacyBackfill, /'husband', 'net'/);
+  assert.match(legacyBackfill, /h\.recorded_on < coalesce\(w\.recorded_on/);
+  assert.match(legacyBackfill, /on conflict .* do nothing/is);
+  assert.match(legacyBackfill, /proposals/);
 });
 
 test('貸款摘要快取依使用者隔離', () => {
