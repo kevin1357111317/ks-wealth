@@ -1,4 +1,4 @@
-/* V3P18 — Shared information hierarchy for every KS Wealth screen.
+/* V3P20 — Shared information hierarchy for every KS Wealth screen.
    Feature styles still own colour and layout; this final layer owns type rhythm,
    semantic emphasis and the spacing shared by equivalent components. */
 :root{
@@ -49,7 +49,16 @@ html .appVersionBadge{font-size:var(--type-meta)}
 .bigMoney{font-size:var(--type-hero);line-height:1.08;font-variant-numeric:tabular-nums}
 .bigMoney small{font-size:.8125rem}
 .miniStats span,.ownerTile span{font-size:var(--type-label);line-height:1.35}
-.miniStats b,.ownerTile b{font-size:var(--type-summary-value);line-height:1.3;font-variant-numeric:tabular-nums}
+.miniStats>div,.ownerTile{min-width:0}
+.miniStats b{
+  min-width:0;
+  font-size:clamp(.8125rem,3.6vw,var(--type-summary-value));
+  line-height:1.3;
+  letter-spacing:-.025em;
+  white-space:nowrap;
+  font-variant-numeric:tabular-nums;
+}
+.ownerTile b{font-size:var(--type-summary-value);line-height:1.3;white-space:nowrap;font-variant-numeric:tabular-nums}
 .ownerTile small{font-size:var(--type-meta);line-height:1.4}
 .legendRow{font-size:.8125rem;line-height:1.35}
 .legendRow b{font-size:.8125rem;font-variant-numeric:tabular-nums}
@@ -59,10 +68,11 @@ html .appVersionBadge{font-size:var(--type-meta)}
 .analysisEntry button{min-height:4rem;padding:0 .9375rem;font-size:.9375rem;line-height:1.3}
 .categoryHead span{font-size:var(--type-card-title);line-height:1.3}
 .categoryHead small{font-size:var(--type-meta)}
-.categoryTotal b{font-size:var(--type-card-title);font-variant-numeric:tabular-nums}
+.categoryHead>div,.categoryTotal{min-width:0}
+.categoryTotal b{font-size:clamp(.8125rem,3.7vw,var(--type-card-title));letter-spacing:-.015em;white-space:nowrap;font-variant-numeric:tabular-nums}
 .compactIdentity b,.itemName b{font-size:var(--type-card-title);line-height:1.35}
 .compactIdentity>span,.itemName span,.itemAmount span{font-size:var(--type-meta);line-height:1.4}
-.compactAmount b,.itemAmount b{font-size:var(--type-card-title);line-height:1.35;font-variant-numeric:tabular-nums}
+.compactAmount b,.itemAmount b{font-size:clamp(.8125rem,3.7vw,var(--type-card-title));line-height:1.35;letter-spacing:-.015em;white-space:nowrap;font-variant-numeric:tabular-nums}
 .compactAmount span,.compactMeta,.source{font-size:var(--type-meta);line-height:1.4}
 .itemMeta span{font-size:var(--type-meta);line-height:1.35}
 .itemMeta b{font-size:.8125rem;line-height:1.35;font-variant-numeric:tabular-nums}
@@ -72,7 +82,7 @@ html .appVersionBadge{font-size:var(--type-meta)}
 .portfolioSummary{gap:.625rem}
 .portfolioMetric{min-width:0;padding:.9375rem}
 .portfolioMetric span{font-size:.8125rem;line-height:1.35}
-.portfolioMetric b{margin-top:.3125rem;font-size:var(--type-summary-value);line-height:1.3;letter-spacing:-.012em;font-variant-numeric:tabular-nums}
+.portfolioMetric b{margin-top:.3125rem;font-size:clamp(.8125rem,3.6vw,var(--type-summary-value));line-height:1.3;letter-spacing:-.025em;white-space:nowrap;font-variant-numeric:tabular-nums}
 .portfolioMetric small{margin-top:.25rem;font-size:var(--type-meta);line-height:1.4}
 .portfolioToolbar{font-size:var(--type-label);line-height:1.4}
 .portfolioStockSummary{padding:1rem}
@@ -89,9 +99,9 @@ html .appVersionBadge{font-size:var(--type-meta)}
 .loanCardHead b{font-size:var(--type-card-title);line-height:1.35}
 .loanCardHead small,.loanBalance span,.loanFoot{font-size:var(--type-meta);line-height:1.4}
 .loanStatus{font-size:var(--type-meta);line-height:1.2}
-.loanBalance b{font-size:1.25rem;line-height:1.3;font-variant-numeric:tabular-nums}
+.loanBalance b{font-size:1.25rem;line-height:1.3;white-space:nowrap;font-variant-numeric:tabular-nums}
 .loanFacts span{font-size:.8125rem;line-height:1.35}
-.loanFacts b{font-size:.9375rem;line-height:1.35;font-variant-numeric:tabular-nums}
+.loanFacts b{font-size:.9375rem;line-height:1.35;white-space:nowrap;font-variant-numeric:tabular-nums}
 .loanPlanRow time{font-size:.8125rem}
 .loanPlanRow b{font-size:.875rem;font-variant-numeric:tabular-nums}
 .loanPlanRow small{font-size:var(--type-meta);line-height:1.4}
@@ -136,12 +146,12 @@ html .appVersionBadge{font-size:var(--type-meta)}
 
 @media(max-width:420px){
   .portfolioMetric{padding:.875rem}
-  .portfolioMetric b{font-size:1rem}
   .loanFacts{gap:.875rem .625rem}
   .analysisEntry button{font-size:.9375rem}
 }
 
 @media(max-width:370px){
   :root{--type-page-title:1.375rem;--type-section-title:1.125rem}
-  .portfolioMetric b{font-size:.9375rem}
+  .miniStats{gap:.5rem}
+  .miniStats>div{padding-right:.625rem;padding-left:.625rem}
 }
