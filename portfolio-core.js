@@ -234,7 +234,29 @@ export function calculatePortfolio(stocks, fxRate, today = localIsoDate()) {
   return {
     positions,
     tw: summarize(positions.filter(row => row.market === '台股')),
-    us: summarize(positions.filter(row => row.market === '美股')),
+    // 美股分析固定採 USD 口徑；歷史上誤標為 TWD 的已出清標的不混入 USD 彙總。
+    us: summarize(positions.filter(row => row.market === '美股' && row.currency === 'USD')),
     all: summarize(positions),
   };
+}
+
+export function sortPortfolioPositions(rows, { criterion = 'marketValue', direction = 'desc', currency = 'TWD' } = {}) {
+  const valueOf = stock => {
+    if (criterion === 'profit') return currency === 'USD' ? stock.profitNative : stock.profitTwd;
+    if (criterion === 'return') return currency === 'USD' ? stock.nativeReturnRate : stock.returnRate;
+    if (criterion === 'xirr') return currency === 'USD' ? stock.nativeXirr : stock.xirr;
+    return stock.currentValueTwd;
+  };
+  const sign = direction === 'asc' ? 1 : -1;
+  return [...(rows ?? [])].sort((a, b) => {
+    const aRaw = valueOf(a);
+    const bRaw = valueOf(b);
+    const aValue = Number(aRaw);
+    const bValue = Number(bRaw);
+    const aValid = aRaw !== null && aRaw !== undefined && Number.isFinite(aValue);
+    const bValid = bRaw !== null && bRaw !== undefined && Number.isFinite(bValue);
+    if (aValid !== bValid) return aValid ? -1 : 1;
+    if (aValid && aValue !== bValue) return (aValue - bValue) * sign;
+    return String(a.display ?? '').localeCompare(String(b.display ?? ''), 'zh-Hant');
+  });
 }

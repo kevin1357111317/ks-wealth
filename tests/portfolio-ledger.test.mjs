@@ -463,6 +463,14 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     assert.match(summary, /NT\$/);
     assert.match(summary, /US\$/);
     assert.doesNotMatch(summary, /台幣總損益|匯率影響|台幣年化/);
+    const sort = page.locator('[data-portfolio-sort]');
+    assert.equal(await sort.count(), 1);
+    assert.deepEqual(await sort.locator('option').allTextContents(), [
+      '市值｜高到低', '市值｜低到高', '年化｜高到低', '年化｜低到高',
+      '報酬率｜高到低', '報酬率｜低到高', '損益｜高到低', '損益｜低到高',
+    ]);
+    await sort.selectOption('xirr-desc');
+    assert.equal(await sort.inputValue(), 'xirr-desc');
 
     const meta = await page.textContent('.portfolioStockMeta');
     assert.match(meta, /累計損益/);
