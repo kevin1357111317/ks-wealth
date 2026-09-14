@@ -113,6 +113,9 @@ test('美股把股票本身損益與匯率影響拆開且仍能對帳', () => {
   };
   const metrics = calculateStockMetrics(stock, 30, '2026-01-01');
   assert.equal(metrics.profitNative, 5);
+  assert.equal(metrics.realizedNative, 5);
+  assert.equal(metrics.unrealizedNative, 0);
+  assert.ok(Math.abs(metrics.nativeReturnRate - 0.05) < 1e-9);
   assert.equal(metrics.stockProfitTwd, 150);
   assert.equal(metrics.profitTwd, -50);
   assert.equal(metrics.fxImpactTwd, -200);
@@ -134,6 +137,7 @@ test('美股帳戶彙總延續股票損益與匯率影響的不變式', () => {
   ], 30, '2026-01-01');
   assert.equal(result.us.nativeCurrency, 'USD');
   assert.equal(result.us.profitNative, 25);
+  assert.ok(Math.abs(result.us.nativeReturnRate - (25 / 300)) < 1e-9);
   assert.equal(result.us.stockProfitTwd, 750);
   assert.equal(result.us.profitTwd, 150);
   assert.equal(result.us.fxImpactTwd, -600);
