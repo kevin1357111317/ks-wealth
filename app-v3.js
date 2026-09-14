@@ -11,7 +11,7 @@ import {
   parseNonNegative,
   toFiniteNumber,
 } from './financial-core.js?v=hide-sold-out-1';
-import { calculatePortfolio, decodePortfolioBootstrap } from './portfolio-core.js?v=V3.26.1';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.27.0';
 import { calculateUsd } from './usd-core.js?v=usd-1';
 import { calculateGold } from './gold-core.js?v=gold-trim-1';
 import { calculateLoanCashflow } from './loan-core.js?v=cashflow-1';
@@ -128,6 +128,7 @@ let analysisReturnScroll = 0;   // 進分析頁前在資產頁停的位置，退
 if ('scrollRestoration' in window.history) window.history.scrollRestoration = 'manual';
 let portfolioMarket = 'all';
 let portfolioShowExited = false;
+let portfolioSort = 'marketValue-desc';
 let openGroups = new Set();
 let trendMode = 'value';
 let currentTrendSeries = [];
@@ -1346,12 +1347,25 @@ function portfolioListPage() {
   const model = ownerPortfolioModel(analysisOwner);
   const marketRows = portfolioMarket === 'all'
     ? model.positions
-    : model.positions.filter(stock => stock.market === portfolioMarket);
-  const rows = marketRows.filter(stock => portfolioShowExited || stock.shares > 0.0000001)
-    .sort((a, b) => b.currentValueTwd - a.currentValueTwd || a.display.localeCompare(b.display, 'zh-Hant'));
+    : model.positions.filter(stock => stock.market === portfolioMarket
+      && (portfolioMarket !== '美股' || stock.currency === 'USD'));
+  const visibleRows = marketRows.filter(stock => portfolioShowExited || stock.shares > 0.0000001);
+  const [sortCriterion, sortDirection] = portfolioSort.split('-');
+  const rows = sortPortfolioPositions(visibleRows, {
+    criterion: sortCriterion,
+    direction: sortDirection,
+    currency: portfolioMarket === '美股' ? 'USD' : 'TWD',
+  });
   const bucket = portfolioMarket === '台股' ? model.tw : portfolioMarket === '美股' ? model.us : model.all;
-  shell(`<div class="portfolioView"><div class="seg"><button data-portfolio-market="all" class="${portfolioMarket === 'all' ? 'on' : ''}">全部</button><button data-portfolio-market="台股" class="${portfolioMarket === '台股' ? 'on' : ''}">台股</button><button data-portfolio-market="美股" class="${portfolioMarket === '美股' ? 'on' : ''}">美股</button></div>${portfolioSummaryCards(bucket, portfolioMarket)}<label class="portfolioToolbar"><span>${rows.length} 檔標的</span><span><input type="checkbox" data-show-exited ${portfolioShowExited ? 'checked' : ''}> 顯示已出清</span></label><div class="portfolioList">${rows.length ? rows.map(stock => portfolioStockCard(stock, stock.key === expandedStock)).join('') : '<div class="portfolioEmpty">這個篩選條件目前沒有標的。</div>'}</div></div>`, `${ownerName(analysisOwner)}股票分析`);
+  const sortOptions = [
+    ['marketValue-desc', '市值｜高到低'], ['marketValue-asc', '市值｜低到高'],
+    ['xirr-desc', '年化｜高到低'], ['xirr-asc', '年化｜低到高'],
+    ['return-desc', '報酬率｜高到低'], ['return-asc', '報酬率｜低到高'],
+    ['profit-desc', '損益｜高到低'], ['profit-asc', '損益｜低到高'],
+  ].map(([value, label]) => `<option value="${value}" ${portfolioSort === value ? 'selected' : ''}>${label}</option>`).join('');
+  shell(`<div class="portfolioView"><div class="seg"><button data-portfolio-market="all" class="${portfolioMarket === 'all' ? 'on' : ''}">全部</button><button data-portfolio-market="台股" class="${portfolioMarket === '台股' ? 'on' : ''}">台股</button><button data-portfolio-market="美股" class="${portfolioMarket === '美股' ? 'on' : ''}">美股</button></div>${portfolioSummaryCards(bucket, portfolioMarket)}<div class="portfolioToolbar"><span>${rows.length} 檔標的</span><label class="portfolioSort"><span>排序</span><select data-portfolio-sort>${sortOptions}</select></label><label class="portfolioExited"><input type="checkbox" data-show-exited ${portfolioShowExited ? 'checked' : ''}> 顯示已出清</label></div><div class="portfolioList">${rows.length ? rows.map(stock => portfolioStockCard(stock, stock.key === expandedStock)).join('') : '<div class="portfolioEmpty">這個篩選條件目前沒有標的。</div>'}</div></div>`, `${ownerName(analysisOwner)}股票分析`);
   root.querySelectorAll('[data-portfolio-market]').forEach(button => { button.onclick = () => { portfolioMarket = button.dataset.portfolioMarket; render(); }; });
+  root.querySelector('[data-portfolio-sort]').onchange = event => { portfolioSort = event.target.value; render(); };
   root.querySelector('[data-show-exited]').onchange = event => { portfolioShowExited = event.target.checked; render(); };
   root.querySelectorAll('[data-portfolio-stock]').forEach(button => { button.onclick = () => {
     // 就地展開，不再跳頁；再點一次收起來。
