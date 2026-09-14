@@ -249,10 +249,12 @@ export function sortPortfolioPositions(rows, { criterion = 'marketValue', direct
   };
   const sign = direction === 'asc' ? 1 : -1;
   return [...(rows ?? [])].sort((a, b) => {
-    const aValue = Number(valueOf(a));
-    const bValue = Number(valueOf(b));
-    const aValid = Number.isFinite(aValue);
-    const bValid = Number.isFinite(bValue);
+    const aRaw = valueOf(a);
+    const bRaw = valueOf(b);
+    const aValue = Number(aRaw);
+    const bValue = Number(bRaw);
+    const aValid = aRaw !== null && aRaw !== undefined && Number.isFinite(aValue);
+    const bValid = bRaw !== null && bRaw !== undefined && Number.isFinite(bValue);
     if (aValid !== bValid) return aValid ? -1 : 1;
     if (aValid && aValue !== bValue) return (aValue - bValue) * sign;
     return String(a.display ?? '').localeCompare(String(b.display ?? ''), 'zh-Hant');
