@@ -101,3 +101,41 @@ test('彙總的已實現與未實現逐檔相加', () => {
   assert.equal(result.all.unrealizedTwd, result.tw.unrealizedTwd + result.us.unrealizedTwd);
   assert.ok(Math.abs(result.all.realizedTwd + result.all.unrealizedTwd - result.all.profitTwd) < 1e-9);
 });
+
+
+test('美股把股票本身損益與匯率影響拆開且仍能對帳', () => {
+  const stock = {
+    key: 'US', display: 'US', market: '美股', currency: 'USD', symbol: 'NASDAQ:US',
+    manualPrice: null, quote: { price: 105 }, transactions: [
+      { id: 1, date: '2025-01-01', amount: -100, shares: 1, twd: -3200, kind: 'trade' },
+      { id: 2, date: '2026-01-01', amount: 105, shares: -1, twd: 3150, kind: 'trade' },
+    ],
+  };
+  const metrics = calculateStockMetrics(stock, 30, '2026-01-01');
+  assert.equal(metrics.profitNative, 5);
+  assert.equal(metrics.stockProfitTwd, 150);
+  assert.equal(metrics.profitTwd, -50);
+  assert.equal(metrics.fxImpactTwd, -200);
+  assert.equal(metrics.stockProfitTwd + metrics.fxImpactTwd, metrics.profitTwd);
+  assert.ok(Math.abs(metrics.nativeXirr - 0.05) < 1e-6);
+});
+
+test('美股帳戶彙總延續股票損益與匯率影響的不變式', () => {
+  const makeUsStock = (key, buyUsd, buyTwd, sellUsd, sellTwd) => ({
+    key, display: key, market: '美股', currency: 'USD', symbol: `NASDAQ:${key}`,
+    manualPrice: null, quote: { price: sellUsd }, transactions: [
+      { id: 1, date: '2025-01-01', amount: -buyUsd, shares: 1, twd: -buyTwd, kind: 'trade' },
+      { id: 2, date: '2026-01-01', amount: sellUsd, shares: -1, twd: sellTwd, kind: 'trade' },
+    ],
+  });
+  const result = calculatePortfolio([
+    makeUsStock('AVGO', 100, 3200, 105, 3150),
+    makeUsStock('VOO', 200, 6400, 220, 6600),
+  ], 30, '2026-01-01');
+  assert.equal(result.us.nativeCurrency, 'USD');
+  assert.equal(result.us.profitNative, 25);
+  assert.equal(result.us.stockProfitTwd, 750);
+  assert.equal(result.us.profitTwd, 150);
+  assert.equal(result.us.fxImpactTwd, -600);
+  assert.equal(result.us.stockProfitTwd + result.us.fxImpactTwd, result.us.profitTwd);
+});
