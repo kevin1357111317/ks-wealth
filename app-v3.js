@@ -1303,7 +1303,7 @@ function portfolioSummaryCards(bucket, market) {
   if (market === '美股') {
     const nativeProfitTone = portfolioTone(bucket.profitNative);
     const nativeXirrTone = portfolioTone(bucket.nativeXirr);
-    return `<div class="portfolioSummary"><div class="portfolioMetric"><span>目前美股市值</span><b>NT$ ${formatNumber(bucket.currentValueTwd)}</b><small>以目前匯率換算 · ${bucket.holdings} 檔</small></div><div class="portfolioMetric"><span>累計淨投入</span><b>US$ ${formatNumber(bucket.netInvestedNative)}</b><small>買進－賣出－股息</small></div><div class="portfolioMetric"><span>累計損益</span><b class="${nativeProfitTone}">${signedUsd(bucket.profitNative)}</b><small>${formatPercent(bucket.nativeReturnRate)}</small></div><div class="portfolioMetric"><span>年化報酬率</span><b class="${nativeXirrTone}">${formatPercent(bucket.nativeXirr)}</b><small>依 USD 現金流計算</small></div></div>`;
+    return `<div class="portfolioSummary"><div class="portfolioMetric"><span>目前市值</span><b>NT$ ${formatNumber(bucket.currentValueTwd)}</b><small>以目前匯率換算 · ${bucket.holdings} 檔</small></div><div class="portfolioMetric"><span>累計淨投入</span><b>US$ ${formatNumber(bucket.netInvestedNative)}</b><small>買進－賣出－股息</small></div><div class="portfolioMetric"><span>累計損益</span><b class="${nativeProfitTone}">${signedUsd(bucket.profitNative)}</b><small>${formatPercent(bucket.nativeReturnRate)}</small></div><div class="portfolioMetric"><span>年化報酬率</span><b class="${nativeXirrTone}">${formatPercent(bucket.nativeXirr)}</b><small>依 USD 現金流計算</small></div></div>`;
   }
   const profitLabel = market === 'all' ? '台幣綜合損益' : '累計損益';
   const xirrLabel = market === 'all' ? '台幣綜合年化' : '年化報酬率';
