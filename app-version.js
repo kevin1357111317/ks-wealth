@@ -1,6 +1,6 @@
 // KS Wealth 正式版號的唯一 runtime 來源。
 // V3P26 是舊制最後一版；下一次產品出貨起使用 VMAJOR.MINOR.PATCH，細節見 VERSIONING.md。
-const APP_VERSION = 'V3.27.5';
+const APP_VERSION = 'V3.27.6';
 
 window.KS_APP_VERSION = APP_VERSION;
 document.documentElement.dataset.appVersion = APP_VERSION;
@@ -11,21 +11,14 @@ function ensureVersionStyle() {
   style.id = 'ks-app-version-style';
   style.textContent = `
     .brand > div:last-child { min-width:0; }
-    .bottomNav .appVersionBadge { position:absolute; left:50%; bottom:calc(100% + 6px); transform:translateX(-50%); }
-    .appVersionBadge {
-      display:inline-flex;
-      align-items:center;
-      justify-content:center;
-      min-height:22px;
-      padding:2px 8px;
-      border:1px solid rgba(93,117,112,.22);
-      border-radius:var(--radius-control, 999px);
-      background:rgba(255,255,255,.48);
-      color:var(--color-text-secondary, #6f7d79);
+    .content > .appVersionBadge {
+      margin:2px 0 0;
+      color:var(--color-text-muted, #8c9895);
       font-size:var(--type-meta, 12px);
-      font-weight:800;
-      letter-spacing:.02em;
+      font-weight:600;
+      letter-spacing:.06em;
       line-height:1;
+      text-align:center;
       white-space:nowrap;
     }
   `;
@@ -35,14 +28,17 @@ function ensureVersionStyle() {
 function applyAppVersion() {
   ensureVersionStyle();
 
-  // 版號是 footer 資訊，放在底部導覽列上方，不佔用標題、行情或頁籤欄位。
-  const bottomNav = document.querySelector('.bottomNav');
-  if (bottomNav) {
-    let badge = bottomNav.querySelector(':scope > .appVersionBadge');
+  // 版號是 footer 資訊：接在內容最後一張卡片之後，跟著頁面捲動。
+  // 之前用 absolute 釘在底部導覽列上方，會浮在內容上、跟 FAB 擠在一起。
+  const content = document.querySelector('main.content');
+  if (content) {
+    let badge = content.querySelector(':scope > .appVersionBadge');
     if (!badge) {
-      badge = document.createElement('span');
+      badge = document.createElement('div');
       badge.className = 'appVersionBadge';
-      bottomNav.append(badge);
+      content.append(badge);
+    } else if (badge !== content.lastElementChild) {
+      content.append(badge);
     }
     if (badge.textContent !== APP_VERSION) badge.textContent = APP_VERSION;
   }

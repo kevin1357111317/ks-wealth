@@ -302,13 +302,14 @@ button,select{font-size:var(--type-control)}
 }
 
 
-/* The version is footer metadata: float it above the bottom navigation
-   without turning it into a fourth navigation item. */
+/* The version is footer metadata: it sits after the last card inside the
+   scrolling content. Pinning it above the bottom navigation made it float
+   over the content and collide with the floating action button. */
 .bottomNav{position:fixed}
-.bottomNav .appVersionBadge{
-  position:absolute;
-  left:50%;
-  bottom:calc(100% + .375rem);
-  transform:translateX(-50%);
+.content>.appVersionBadge{
+  margin-top:.125rem;
+  color:var(--color-text-muted);
+  letter-spacing:.06em;
+  text-align:center;
   pointer-events:none;
 }

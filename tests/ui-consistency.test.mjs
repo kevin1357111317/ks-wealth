@@ -8,7 +8,8 @@ const app = await readFile(new URL('../app-v3.js', import.meta.url), 'utf8');
 
 test('共用排版層最後載入，並固定主要資訊層級', () => {
   const health = index.indexOf('/health.css');
-  const consistency = index.indexOf('/ui-consistency.css?v=V3.27.2');
+  // 只看載入順序，不鎖快取字串 —— 每次出貨都會換 ?v=，鎖死等於每次都假紅。
+  const consistency = index.indexOf('/ui-consistency.css?v=');
   assert.ok(health >= 0 && consistency > health, '共用排版層必須最後載入');
   assert.match(css, /--type-page-title:1\.5rem/);
   assert.match(css, /--type-section-title:1\.25rem/);
@@ -47,12 +48,16 @@ test('股票損益與年化各自依數值套用一致漲跌色', () => {
 });
 
 
-test('版號不佔用頂部標題，排序工具列維持兩列網格', async () => {
+test('版號是跟著內容捲動的 footer，排序工具列維持兩列網格', async () => {
   const version = await readFile(new URL('../app-version.js', import.meta.url), 'utf8');
-  assert.match(version, /bottomNav.*appVersionBadge/);
+  // 版號掛在 main.content 最後一個子元素；掛回 bottomNav 或 status 都會浮在內容上面。
+  assert.match(version, /main\.content/);
+  assert.doesNotMatch(version, /bottomNav.*appVersionBadge/);
   assert.doesNotMatch(version, /status.*appVersionBadge/);
   assert.match(css, /\.portfolioToolbar\{[^}]*display:grid/);
   assert.match(css, /grid-template-areas:"count sort" "exited exited"/);
   assert.match(css, /\.status>\[data-status-text\]\{[^}]*text-overflow:ellipsis/);
-  assert.match(css, /\.bottomNav \.appVersionBadge\{[^}]*position:absolute/);
+  // 絕對定位會讓版號壓在內容與 FAB 上，這正是這次修掉的問題。
+  assert.doesNotMatch(css, /\.bottomNav \.appVersionBadge\{[^}]*position:absolute/);
+  assert.match(css, /\.content>\.appVersionBadge\{[^}]*text-align:center/);
 });
