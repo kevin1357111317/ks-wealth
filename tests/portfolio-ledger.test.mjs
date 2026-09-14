@@ -443,7 +443,7 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
   });
 
 
-  await t.test('美股卡片分開顯示美元股票損益與含匯率台幣損益', async () => {
+  await t.test('美股分析只用 USD，僅市值換算成台幣', async () => {
     await page.click('.fab');
     await page.waitForSelector('#editform');
     await page.selectOption('#cat', 'stock-us');
@@ -457,18 +457,26 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     await page.click('[data-portfolio-market="美股"]');
     await page.waitForSelector('[data-portfolio-stock]');
     const summary = await page.textContent('.portfolioSummary');
-    for (const label of ['股票損益（USD）', '股票年化（USD）', '台幣總損益', '含匯率影響']) {
+    for (const label of ['目前美股市值', '累計淨投入', '累計損益', '年化報酬率', '依 USD 現金流計算']) {
       assert.match(summary, new RegExp(label));
     }
+    assert.match(summary, /NT\$/);
+    assert.match(summary, /US\$/);
+    assert.doesNotMatch(summary, /台幣總損益|匯率影響|台幣年化/);
+
     const meta = await page.textContent('.portfolioStockMeta');
-    assert.match(meta, /股票損益（USD）/);
-    assert.match(meta, /台幣總損益（含匯率）/);
+    assert.match(meta, /累計損益/);
+    assert.match(meta, /年化報酬率/);
+    assert.match(meta, /US\$/);
+    assert.doesNotMatch(meta, /台幣總損益|匯率影響/);
 
     await page.click('[data-portfolio-stock]');
     const detail = await page.textContent('.portfolioStockDetail');
-    for (const label of ['股票年化（USD）', '台幣年化（含匯率）', '匯率影響', '台幣已實現（含匯率）']) {
+    for (const label of ['已實現損益', '未實現損益', '累計股息', '目前股價']) {
       assert.match(detail, new RegExp(label));
     }
+    assert.match(detail, /US\$/);
+    assert.doesNotMatch(detail, /NT\$|台幣|匯率影響/);
     await page.goBack();
     await page.waitForSelector('.fab');
   });
