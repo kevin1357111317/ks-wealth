@@ -10,7 +10,7 @@ function ensureVersionStyle() {
   const style = document.createElement('style');
   style.id = 'ks-app-version-style';
   style.textContent = `
-    .brand > div:last-child { display:flex; align-items:baseline; gap:var(--space-card, 8px); min-width:0; }
+    .brand > div:last-child { display:flex; align-items:baseline; gap:var(--space-inline, 8px); min-width:0; }
     .appVersionBadge {
       display:inline-flex;
       align-items:center;
