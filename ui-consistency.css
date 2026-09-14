@@ -291,37 +291,43 @@ button,select{font-size:var(--type-control)}
   display:flex;
   flex-wrap:wrap;
   align-items:center;
-  /* flex-start, not space-between: once the controls wrap onto their own row
+  /* flex-start, not space-between: if the controls ever wrap onto their own row
      Chromium centres the lone count instead of leaving it at the start. The
-     controls are pushed right by their own auto margin. */
+     sort group is pushed right by its own auto margin. */
   justify-content:flex-start;
-  gap:.625rem .75rem;
+  gap:.5rem;
 }
-.portfolioFilters{gap:.375rem .875rem}
+.portfolioFilters{gap:.375rem .75rem}
 .portfolioCount,.portfolioExited{font-size:var(--type-label);color:var(--color-text-secondary)}
-.portfolioExited input{width:1.125rem;height:1.125rem;accent-color:#d8a93f}
+.portfolioExited input{width:1.0625rem;height:1.0625rem;accent-color:#d8a93f}
+/* The sort group is a secondary control, so it is deliberately shorter and
+   smaller than a primary one: at this size it still fits on the count's row
+   at 360px instead of pushing itself onto a line of its own. */
 .portfolioSort{
   margin-left:auto;
   border-color:var(--border-card);
-  border-radius:var(--radius-control);
+  border-radius:.625rem;
   background:var(--surface-card);
 }
 .portfolioSort select{
-  min-height:var(--height-control);
-  padding:0 1.75rem 0 .75rem;
+  min-height:2.125rem;
+  padding:0 1.375rem 0 .5rem;
   border-radius:0;
+  font-size:var(--type-meta);
+  font-weight:700;
   appearance:none;
   -webkit-appearance:none;
-  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2370817d' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2370817d' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   background-repeat:no-repeat;
-  background-position:right .5rem center;
-  background-size:.8125rem;
+  background-position:right .375rem center;
+  background-size:.6875rem;
 }
 .portfolioSortDir{
-  width:2.625rem;
-  min-height:var(--height-control);
+  width:1.875rem;
+  min-height:2.125rem;
   border-left-color:var(--border-card);
 }
+.portfolioSortDir svg{width:.875rem;height:.875rem}
 /* Both arrows stay drawn so the control reads as a two-way toggle; only the
    arrow for the direction currently in effect is at full strength. */
 .portfolioSortDir g{transition:opacity .16s ease}
@@ -330,9 +336,9 @@ button,select{font-size:var(--type-control)}
 .portfolioSortDir[data-sort-direction="desc"] .sortDesc,
 .portfolioSortDir[data-sort-direction="asc"] .sortAsc{color:var(--color-text-primary)}
 .status>[data-status-text]{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-@media(max-width:400px){
-  .portfolioSort{margin-left:0;width:100%}
-  .portfolioSort select{flex:1;min-width:0}
+@media(max-width:340px){
+  .portfolioFilters{gap:.25rem .5rem}
+  .portfolioCount,.portfolioExited{font-size:var(--type-meta)}
 }
 
 
