@@ -233,9 +233,9 @@ export function calculatePortfolio(stocks, fxRate, today = localIsoDate()) {
   };
   return {
     positions,
-    tw: summarize(positions.filter(row => row.market === '台股')),
-    // 美股分析固定採 USD 口徑；歷史上誤標為 TWD 的已出清標的不混入 USD 彙總。
-    us: summarize(positions.filter(row => row.market === '美股' && row.currency === 'USD')),
+    // 分析口徑依結算幣別分組：AMSC 雖在美國市場交易，但台帳以 TWD 結算，歸到台股頁計算。
+    tw: summarize(positions.filter(row => row.currency === 'TWD')),
+    us: summarize(positions.filter(row => row.currency === 'USD')),
     all: summarize(positions),
   };
 }

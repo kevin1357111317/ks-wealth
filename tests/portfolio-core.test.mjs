@@ -145,7 +145,7 @@ test('美股帳戶彙總延續股票損益與匯率影響的不變式', () => {
 });
 
 
-test('美股彙總忽略歷史 TWD 標的，不讓 USD 年化整批消失', () => {
+test('分析依結算幣別分組，AMSC 類 TWD 美股歸到台股頁', () => {
   const usd = {
     key: 'VOO', display: 'VOO', market: '美股', currency: 'USD', quote: { price: 120 },
     transactions: [{ id: 1, date: '2025-01-01', amount: -100, shares: 1, twd: -3200, kind: 'trade' }],
@@ -159,6 +159,9 @@ test('美股彙總忽略歷史 TWD 標的，不讓 USD 年化整批消失', () =
   };
   const result = calculatePortfolio([usd, legacyTwd], 32, '2026-01-01');
   assert.equal(result.us.nativeCurrency, 'USD');
+  assert.equal(result.tw.nativeCurrency, 'TWD');
+  assert.equal(result.tw.netInvestedNative, -100);
+  assert.equal(result.tw.profitNative, 100);
   assert.equal(result.us.netInvestedNative, 100);
   assert.equal(result.us.profitNative, 20);
   assert.ok(Number.isFinite(result.us.nativeXirr));
