@@ -37,4 +37,4 @@
 .portfolioExited{display:flex;align-items:center;gap:6px;color:#70817d;font-size:.78rem;white-space:nowrap}
 .portfolioSort{display:flex;align-items:stretch;overflow:hidden;margin-left:auto;border:1px solid #dce7e4;border-radius:12px;background:#fff}
 .portfolioSort select{border:0;background:transparent;color:#4b3028;font-weight:700}
-.portfolioSortDir{display:grid;place-items:center;border:0;border-left:1px solid #dce7e4;background:transparent;color:#70817d}
+.portfolioSortDir{display:grid;place-items:center;padding:0;border:0;border-left:1px solid #dce7e4;background:transparent;color:#70817d}
