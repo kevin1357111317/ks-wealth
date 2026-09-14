@@ -443,6 +443,37 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
   });
 
 
+  await t.test('美股卡片分開顯示美元股票損益與含匯率台幣損益', async () => {
+    await page.click('.fab');
+    await page.waitForSelector('#editform');
+    await page.selectOption('#cat', 'stock-us');
+    await page.fill('#symbol', 'AVGO');
+    await page.fill('#txAmount', '100');
+    await page.fill('#txShares', '1');
+    await save();
+
+    await page.click('[data-open-portfolio]');
+    await page.waitForSelector('[data-portfolio-market]');
+    await page.click('[data-portfolio-market="美股"]');
+    await page.waitForSelector('[data-portfolio-stock]');
+    const summary = await page.textContent('.portfolioSummary');
+    for (const label of ['股票損益（USD）', '股票年化（USD）', '台幣總損益', '含匯率影響']) {
+      assert.match(summary, new RegExp(label));
+    }
+    const meta = await page.textContent('.portfolioStockMeta');
+    assert.match(meta, /股票損益（USD）/);
+    assert.match(meta, /台幣總損益（含匯率）/);
+
+    await page.click('[data-portfolio-stock]');
+    const detail = await page.textContent('.portfolioStockDetail');
+    for (const label of ['股票年化（USD）', '台幣年化（含匯率）', '匯率影響', '台幣已實現（含匯率）']) {
+      assert.match(detail, new RegExp(label));
+    }
+    await page.goBack();
+    await page.waitForSelector('.fab');
+  });
+
+
   await t.test('老婆頁也有三個分析入口，而且看到的是自己的部位', async () => {
     await page.click('[data-tab="wife"]');
     await page.waitForSelector('.fab');
