@@ -72,6 +72,9 @@ A vs B、哪個划算、差多少這類問題盡量用表格，只留會影響�
 或動到正常運作的功能。順序是 root cause → 確認影響範圍 → 最小修改 → 跑測試 → 確認沒有 regression
 → 才發佈。發現其他問題可以一併指出，但不要擅自大改架構。
 
+這裡的 **incremental patch 是開發手法，不是版本等級**。SemVer 的 PATCH／MINOR／MAJOR 必須依
+`VERSIONING.md` 用相容性判斷；小 diff 也可能是 breaking change，大 refactor 也可能完全不需要 MAJOR。
+
 已經上線的行為是基準：資料邏輯、計算方法、UI 結構、命名、既有功能，沒有明講要 redesign 就不要動。
 
 Debug 時要排序可能性：「從症狀看我第一個懷疑 A，因為 X；B 第二；C 機率很低」，並給最短的驗證方式，
@@ -107,19 +110,27 @@ Vercel 直接部署靜態檔。
 
 ## 版控
 
-正式版號規則寫在 `VERSIONING.md`，**每次正式更新都要升版號**。
+正式版號規則以 `VERSIONING.md` 為唯一判級依據，採 Semantic Versioning（SemVer）精神。
 
-- 大更新：`V1 -> V2 -> V3`
-- 小更新：`V1 -> V1P1 -> V1P2`
-- 大版升級時小版號歸零，例如 `V1P8 -> V2`
+目前 `V3P26` 是 legacy 最後一版；歷史不回寫。下一次產品出貨起使用 `VMAJOR.MINOR.PATCH`：
 
-`app-version.js` 裡的 `APP_VERSION` 是畫面顯示版號的唯一來源。每次出貨要同步更新：
+- breaking change → **MAJOR**，例如 `V3.26.0 -> V4.0.0`
+- 向後相容新功能 → **MINOR**，例如 `V3.26.0 -> V3.27.0`
+- 向後相容 bug fix → **PATCH**，例如 `V3.26.0 -> V3.26.1`
+- 純 docs / test / CI / 協作規則且不改正式產品 → **none**，不升產品版號
+
+每個 PR 合併前都必須寫明 `Version impact: none / patch / minor / major` 與理由；同一 PR 有多種變更時取
+最高等級。**不能因為這次是 incremental patch 就自動判成 PATCH，也不能因為新增一頁就自動判成 MAJOR。**
+相容的新功能照 SemVer 是 MINOR；只有破壞既有資料、計算語意、client contract 或操作相容性才是 MAJOR。
+
+產品正式出貨時，`app-version.js` 裡的 `APP_VERSION` 是畫面顯示版號的唯一來源，並同步更新：
 
 1. `app-version.js` 的 `APP_VERSION`
 2. `VERSIONING.md` 的目前正式版
 3. `index.html` 的 `/app-version.js?v=` 快取字串
 
-commit message 建議直接帶版號，方便日後追蹤。
+新提交建議採 Conventional Commits：`fix:` 通常對應 PATCH、`feat:` 通常對應 MINOR、`!` 或
+`BREAKING CHANGE:` 對應 MAJOR；但最終仍以實際相容性為準。
 
 ## 出貨流程
 
