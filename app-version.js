@@ -1,6 +1,6 @@
 // KS Wealth 正式版號的唯一 runtime 來源。
 // V3P26 是舊制最後一版；下一次產品出貨起使用 VMAJOR.MINOR.PATCH，細節見 VERSIONING.md。
-const APP_VERSION = 'V3.27.1';
+const APP_VERSION = 'V3.27.2';
 
 window.KS_APP_VERSION = APP_VERSION;
 document.documentElement.dataset.appVersion = APP_VERSION;
@@ -10,7 +10,7 @@ function ensureVersionStyle() {
   const style = document.createElement('style');
   style.id = 'ks-app-version-style';
   style.textContent = `
-    .brand > div:last-child { display:flex; align-items:baseline; gap:8px; min-width:0; }
+    .brand > div:last-child { display:flex; align-items:baseline; gap:var(--space-inline, 8px); min-width:0; }
     .appVersionBadge {
       display:inline-flex;
       align-items:center;
@@ -18,10 +18,10 @@ function ensureVersionStyle() {
       min-height:22px;
       padding:2px 8px;
       border:1px solid rgba(93,117,112,.22);
-      border-radius:999px;
+      border-radius:var(--radius-control, 999px);
       background:rgba(255,255,255,.48);
-      color:#6f7d79;
-      font-size:10px;
+      color:var(--color-text-secondary, #6f7d79);
+      font-size:var(--type-meta, 12px);
       font-weight:800;
       letter-spacing:.02em;
       line-height:1;
