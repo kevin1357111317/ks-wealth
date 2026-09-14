@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { calculatePortfolio, calculateStockMetrics, currentShares, decodePortfolioBootstrap, xirr } from '../portfolio-core.js';
+import { calculatePortfolio, calculateStockMetrics, currentShares, decodePortfolioBootstrap, sortPortfolioPositions, xirr } from '../portfolio-core.js';
 
 const payload = {
   s: [['VOO', 'VOO', '美股', 'USD', 'NYSEARCA:VOO', 700]],
@@ -142,4 +142,36 @@ test('美股帳戶彙總延續股票損益與匯率影響的不變式', () => {
   assert.equal(result.us.profitTwd, 150);
   assert.equal(result.us.fxImpactTwd, -600);
   assert.equal(result.us.stockProfitTwd + result.us.fxImpactTwd, result.us.profitTwd);
+});
+
+
+test('美股彙總忽略歷史 TWD 標的，不讓 USD 年化整批消失', () => {
+  const usd = {
+    key: 'VOO', display: 'VOO', market: '美股', currency: 'USD', quote: { price: 120 },
+    transactions: [{ id: 1, date: '2025-01-01', amount: -100, shares: 1, twd: -3200, kind: 'trade' }],
+  };
+  const legacyTwd = {
+    key: 'AMSC', display: 'AMSC', market: '美股', currency: 'TWD', quote: { price: 0 },
+    transactions: [
+      { id: 2, date: '2024-01-01', amount: -3000, shares: 1, twd: -3000, kind: 'trade' },
+      { id: 3, date: '2024-02-01', amount: 3100, shares: -1, twd: 3100, kind: 'trade' },
+    ],
+  };
+  const result = calculatePortfolio([usd, legacyTwd], 32, '2026-01-01');
+  assert.equal(result.us.nativeCurrency, 'USD');
+  assert.equal(result.us.netInvestedNative, 100);
+  assert.equal(result.us.profitNative, 20);
+  assert.ok(Number.isFinite(result.us.nativeXirr));
+});
+
+test('股票可依市值、損益、報酬率與年化排序，空值永遠排最後', () => {
+  const rows = [
+    { display: 'A', currentValueTwd: 100, profitNative: 5, nativeReturnRate: 0.05, nativeXirr: 0.1 },
+    { display: 'B', currentValueTwd: 300, profitNative: 20, nativeReturnRate: 0.2, nativeXirr: null },
+    { display: 'C', currentValueTwd: 200, profitNative: -5, nativeReturnRate: -0.05, nativeXirr: 0.3 },
+  ];
+  assert.deepEqual(sortPortfolioPositions(rows, { criterion: 'marketValue', direction: 'desc' }).map(x => x.display), ['B', 'C', 'A']);
+  assert.deepEqual(sortPortfolioPositions(rows, { criterion: 'profit', direction: 'asc', currency: 'USD' }).map(x => x.display), ['C', 'A', 'B']);
+  assert.deepEqual(sortPortfolioPositions(rows, { criterion: 'return', direction: 'desc', currency: 'USD' }).map(x => x.display), ['B', 'A', 'C']);
+  assert.deepEqual(sortPortfolioPositions(rows, { criterion: 'xirr', direction: 'desc', currency: 'USD' }).map(x => x.display), ['C', 'A', 'B']);
 });
