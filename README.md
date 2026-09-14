@@ -16,7 +16,7 @@
 - `financial-core.js`：金額正規化、範圍篩選與彙總計算
 - `auth-tools.js`：密碼重設等 Auth 輔助流程
 - `sheet-gesture.js`：手機 Sheet 關閉手勢
-- `app-version.js`：正式版號的唯一來源，版號掛在頁首 `.brand` 標題底下當副標（規則見 `VERSIONING.md`）
+- `app-version.js`：正式版號的唯一來源，版號收在 `main.content` 最後當頁尾（規則見 `VERSIONING.md`）
 - `loan-ui-fix.js`、`loan-month-summary.js`、`loan-month-core.js`：貸款畫面的後處理與月份彙總，見下一節
 - `v3.css`：主要手機優先 UI
 - `v3-trends.css`：趨勢、分類卡片與目前「布布一二的家」主題樣式

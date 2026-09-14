@@ -48,30 +48,34 @@ test('股票損益與年化各自依數值套用一致漲跌色', () => {
 });
 
 
-test('版號掛在頁首標題底下，不浮在內容或底部導覽列上', async () => {
+test('版號收在內容最後當頁尾，不佔標題也不浮在內容上', async () => {
   const version = await readFile(new URL('../app-version.js', import.meta.url), 'utf8');
-  assert.match(version, /\.brand > div:last-child/);
-  assert.doesNotMatch(version, /bottomNav.*appVersionBadge/);
-  assert.doesNotMatch(version, /main\.content/);
-  // 絕對定位會讓版號壓在內容與 FAB 上，那是 V3.27.6 之前的問題。
-  assert.doesNotMatch(css, /\.bottomNav \.appVersionBadge\{[^}]*position:absolute/);
-  assert.match(css, /\.brand \.appVersionBadge\{/);
+  assert.match(version, /main\.content/);
+  assert.match(version, /appVersionFooter/);
+  // 釘在 bottomNav 上會壓到內容與 FAB；掛進 .brand 會跟頁面標題搶位置。
+  assert.doesNotMatch(version, /bottomNav/);
+  assert.doesNotMatch(version, /\.brand \.appVersion/);
+  assert.doesNotMatch(css, /\.appVersionFooter\{[^}]*position:absolute/);
+  assert.match(css, /\.content>\.appVersionFooter\{/);
 });
 
-test('排序拆成依據與方向，已出清是可切換的 chip', async () => {
-  // 八個「市值｜高到低」選項擠在一個 select 裡，光讀選項就吃掉半行寬度。
+test('排序留三個依據加雙向方向鈕，已出清維持核取方塊', async () => {
+  // 八個「依據 + 方向」的組合擠在一個 select 裡，光讀選項就吃掉半行寬度。
   assert.match(app, /data-portfolio-sort aria-label="排序依據"/);
-  assert.match(app, /\['marketValue', '市值'\], \['xirr', '年化'\], \['return', '報酬率'\], \['profit', '損益'\]/);
-  assert.doesNotMatch(app, /市值｜高到低/);
+  assert.match(app, /\['marketValue', '市值'\], \['xirr', '年化報酬率'\], \['profit', '損益'\]/);
+  // 總報酬率跟年化在講同一件事，投入時間不同時只有年化可比，所以選單裡只留年化。
+  assert.doesNotMatch(app, /\['return', /);
   assert.match(app, /data-sort-direction="\$\{sortDirection\}"/);
-  // 方向只翻轉箭頭，排序依據不能被順手改掉。
+  // 方向只翻轉排序，排序依據不能被順手改掉。
   assert.match(app, /data-sort-direction\]'\)\.onclick = \(\) => \{ portfolioSort = `\$\{sortCriterion\}-\$\{ascending \? 'desc' : 'asc'\}`/);
   assert.match(app, /data-portfolio-sort\]'\)\.onchange = event => \{ portfolioSort = `\$\{event\.target\.value\}-\$\{sortDirection\}`/);
-  assert.match(app, /class="portfolioChip" data-show-exited aria-pressed=/);
-  assert.doesNotMatch(app, /type="checkbox" data-show-exited/);
+  // 雙向箭頭：兩支都畫出來，按鈕才看得出按下去會反向。
+  assert.match(app, /class="sortAsc"/);
+  assert.match(app, /class="sortDesc"/);
+  assert.match(app, /type="checkbox" data-show-exited/);
+  assert.doesNotMatch(app, /portfolioChip/);
   assert.match(css, /\.portfolioToolbar\{[^}]*display:flex/);
-  assert.match(css, /\.portfolioTools\{[^}]*margin-left:auto/);
-  assert.match(css, /\.portfolioSortDir\[data-sort-direction="asc"\] svg\{transform:rotate\(180deg\)/);
-  assert.match(css, /\.portfolioChip\[aria-pressed="true"\]\{/);
+  assert.match(css, /\.portfolioSort\{\s*margin-left:auto/);
+  assert.match(css, /\.portfolioSortDir\[data-sort-direction="asc"\] \.sortDesc\{opacity:\.3\}/);
   assert.match(css, /\.status>\[data-status-text\]\{[^}]*text-overflow:ellipsis/);
 });

@@ -45,7 +45,7 @@ button,input,select,textarea{line-height:1.35}
 .topbar{padding-top:.9375rem;padding-bottom:1.125rem}
 .brand h1{font-size:var(--type-page-title);font-weight:850;line-height:var(--leading-tight);letter-spacing:-.025em}
 .status,.status button{font-size:var(--type-meta);line-height:1.35}
-html .appVersionBadge{font-size:var(--type-meta)}
+html .appVersionFooter{font-size:var(--type-meta)}
 .content,.portfolioView,.healthView{gap:var(--space-page)}
 .bottomNav button{font-size:.8125rem;line-height:1.2}
 
@@ -183,7 +183,7 @@ button,select{font-size:var(--type-control)}
   font-size:var(--type-control);
   font-weight:800;
 }
-.trendToggle,.distributionToggle,.portfolioSort select,.portfolioChip{
+.trendToggle,.distributionToggle,.portfolioSort select{
   min-height:2.5rem;
   border-radius:var(--radius-control);
   font-size:var(--type-control);
@@ -283,10 +283,10 @@ button,select{font-size:var(--type-control)}
   .miniStats>div{padding-right:.625rem;padding-left:.625rem}
 }
 
-/* Portfolio toolbar: the count sits on the left, the controls group on the right.
-   Sorting is a criterion picker plus a direction toggle (the eight combined
-   options used to need a 10rem select just to read "market value | high to low"),
-   and the exited filter is a pressed-state chip rather than a bare checkbox. */
+/* Portfolio toolbar: count and the exited checkbox on the left, sorting on the
+   right. Sorting is a criterion picker plus a two-way direction toggle; the
+   eight combined options it replaced needed a 10rem select just to read
+   "market value | high to low". */
 .portfolioToolbar{
   display:flex;
   flex-wrap:wrap;
@@ -297,9 +297,11 @@ button,select{font-size:var(--type-control)}
   justify-content:flex-start;
   gap:.625rem .75rem;
 }
-.portfolioCount{font-size:var(--type-label);color:var(--color-text-secondary)}
-.portfolioTools{display:flex;align-items:center;gap:.5rem;margin-left:auto;min-width:0}
+.portfolioFilters{gap:.375rem .875rem}
+.portfolioCount,.portfolioExited{font-size:var(--type-label);color:var(--color-text-secondary)}
+.portfolioExited input{width:1.125rem;height:1.125rem;accent-color:#d8a93f}
 .portfolioSort{
+  margin-left:auto;
   border-color:var(--border-card);
   border-radius:var(--radius-control);
   background:var(--surface-card);
@@ -320,35 +322,27 @@ button,select{font-size:var(--type-control)}
   min-height:var(--height-control);
   border-left-color:var(--border-card);
 }
-.portfolioSortDir svg{transition:transform .16s ease}
-.portfolioSortDir[data-sort-direction="asc"] svg{transform:rotate(180deg)}
-.portfolioChip{
-  min-height:var(--height-control);
-  padding:0 .875rem;
-  border-radius:var(--radius-control);
-  font-size:var(--type-control);
-}
-.portfolioChip[aria-pressed="true"]{
-  border-color:#e0b862;
-  background:#f2cf78;
-  color:#54372d;
-}
+/* Both arrows stay drawn so the control reads as a two-way toggle; only the
+   arrow for the direction currently in effect is at full strength. */
+.portfolioSortDir g{transition:opacity .16s ease}
+.portfolioSortDir[data-sort-direction="desc"] .sortAsc,
+.portfolioSortDir[data-sort-direction="asc"] .sortDesc{opacity:.3}
+.portfolioSortDir[data-sort-direction="desc"] .sortDesc,
+.portfolioSortDir[data-sort-direction="asc"] .sortAsc{color:var(--color-text-primary)}
 .status>[data-status-text]{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media(max-width:400px){
-  .portfolioTools{margin-left:0;width:100%}
-  .portfolioSort{flex:1;min-width:0}
-  .portfolioSort select{width:100%}
+  .portfolioSort{margin-left:0;width:100%}
+  .portfolioSort select{flex:1;min-width:0}
 }
 
 
-/* The version belongs to the header block, on the title's own subtitle line.
-   Pinned above the bottom navigation it floated over the content and collided
-   with the floating action button; centred in the content it read as a stray
-   line under the last card. */
+/* The version closes the page as a footer rule. Pinned above the bottom
+   navigation it floated over the content and collided with the floating action
+   button; under the page title it competed with the screen name. */
 .bottomNav{position:fixed}
-.brand .appVersionBadge{
-  margin-top:.1875rem;
+.content>.appVersionFooter{
+  margin-top:.625rem;
   color:var(--color-text-muted);
-  letter-spacing:.08em;
+  letter-spacing:.04em;
   pointer-events:none;
 }
