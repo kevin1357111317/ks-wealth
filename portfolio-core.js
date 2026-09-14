@@ -100,7 +100,7 @@ export function xirr(cashflows) {
 // 分批買進時兩者差很多。股息沒有對應的成本，整筆算已實現。
 //
 // 不變式：已實現 + 未實現 = 累計損益。未實現 = 目前市值 − 剩下的成本。
-export function splitRealized(stock) {
+function splitRealizedBy(stock, cashField) {
   const lots = [];        // 先進先出佇列：{ qty, cost }，最舊的在前
   let realized = 0;
   const ordered = (stock.transactions ?? []).slice().sort((a, b) => {
@@ -108,7 +108,7 @@ export function splitRealized(stock) {
     return number(a.id) - number(b.id);
   });
   ordered.forEach(tx => {
-    const cash = number(tx.twd);
+    const cash = number(tx[cashField]);
     const qty = number(tx.shares);
     if (tx.kind === 'dividend' || Math.abs(qty) < EPSILON) {
       realized += cash;
@@ -135,9 +135,13 @@ export function splitRealized(stock) {
   let shares = 0;
   let cost = 0;
   lots.forEach(lot => { shares += lot.qty; cost += lot.cost; });
-  // 全部出清了就沒有未實現可言，剩下的殘值歸到已實現。
-  if (shares <= EPSILON) return { realizedTwd: realized + cost, remainingCostTwd: 0 };
-  return { realizedTwd: realized, remainingCostTwd: cost };
+  if (shares <= EPSILON) return { realized: realized + cost, remainingCost: 0 };
+  return { realized, remainingCost: cost };
+}
+
+export function splitRealized(stock) {
+  const { realized, remainingCost } = splitRealizedBy(stock, 'twd');
+  return { realizedTwd: realized, remainingCostTwd: remainingCost };
 }
 
 export function firstTradeDate(stock) {
@@ -168,6 +172,7 @@ export function calculateStockMetrics(stock, fxRate, today = localIsoDate()) {
   if (currentValueTwd > 0) cashflows.push({ date: today, amount: currentValueTwd });
   if (currentValueNative > 0) nativeCashflows.push({ date: today, amount: currentValueNative });
   const { realizedTwd, remainingCostTwd } = splitRealized(stock);
+  const { realized: realizedNative, remainingCost: remainingCostNative } = splitRealizedBy(stock, 'amount');
   const profitTwd = currentValueTwd - netInvestedTwd;
   const profitNative = currentValueNative - netInvestedNative;
   const stockProfitTwd = stock.currency === 'USD' ? profitNative * number(fxRate) : profitNative;
@@ -175,12 +180,14 @@ export function calculateStockMetrics(stock, fxRate, today = localIsoDate()) {
     ...stock, shares, price, currentValueNative, currentValueTwd,
     netInvestedTwd, netInvestedNative, dividendsTwd, dividendsNative,
     profitTwd, profitNative, stockProfitTwd, fxImpactTwd: profitTwd - stockProfitTwd,
-    realizedTwd,
+    realizedTwd, realizedNative,
     unrealizedTwd: currentValueTwd - remainingCostTwd,
-    remainingCostTwd,
+    unrealizedNative: currentValueNative - remainingCostNative,
+    remainingCostTwd, remainingCostNative,
     firstTradeDate: firstTradeDate(stock),
     holdingYears: holdingYears(stock, today),
     returnRate: netInvestedTwd > EPSILON ? profitTwd / netInvestedTwd : null,
+    nativeReturnRate: netInvestedNative > EPSILON ? profitNative / netInvestedNative : null,
     xirr: xirr(cashflows),
     nativeXirr: xirr(nativeCashflows),
   };
@@ -218,6 +225,7 @@ export function calculatePortfolio(stocks, fxRate, today = localIsoDate()) {
     return {
       ...totals, nativeCurrency, currentValueNative, netInvestedNative, dividendsNative, profitNative,
       profitTwd: totals.currentValueTwd - totals.netInvestedTwd,
+      nativeReturnRate: nativeCurrency && netInvestedNative > EPSILON ? profitNative / netInvestedNative : null,
       returnRate: totals.netInvestedTwd > EPSILON ? (totals.currentValueTwd - totals.netInvestedTwd) / totals.netInvestedTwd : null,
       xirr: xirr(cashflows),
       nativeXirr: nativeCurrency ? xirr(nativeCashflows) : null,
