@@ -40,7 +40,17 @@ test('股票損益與年化各自依數值套用一致漲跌色', () => {
   assert.match(app, /const portfolioTone = value =>/);
   assert.doesNotMatch(app, /目前美股市值/);
   assert.match(app, /目前市值.*以目前匯率換算/);
+  assert.doesNotMatch(app, /目前美股市值/);
   assert.match(app, /class="\$\{nativeProfitTone\}".*class="\$\{nativeXirrTone\}"/);
   assert.match(app, /class="\$\{profitTone\}".*class="\$\{xirrTone\}"/);
   assert.doesNotMatch(app, /class="\$\{stockTone\}"/);
+});
+
+
+test('版號不佔用頂部標題，排序工具列維持兩列網格', async () => {
+  const version = await readFile(new URL('../app-version.js', import.meta.url), 'utf8');
+  assert.match(version, /status.*appVersionBadge/);
+  assert.match(css, /\.portfolioToolbar\{[^}]*display:grid/);
+  assert.match(css, /grid-template-areas:"count sort" "exited exited"/);
+  assert.match(css, /\.status>\[data-status-text\]\{[^}]*text-overflow:ellipsis/);
 });

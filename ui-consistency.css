@@ -282,3 +282,21 @@ button,select{font-size:var(--type-control)}
   .miniStats{gap:.5rem}
   .miniStats>div{padding-right:.625rem;padding-left:.625rem}
 }
+
+/* Portfolio toolbar: count, sort and exited filter have an intentional grid. */
+.portfolioToolbar{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  grid-template-areas:"count sort" "exited exited";
+  align-items:center;
+  gap:.75rem 1rem;
+}
+.portfolioToolbar>span{grid-area:count;width:auto}
+.portfolioSort{grid-area:sort;margin-left:0;display:flex;align-items:center;gap:.5rem;flex:none}
+.portfolioSort select{width:auto;min-width:10.5rem;min-height:var(--height-control);padding:.5rem .75rem}
+.portfolioExited{grid-area:exited;justify-self:start}
+.status>[data-status-text]{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:420px){
+  .portfolioToolbar{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"count sort" "exited exited"}
+  .portfolioSort select{width:auto;min-width:9.5rem}
+}
