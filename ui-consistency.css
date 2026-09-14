@@ -183,7 +183,7 @@ button,select{font-size:var(--type-control)}
   font-size:var(--type-control);
   font-weight:800;
 }
-.trendToggle,.distributionToggle,.portfolioSort select{
+.trendToggle,.distributionToggle,.portfolioSort select,.portfolioChip{
   min-height:2.5rem;
   border-radius:var(--radius-control);
   font-size:var(--type-control);
@@ -283,33 +283,72 @@ button,select{font-size:var(--type-control)}
   .miniStats>div{padding-right:.625rem;padding-left:.625rem}
 }
 
-/* Portfolio toolbar: count, sort and exited filter have an intentional grid. */
+/* Portfolio toolbar: the count sits on the left, the controls group on the right.
+   Sorting is a criterion picker plus a direction toggle (the eight combined
+   options used to need a 10rem select just to read "market value | high to low"),
+   and the exited filter is a pressed-state chip rather than a bare checkbox. */
 .portfolioToolbar{
-  display:grid;
-  grid-template-columns:minmax(0,1fr) auto;
-  grid-template-areas:"count sort" "exited exited";
+  display:flex;
+  flex-wrap:wrap;
   align-items:center;
-  gap:.75rem 1rem;
+  /* flex-start, not space-between: once the controls wrap onto their own row
+     Chromium centres the lone count instead of leaving it at the start. The
+     controls are pushed right by their own auto margin. */
+  justify-content:flex-start;
+  gap:.625rem .75rem;
 }
-.portfolioToolbar>span{grid-area:count;width:auto}
-.portfolioSort{grid-area:sort;margin-left:0;display:flex;align-items:center;gap:.5rem;flex:none}
-.portfolioSort select{width:auto;min-width:10.5rem;min-height:var(--height-control);padding:.5rem .75rem}
-.portfolioExited{grid-area:exited;justify-self:start}
+.portfolioCount{font-size:var(--type-label);color:var(--color-text-secondary)}
+.portfolioTools{display:flex;align-items:center;gap:.5rem;margin-left:auto;min-width:0}
+.portfolioSort{
+  border-color:var(--border-card);
+  border-radius:var(--radius-control);
+  background:var(--surface-card);
+}
+.portfolioSort select{
+  min-height:var(--height-control);
+  padding:0 1.75rem 0 .75rem;
+  border-radius:0;
+  appearance:none;
+  -webkit-appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2370817d' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;
+  background-position:right .5rem center;
+  background-size:.8125rem;
+}
+.portfolioSortDir{
+  width:2.625rem;
+  min-height:var(--height-control);
+  border-left-color:var(--border-card);
+}
+.portfolioSortDir svg{transition:transform .16s ease}
+.portfolioSortDir[data-sort-direction="asc"] svg{transform:rotate(180deg)}
+.portfolioChip{
+  min-height:var(--height-control);
+  padding:0 .875rem;
+  border-radius:var(--radius-control);
+  font-size:var(--type-control);
+}
+.portfolioChip[aria-pressed="true"]{
+  border-color:#e0b862;
+  background:#f2cf78;
+  color:#54372d;
+}
 .status>[data-status-text]{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-@media(max-width:420px){
-  .portfolioToolbar{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"count sort" "exited exited"}
-  .portfolioSort select{width:auto;min-width:9.5rem}
+@media(max-width:400px){
+  .portfolioTools{margin-left:0;width:100%}
+  .portfolioSort{flex:1;min-width:0}
+  .portfolioSort select{width:100%}
 }
 
 
-/* The version is footer metadata: it sits after the last card inside the
-   scrolling content. Pinning it above the bottom navigation made it float
-   over the content and collide with the floating action button. */
+/* The version belongs to the header block, on the title's own subtitle line.
+   Pinned above the bottom navigation it floated over the content and collided
+   with the floating action button; centred in the content it read as a stray
+   line under the last card. */
 .bottomNav{position:fixed}
-.content>.appVersionBadge{
-  margin-top:.125rem;
+.brand .appVersionBadge{
+  margin-top:.1875rem;
   color:var(--color-text-muted);
-  letter-spacing:.06em;
-  text-align:center;
+  letter-spacing:.08em;
   pointer-events:none;
 }

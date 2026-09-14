@@ -48,16 +48,30 @@ test('股票損益與年化各自依數值套用一致漲跌色', () => {
 });
 
 
-test('版號是跟著內容捲動的 footer，排序工具列維持兩列網格', async () => {
+test('版號掛在頁首標題底下，不浮在內容或底部導覽列上', async () => {
   const version = await readFile(new URL('../app-version.js', import.meta.url), 'utf8');
-  // 版號掛在 main.content 最後一個子元素；掛回 bottomNav 或 status 都會浮在內容上面。
-  assert.match(version, /main\.content/);
+  assert.match(version, /\.brand > div:last-child/);
   assert.doesNotMatch(version, /bottomNav.*appVersionBadge/);
-  assert.doesNotMatch(version, /status.*appVersionBadge/);
-  assert.match(css, /\.portfolioToolbar\{[^}]*display:grid/);
-  assert.match(css, /grid-template-areas:"count sort" "exited exited"/);
-  assert.match(css, /\.status>\[data-status-text\]\{[^}]*text-overflow:ellipsis/);
-  // 絕對定位會讓版號壓在內容與 FAB 上，這正是這次修掉的問題。
+  assert.doesNotMatch(version, /main\.content/);
+  // 絕對定位會讓版號壓在內容與 FAB 上，那是 V3.27.6 之前的問題。
   assert.doesNotMatch(css, /\.bottomNav \.appVersionBadge\{[^}]*position:absolute/);
-  assert.match(css, /\.content>\.appVersionBadge\{[^}]*text-align:center/);
+  assert.match(css, /\.brand \.appVersionBadge\{/);
+});
+
+test('排序拆成依據與方向，已出清是可切換的 chip', async () => {
+  // 八個「市值｜高到低」選項擠在一個 select 裡，光讀選項就吃掉半行寬度。
+  assert.match(app, /data-portfolio-sort aria-label="排序依據"/);
+  assert.match(app, /\['marketValue', '市值'\], \['xirr', '年化'\], \['return', '報酬率'\], \['profit', '損益'\]/);
+  assert.doesNotMatch(app, /市值｜高到低/);
+  assert.match(app, /data-sort-direction="\$\{sortDirection\}"/);
+  // 方向只翻轉箭頭，排序依據不能被順手改掉。
+  assert.match(app, /data-sort-direction\]'\)\.onclick = \(\) => \{ portfolioSort = `\$\{sortCriterion\}-\$\{ascending \? 'desc' : 'asc'\}`/);
+  assert.match(app, /data-portfolio-sort\]'\)\.onchange = event => \{ portfolioSort = `\$\{event\.target\.value\}-\$\{sortDirection\}`/);
+  assert.match(app, /class="portfolioChip" data-show-exited aria-pressed=/);
+  assert.doesNotMatch(app, /type="checkbox" data-show-exited/);
+  assert.match(css, /\.portfolioToolbar\{[^}]*display:flex/);
+  assert.match(css, /\.portfolioTools\{[^}]*margin-left:auto/);
+  assert.match(css, /\.portfolioSortDir\[data-sort-direction="asc"\] svg\{transform:rotate\(180deg\)/);
+  assert.match(css, /\.portfolioChip\[aria-pressed="true"\]\{/);
+  assert.match(css, /\.status>\[data-status-text\]\{[^}]*text-overflow:ellipsis/);
 });
