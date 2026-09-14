@@ -32,9 +32,9 @@
 .loanPlanRow>div{display:grid;gap:2px}.loanPlanRow>div:last-child{text-align:right}.loanPlanRow small{color:#7a8884;font-size:.69rem}.loanFlowSection{display:grid;gap:8px}.loanFlowSection .sectionHead{margin:4px 0 0}.loanCashflowMetrics{grid-template-columns:1fr 1fr}.loanCashflowMetrics>div:nth-child(even){text-align:right}.loanCashflowMetrics>div:last-child:nth-child(odd){text-align:left}
 
 .portfolioToolbar{align-items:center;flex-wrap:wrap}
+.portfolioFilters{display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px;min-width:0}
 .portfolioCount{color:#70817d;font-size:.78rem;white-space:nowrap}
-.portfolioTools{display:flex;align-items:center;gap:8px;margin-left:auto}
-.portfolioSort{display:flex;align-items:stretch;overflow:hidden;border:1px solid #dce7e4;border-radius:12px;background:#fff}
+.portfolioExited{display:flex;align-items:center;gap:6px;color:#70817d;font-size:.78rem;white-space:nowrap}
+.portfolioSort{display:flex;align-items:stretch;overflow:hidden;margin-left:auto;border:1px solid #dce7e4;border-radius:12px;background:#fff}
 .portfolioSort select{border:0;background:transparent;color:#4b3028;font-weight:700}
 .portfolioSortDir{display:grid;place-items:center;border:0;border-left:1px solid #dce7e4;background:transparent;color:#70817d}
-.portfolioChip{border:1px solid #dce7e4;border-radius:12px;background:#fff;color:#70817d;font-weight:700;white-space:nowrap}

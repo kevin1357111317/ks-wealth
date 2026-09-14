@@ -1,6 +1,6 @@
 # KS Wealth 版號規則
 
-目前正式版：**V3.27.7**
+目前正式版：**V3.27.8**
 
 > `V3P26` 是舊制最後一個版號。自下一次「產品正式出貨」起改採 Semantic Versioning 2.0.0（SemVer）的 `VMAJOR.MINOR.PATCH` 格式。歷史版號不重寫；遷移判定時視 `V3P26` 為 `V3.26.0` 的 legacy baseline。
 
@@ -137,4 +137,4 @@ PR 必須填寫 `Version impact` 與理由；commit 類型只能輔助判斷，*
 5. 跑完整測試並確認三處版號一致。
 6. squash merge 時建議保留 Conventional Commit 類型，並在 PR／commit body 記錄 `Release-Version: Vx.y.z`。
 
-`app-version.js` 是畫面顯示版號的唯一 runtime 來源；版號顯示在頁首標題底下的副標位置。
+`app-version.js` 是畫面顯示版號的唯一 runtime 來源；版號以頁尾形式收在內容最後。
