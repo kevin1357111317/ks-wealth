@@ -30,3 +30,9 @@
 .loanPlanRow time{color:#7a8884;font-size:.76rem}
 .loanPlanRow b{font-size:.86rem;white-space:nowrap}
 .loanPlanRow>div{display:grid;gap:2px}.loanPlanRow>div:last-child{text-align:right}.loanPlanRow small{color:#7a8884;font-size:.69rem}.loanFlowSection{display:grid;gap:8px}.loanFlowSection .sectionHead{margin:4px 0 0}.loanCashflowMetrics{grid-template-columns:1fr 1fr}.loanCashflowMetrics>div:nth-child(even){text-align:right}.loanCashflowMetrics>div:last-child:nth-child(odd){text-align:left}
+
+.portfolioToolbar{align-items:center;flex-wrap:wrap}
+.portfolioSort{display:flex;align-items:center;gap:7px;margin-left:auto;color:#70817d;font-size:.78rem}
+.portfolioSort select{min-height:40px;color:#4b3028;font-weight:700}
+.portfolioExited{display:flex;align-items:center;gap:5px;color:#70817d;font-size:.78rem;white-space:nowrap}
+@media(max-width:420px){.portfolioToolbar>span{width:100%}.portfolioSort{margin-left:0;flex:1}.portfolioSort select{width:100%}}
