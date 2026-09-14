@@ -27,10 +27,13 @@ test('全站使用同一組語意顏色與元件尺度', () => {
   assert.match(css, /--color-finance-gain:#c43c55/);
   assert.match(css, /--color-finance-loss:#16836c/);
   assert.match(css, /--height-control:2\.75rem/);
+  assert.match(css, /--color-owner-husband:#0057b8/);
+  assert.match(css, /--color-owner-wife:#e24a1a/);
   assert.match(css, /\.up,[^{]+\{[^}]*color:var\(--color-finance-gain\)/);
   assert.match(css, /\.down,[^{]+\{[^}]*color:var\(--color-finance-loss\)/);
   assert.match(css, /\.portfolioStockMeta b,\.portfolioPair b,\.loanFacts b,[^{]+\{[^}]*font-size:\.9375rem/);
   assert.match(css, /\.portfolioMetric,\.portfolioStockCard,\.loanCard,\.healthScore,\.healthCoupleScore,[^{]+\{[^}]*border-radius:var\(--radius-card\)/);
+  assert.match(css, /\.healthCouplePerson>span,\.healthCouplePerson>b,\.healthCompareFocus>span\{color:var\(--color-owner-husband\)/);
 });
 
 test('股票損益與年化各自依數值套用一致漲跌色', () => {
