@@ -1,6 +1,6 @@
 // KS Wealth 正式版號的唯一 runtime 來源。
 // V3P26 是舊制最後一版；下一次產品出貨起使用 VMAJOR.MINOR.PATCH，細節見 VERSIONING.md。
-const APP_VERSION = 'V3.27.4';
+const APP_VERSION = 'V3.27.5';
 
 window.KS_APP_VERSION = APP_VERSION;
 document.documentElement.dataset.appVersion = APP_VERSION;
@@ -11,7 +11,7 @@ function ensureVersionStyle() {
   style.id = 'ks-app-version-style';
   style.textContent = `
     .brand > div:last-child { min-width:0; }
-    .status .appVersionBadge { margin-right:var(--space-inline, 8px); flex:0 0 auto; }
+    .bottomNav .appVersionBadge { position:absolute; left:50%; bottom:calc(100% + 6px); transform:translateX(-50%); }
     .appVersionBadge {
       display:inline-flex;
       align-items:center;
@@ -35,16 +35,14 @@ function ensureVersionStyle() {
 function applyAppVersion() {
   ensureVersionStyle();
 
-  // 版號放在行情狀態列，不佔用標題寬度，避免手機頂部標題被擠成多行。
-  const status = document.querySelector('.status');
-  const reload = status?.querySelector('#reload');
-  if (status) {
-    let badge = status.querySelector(':scope > .appVersionBadge');
+  // 版號是 footer 資訊，放在底部導覽列上方，不佔用標題、行情或頁籤欄位。
+  const bottomNav = document.querySelector('.bottomNav');
+  if (bottomNav) {
+    let badge = bottomNav.querySelector(':scope > .appVersionBadge');
     if (!badge) {
       badge = document.createElement('span');
       badge.className = 'appVersionBadge';
-      if (reload) status.insertBefore(badge, reload);
-      else status.append(badge);
+      bottomNav.append(badge);
     }
     if (badge.textContent !== APP_VERSION) badge.textContent = APP_VERSION;
   }

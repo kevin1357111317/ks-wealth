@@ -49,8 +49,10 @@ test('股票損益與年化各自依數值套用一致漲跌色', () => {
 
 test('版號不佔用頂部標題，排序工具列維持兩列網格', async () => {
   const version = await readFile(new URL('../app-version.js', import.meta.url), 'utf8');
-  assert.match(version, /status.*appVersionBadge/);
+  assert.match(version, /bottomNav.*appVersionBadge/);
+  assert.doesNotMatch(version, /status.*appVersionBadge/);
   assert.match(css, /\.portfolioToolbar\{[^}]*display:grid/);
   assert.match(css, /grid-template-areas:"count sort" "exited exited"/);
   assert.match(css, /\.status>\[data-status-text\]\{[^}]*text-overflow:ellipsis/);
+  assert.match(css, /\.bottomNav \.appVersionBadge\{[^}]*position:absolute/);
 });

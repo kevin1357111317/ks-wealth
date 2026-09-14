@@ -300,3 +300,15 @@ button,select{font-size:var(--type-control)}
   .portfolioToolbar{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"count sort" "exited exited"}
   .portfolioSort select{width:auto;min-width:9.5rem}
 }
+
+
+/* The version is footer metadata: float it above the bottom navigation
+   without turning it into a fourth navigation item. */
+.bottomNav{position:fixed}
+.bottomNav .appVersionBadge{
+  position:absolute;
+  left:50%;
+  bottom:calc(100% + .375rem);
+  transform:translateX(-50%);
+  pointer-events:none;
+}
