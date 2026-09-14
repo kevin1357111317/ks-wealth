@@ -1,6 +1,6 @@
-/* V3P20 — Shared information hierarchy for every KS Wealth screen.
-   Feature styles still own colour and layout; this final layer owns type rhythm,
-   semantic emphasis and the spacing shared by equivalent components. */
+/* V3.27.2 — KS Wealth shared design system.
+   Feature styles own their layouts; this final layer is the single source of truth
+   for typography, surfaces, controls and semantic colours across every screen. */
 :root{
   --type-page-title:1.5rem;
   --type-hero:clamp(2.125rem,9vw,2.75rem);
@@ -13,7 +13,23 @@
   --leading-tight:1.25;
   --leading-body:1.55;
   --space-page:1rem;
-  --space-card:.875rem;
+  --space-card:1rem;
+  --type-control:.875rem;
+  --color-text-primary:#4b3028;
+  --color-text-secondary:#70817d;
+  --color-text-muted:#776f68;
+  --color-finance-gain:#c43c55;
+  --color-finance-loss:#16836c;
+  --color-cash-in:#16836c;
+  --color-cash-out:#c43c55;
+  --color-status-normal:#277a5a;
+  --color-status-attention:#a25c31;
+  --surface-card:#fffdf8;
+  --surface-control:#f4efe5;
+  --border-card:#d7e6e0;
+  --radius-card:1.25rem;
+  --radius-control:.75rem;
+  --height-control:2.75rem;
 }
 
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
@@ -143,6 +159,95 @@ html .appVersionBadge{font-size:var(--type-meta)}
 .form label{font-size:var(--type-label);line-height:1.4}
 .quoteHint,.message,.link{font-size:.8125rem;line-height:1.5}
 .secure{font-size:var(--type-meta);line-height:1.45}
+
+
+/* Unified component contract
+   Same role means the same type, colour and spacing everywhere. */
+body{color:var(--color-text-primary)}
+button,input,select,textarea{font:inherit}
+button,select{font-size:var(--type-control)}
+.form input,.form select,.form textarea{
+  min-height:var(--height-control);
+  border-radius:var(--radius-control);
+  font-size:1rem;
+}
+.seg,.healthPersonSeg,.healthYearSeg{gap:.25rem;padding:.25rem;border-radius:1rem;background:var(--surface-control)}
+.seg button,.healthPersonSeg button,.healthYearSeg button{
+  min-height:var(--height-control);
+  border-radius:var(--radius-control);
+  font-size:var(--type-control);
+  font-weight:800;
+}
+.trendToggle,.distributionToggle,.portfolioSort select{
+  min-height:2.5rem;
+  border-radius:var(--radius-control);
+  font-size:var(--type-control);
+  font-weight:750;
+}
+
+/* Equivalent cards share one surface, radius and padding. */
+.portfolioMetric,.portfolioStockCard,.loanCard,.healthScore,.healthCoupleScore,
+.healthCompareTable,.healthAdvice,.healthTrendCard,.healthDomain,.healthEmpty{
+  border-color:var(--border-card);
+  border-radius:var(--radius-card);
+  background:var(--surface-card);
+}
+.portfolioMetric,.loanCard,.healthScore,.healthCoupleScore,.healthAdvice,.healthTrendCard,.healthDomain{
+  padding:var(--space-card);
+}
+.portfolioStockSummary{padding:var(--space-card)}
+
+/* Titles, labels, values and notes use one stable scale. */
+.panelTitle,.trendHead,.healthAdviceHead{align-items:center}
+.compactIdentity b,.itemName b,.portfolioStockTop b,.loanCardHead b,
+.healthActionTop b,.healthDomainHead b{
+  color:var(--color-text-primary);
+  font-size:var(--type-card-title);
+  font-weight:850;
+  line-height:1.35;
+}
+.miniStats span,.ownerTile span,.portfolioMetric span,.loanBalance span,
+.healthScore span,.healthCouplePerson>span{
+  color:var(--color-text-secondary);
+  font-size:.8125rem;
+  line-height:1.35;
+}
+.portfolioStockMeta span,.portfolioPair span,.loanFacts span,
+.healthBreakdownRow>span,.healthCompareRow>span{
+  color:var(--color-text-secondary);
+  font-size:.8125rem;
+  line-height:1.35;
+}
+.portfolioStockMeta b,.portfolioPair b,.loanFacts b,
+.healthBreakdownRow>b,.healthCompareValue b{
+  color:var(--color-text-primary);
+  font-size:.9375rem;
+  font-weight:850;
+  line-height:1.35;
+  font-variant-numeric:tabular-nums;
+}
+.compactIdentity>span,.compactAmount span,.compactMeta,.itemName span,.itemAmount span,
+.itemMeta span,.source,.categoryHead small,.portfolioMetric small,.portfolioTx small,
+.loanCardHead small,.loanFoot,.healthHomeEntry small,.healthCoupleHead span,
+.healthAdviceHead span,.healthDisclaimer{
+  color:var(--color-text-muted);
+  font-size:var(--type-meta);
+  line-height:1.4;
+}
+
+/* Financial direction never changes by market or settlement currency.
+   Taiwan convention: gain/up is red; loss/down is green. */
+.up,.portfolioMetric .up,.portfolioStockCard .up,.trendChange.up,.quoteLive b.up{
+  color:var(--color-finance-gain);
+}
+.down,.portfolioMetric .down,.portfolioStockCard .down,.trendChange.down,.quoteLive b.down{
+  color:var(--color-finance-loss);
+}
+.flat,.trendChange.flat,.quoteLive b.flat{color:var(--color-text-muted)}
+.portfolioTx .positive{color:var(--color-cash-in)}
+.portfolioTx .negative{color:var(--color-cash-out)}
+.healthCompareValue small.normal,.healthTrendStatus.normal{color:var(--color-status-normal)}
+.healthCompareValue small:not(.normal),.healthTrendStatus:not(.normal){color:var(--color-status-attention)}
 
 @media(max-width:420px){
   .portfolioMetric{padding:.875rem}
