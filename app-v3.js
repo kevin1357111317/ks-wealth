@@ -11,7 +11,7 @@ import {
   parseNonNegative,
   toFiniteNumber,
 } from './financial-core.js?v=hide-sold-out-1';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.27.0';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.27.1';
 import { calculateUsd } from './usd-core.js?v=usd-1';
 import { calculateGold } from './gold-core.js?v=gold-trim-1';
 import { calculateLoanCashflow } from './loan-core.js?v=cashflow-1';
@@ -1347,8 +1347,7 @@ function portfolioListPage() {
   const model = ownerPortfolioModel(analysisOwner);
   const marketRows = portfolioMarket === 'all'
     ? model.positions
-    : model.positions.filter(stock => stock.market === portfolioMarket
-      && (portfolioMarket !== '美股' || stock.currency === 'USD'));
+    : model.positions.filter(stock => stock.currency === (portfolioMarket === '美股' ? 'USD' : 'TWD'));
   const visibleRows = marketRows.filter(stock => portfolioShowExited || stock.shares > 0.0000001);
   const [sortCriterion, sortDirection] = portfolioSort.split('-');
   const rows = sortPortfolioPositions(visibleRows, {
