@@ -11,7 +11,7 @@ import {
   parseNonNegative,
   toFiniteNumber,
 } from './financial-core.js?v=hide-sold-out-1';
-import { calculatePortfolio, decodePortfolioBootstrap } from './portfolio-core.js?v=V3P26';
+import { calculatePortfolio, decodePortfolioBootstrap } from './portfolio-core.js?v=V3.26.1';
 import { calculateUsd } from './usd-core.js?v=usd-1';
 import { calculateGold } from './gold-core.js?v=gold-trim-1';
 import { calculateLoanCashflow } from './loan-core.js?v=cashflow-1';
@@ -1298,8 +1298,7 @@ function portfolioSummaryCards(bucket, market) {
   const tone = bucket.profitTwd >= 0 ? 'up' : 'down';
   if (market === '美股') {
     const stockTone = bucket.profitNative >= 0 ? 'up' : 'down';
-    const fxTone = Math.round(bucket.fxImpactTwd) === 0 ? '' : bucket.fxImpactTwd > 0 ? 'up' : 'down';
-    return `<div class="portfolioSummary"><div class="portfolioMetric"><span>目前美股市值</span><b>NT$ ${formatNumber(bucket.currentValueTwd)}</b><small>${bucket.holdings} 檔持有中</small></div><div class="portfolioMetric"><span>股票損益（USD）</span><b class="${stockTone}">${signedUsd(bucket.profitNative)}</b><small>不含匯率影響</small></div><div class="portfolioMetric"><span>股票年化（USD）</span><b class="${stockTone}">${formatPercent(bucket.nativeXirr)}</b><small>只看美股買賣與股息</small></div><div class="portfolioMetric"><span>台幣總損益</span><b class="${tone}">${signedMoney(bucket.profitTwd)}</b><small class="${fxTone}">含匯率影響 ${signedMoney(bucket.fxImpactTwd)}</small></div></div>`;
+    return `<div class="portfolioSummary"><div class="portfolioMetric"><span>目前美股市值</span><b>NT$ ${formatNumber(bucket.currentValueTwd)}</b><small>以目前匯率換算 · ${bucket.holdings} 檔</small></div><div class="portfolioMetric"><span>累計淨投入</span><b>US$ ${formatNumber(bucket.netInvestedNative)}</b><small>買進－賣出－股息</small></div><div class="portfolioMetric"><span>累計損益</span><b class="${stockTone}">${signedUsd(bucket.profitNative)}</b><small>${formatPercent(bucket.nativeReturnRate)}</small></div><div class="portfolioMetric"><span>年化報酬率</span><b class="${stockTone}">${formatPercent(bucket.nativeXirr)}</b><small>依 USD 現金流計算</small></div></div>`;
   }
   const profitLabel = market === 'all' ? '台幣綜合損益' : '累計損益';
   const xirrLabel = market === 'all' ? '台幣綜合年化' : '年化報酬率';
@@ -1319,11 +1318,9 @@ function portfolioStockDetail(stock) {
   const rows = stock.transactions.slice().sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
   const live = stock.quote?.price > 0;
   if (stock.currency === 'USD') return `<div class="portfolioStockDetail">
-    ${pair('股票年化（USD）', formatPercent(stock.nativeXirr), tone(stock.nativeXirr), '台幣年化（含匯率）', formatPercent(stock.xirr), tone(stock.xirr))}
-    ${pair('匯率影響', signedMoney(stock.fxImpactTwd), tone(stock.fxImpactTwd), '累計股息', `US$ ${formatNumber(stock.dividendsNative)}`, '')}
-    ${pair('台幣已實現（含匯率）', signedMoney(stock.realizedTwd), tone(stock.realizedTwd), '台幣未實現（含匯率）', signedMoney(stock.unrealizedTwd), tone(stock.unrealizedTwd))}
-    ${pair('目前股價', `US$ ${formatNumber(stock.price)}`, '', '持有股數', `${shareFormat(stock.shares)} 股`, '')}
-    ${pair('投資期間', stock.holdingYears === null ? '—' : `${stock.holdingYears.toFixed(2)} 年`, '', '目前匯率', rateFormat(fxRate), '')}
+    ${pair('已實現損益', signedUsd(stock.realizedNative), tone(stock.realizedNative), '未實現損益', signedUsd(stock.unrealizedNative), tone(stock.unrealizedNative))}
+    ${pair('累計股息', `US$ ${formatNumber(stock.dividendsNative)}`, '', `目前股價${live ? ' · 即時' : ''}`, `US$ ${formatNumber(stock.price)}`, '')}
+    ${pair('投資期間', stock.holdingYears === null ? '—' : `${stock.holdingYears.toFixed(2)} 年`, '', '持有股數', `${shareFormat(stock.shares)} 股`, '')}
     <div class="sectionHead"><b>交易紀錄</b><span>${rows.length} 筆</span></div>
     <div class="portfolioTxList">${rows.length ? rows.map(tx => transactionRow(tx, stock)).join('') : '<div class="portfolioEmpty">還沒有交易。</div>'}</div>
   </div>`;
@@ -1340,7 +1337,7 @@ function portfolioStockCard(stock, expanded) {
   const tone = stock.profitTwd >= 0 ? 'up' : 'down';
   if (stock.currency === 'USD') {
     const stockTone = stock.profitNative >= 0 ? 'up' : 'down';
-    return `<article class="portfolioStockCard ${expanded ? 'open' : ''}"><button class="portfolioStockSummary" data-portfolio-stock="${escapeHtml(stock.key)}"><div class="portfolioStockTop"><div><b>${escapeHtml(stock.display)}</b></div><div><b>NT$ ${formatNumber(stock.currentValueTwd)}</b></div></div><div class="portfolioStockMeta"><div><span>股票損益（USD）</span><b class="${stockTone}">${signedUsd(stock.profitNative)}</b></div><div><span>台幣總損益（含匯率）</span><b class="${tone}">${signedMoney(stock.profitTwd)}</b></div></div></button>${expanded ? portfolioStockDetail(stock) : ''}</article>`;
+    return `<article class="portfolioStockCard ${expanded ? 'open' : ''}"><button class="portfolioStockSummary" data-portfolio-stock="${escapeHtml(stock.key)}"><div class="portfolioStockTop"><div><b>${escapeHtml(stock.display)}</b></div><div><b>NT$ ${formatNumber(stock.currentValueTwd)}</b></div></div><div class="portfolioStockMeta"><div><span>累計損益</span><b class="${stockTone}">${signedUsd(stock.profitNative)}</b></div><div><span>年化報酬率</span><b class="${stockTone}">${formatPercent(stock.nativeXirr)}</b></div></div></button>${expanded ? portfolioStockDetail(stock) : ''}</article>`;
   }
   return `<article class="portfolioStockCard ${expanded ? 'open' : ''}"><button class="portfolioStockSummary" data-portfolio-stock="${escapeHtml(stock.key)}"><div class="portfolioStockTop"><div><b>${escapeHtml(stock.display)}</b></div><div><b>NT$ ${formatNumber(stock.currentValueTwd)}</b></div></div><div class="portfolioStockMeta"><div><span>累計損益</span><b class="${tone}">NT$ ${formatNumber(stock.profitTwd)}</b></div><div><span>年化報酬率</span><b class="${tone}">${formatPercent(stock.xirr)}</b></div></div></button>${expanded ? portfolioStockDetail(stock) : ''}</article>`;
 }
