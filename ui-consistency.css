@@ -14,6 +14,7 @@
   --leading-body:1.55;
   --space-page:1rem;
   --space-card:1rem;
+  --space-inline:.5rem;
   --type-control:.875rem;
   --color-text-primary:#4b3028;
   --color-text-secondary:#70817d;
@@ -24,6 +25,10 @@
   --color-cash-out:#c43c55;
   --color-status-normal:#277a5a;
   --color-status-attention:#a25c31;
+  --color-owner-husband:#0057b8;
+  --color-owner-husband-text:#004993;
+  --color-owner-wife:#e24a1a;
+  --color-owner-wife-text:#b6380f;
   --surface-card:#fffdf8;
   --surface-control:#f4efe5;
   --border-card:#d7e6e0;
@@ -235,6 +240,22 @@ button,select{font-size:var(--type-control)}
   line-height:1.4;
 }
 
+/* A person's identity colour is also stable from score cards to charts. */
+.healthCouplePerson>span,.healthCouplePerson>b,.healthCompareFocus>span{color:var(--color-owner-husband)}
+.healthCouplePerson.wife>span,.healthCouplePerson.wife>b,.healthCompareFocus.wife>span{color:var(--color-owner-wife)}
+.healthScoreMeter i,.healthCoupleTrendLegend i{background:var(--color-owner-husband)}
+.healthCouplePerson.wife .healthScoreMeter i,.healthCoupleTrendLegend .wife i{background:var(--color-owner-wife)}
+.healthTrendSelectedDot.husband{stroke:var(--color-owner-husband)}
+.healthTrendSelectedDot.wife{stroke:var(--color-owner-wife)}
+.healthTrendTooltipValue.husband,.healthTrendTooltipKey.husband{fill:var(--color-owner-husband-text)}
+.healthTrendTooltipValue.wife,.healthTrendTooltipKey.wife{fill:var(--color-owner-wife-text)}
+.healthTrendCard .healthCoupleLine.husband,.healthCoupleRef.husband line{stroke:var(--color-owner-husband)}
+.healthTrendCard .healthCoupleLine.wife,.healthCoupleRef.wife line{stroke:var(--color-owner-wife)}
+.healthTrendCard .healthCoupleDot.husband{fill:var(--color-owner-husband)}
+.healthTrendCard .healthCoupleDot.wife{fill:var(--color-owner-wife)}
+.healthCoupleRef.husband text{fill:var(--color-owner-husband-text)}
+.healthCoupleRef.wife text{fill:var(--color-owner-wife-text)}
+
 /* Financial direction never changes by market or settlement currency.
    Taiwan convention: gain/up is red; loss/down is green. */
 .up,.portfolioMetric .up,.portfolioStockCard .up,.trendChange.up,.quoteLive b.up{
@@ -248,6 +269,7 @@ button,select{font-size:var(--type-control)}
 .portfolioTx .negative{color:var(--color-cash-out)}
 .healthCompareValue small.normal,.healthTrendStatus.normal{color:var(--color-status-normal)}
 .healthCompareValue small:not(.normal),.healthTrendStatus:not(.normal){color:var(--color-status-attention)}
+.healthCompareValue.missing small{color:var(--color-text-muted)}
 
 @media(max-width:420px){
   .portfolioMetric{padding:.875rem}
