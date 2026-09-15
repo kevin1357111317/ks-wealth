@@ -128,9 +128,8 @@ html .appVersionFooter{font-size:var(--type-meta)}
 .loanPlanRow small{font-size:var(--type-meta);line-height:1.4}
 
 /* Health uses the same hierarchy as finance; only chart annotations stay compact. */
-.healthHomeEntry small,.healthCoupleHead span,.healthAdviceHead span,.healthDisclaimer{font-size:var(--type-meta);line-height:1.45}
-.healthHomeEntry b{font-size:1.0625rem;line-height:1.35}
-.healthHomeEntry span,.healthScore p,.healthAction p,.healthAction strong,.healthDomain p{font-size:.8125rem;line-height:var(--leading-body)}
+.healthCoupleHead span,.healthAdviceHead span,.healthDisclaimer{font-size:var(--type-meta);line-height:1.45}
+.healthScore p,.healthAction p,.healthAction strong,.healthDomain p{font-size:.8125rem;line-height:var(--leading-body)}
 .healthScore span{font-size:.8125rem}
 .healthScore b{font-size:1.875rem;line-height:1.2;font-variant-numeric:tabular-nums}
 .healthScore b small{font-size:var(--type-meta)}
@@ -233,7 +232,7 @@ button,select{font-size:var(--type-control)}
 }
 .compactIdentity>span,.compactAmount span,.compactMeta,.itemName span,.itemAmount span,
 .itemMeta span,.source,.categoryHead small,.portfolioMetric small,.portfolioTx small,
-.loanCardHead small,.loanFoot,.healthHomeEntry small,.healthCoupleHead span,
+.loanCardHead small,.loanFoot,.healthCoupleHead span,
 .healthAdviceHead span,.healthDisclaimer{
   color:var(--color-text-muted);
   font-size:var(--type-meta);

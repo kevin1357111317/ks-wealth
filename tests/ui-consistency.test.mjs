@@ -79,3 +79,19 @@ test('排序留三個依據加雙向方向鈕，已出清維持核取方塊', as
   assert.match(css, /\.portfolioSortDir\[data-sort-direction="asc"\] \.sortDesc\{opacity:\.3\}/);
   assert.match(css, /\.status>\[data-status-text\]\{[^}]*text-overflow:ellipsis/);
 });
+
+test('健康報告是第四個底部分頁，不再佔用家庭頁第一屏', async () => {
+  const trends = await readFile(new URL('../v3-trends.css', import.meta.url), 'utf8');
+  const health = await readFile(new URL('../health.css', import.meta.url), 'utf8');
+  assert.match(app, /\['health', navHeart, '健康報告'\]/);
+  // 走 tab 而不是 analysisScreen，底部導覽才會把它標成 on，也不會多推一筆歷史。
+  assert.match(app, /if \(tab === 'health'\) return healthPage\(\);/);
+  assert.doesNotMatch(app, /data-open-health/);
+  assert.doesNotMatch(app, /healthHomeEntry/);
+  assert.doesNotMatch(health, /healthHomeEntry/);
+  assert.doesNotMatch(css, /healthHomeEntry/);
+  // 四個分頁要平均分欄，不然第四顆會擠掉前三顆。
+  assert.doesNotMatch(trends, /\.bottomNav\{grid-template-columns:repeat\(3,1fr\)/);
+  assert.match(trends, /\.bottomNav\{grid-template-columns:repeat\(4,1fr\)/);
+  assert.match(trends, /\.bottomNav \.navHeart\{/);
+});
