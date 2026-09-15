@@ -99,11 +99,10 @@ test('健康報告是第四個底部分頁，不再佔用家庭頁第一屏', as
   assert.match(trends, /\.bottomNav \.navCharacter\{/);
   assert.match(app, /class="navCharacter navHome"/);
   assert.match(app, /class="navCharacter navHeart"/);
-  assert.match(app, /class="navBlush"/);
+  assert.doesNotMatch(app, /class="navFace"|class="navBlush"/);
   const navIcons = app.slice(app.indexOf('const navHome'), app.indexOf('const tabs'));
   assert.doesNotMatch(navIcons, /stroke-width="(?:2|3)(?:\.|\")/);
   assert.match(navIcons, /stroke-width="1\.9"/);
-  assert.match(navIcons, /stroke-width="1\.1"/);
 });
 
 test('登入後先看自己的資產，不是家庭總覽', async () => {
