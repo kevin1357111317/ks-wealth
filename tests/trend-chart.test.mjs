@@ -60,6 +60,10 @@ db.net_worth_history = ${JSON.stringify(history)};`;
     route.fulfill({ status: 200, contentType: 'text/javascript', body: stub }));
   await page.route('**fonts.g**', route => route.abort());
   await page.goto(`${base}/index.html`);
+  // V3.29.0 起登入後先落在自己的資產頁；這支要刮的是家庭淨資產那張 153 點的圖，
+  // 所以先切回家庭分頁再抓圖表。
+  await page.waitForSelector('[data-tab="dashboard"]', { timeout: 20_000 });
+  await page.click('[data-tab="dashboard"]');
   await page.waitForSelector('[data-trend-chart]', { timeout: 20_000 });
   await page.waitForTimeout(600);
 

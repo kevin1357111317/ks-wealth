@@ -42,11 +42,18 @@ const yierFace = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAYAAABc
 // 它跟三個資產分頁是同一層的目的地，所以改成第四個分頁，用愛心當圖示。
 const navHeart = '<svg class="navHeart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78Z"/></svg>';
 const tabs = [
-  ['husband', `<img class="navBear" src="${bubuFace}" alt="布布">`, '老公'],
   ['dashboard', '◉', '家庭'],
+  ['husband', `<img class="navBear" src="${bubuFace}" alt="布布">`, '老公'],
   ['wife', `<img class="navBear" src="${yierFace}" alt="一二">`, '老婆'],
   ['health', navHeart, '健康報告'],
 ];
+
+// household_members.role 記的是「誰建立這個家庭」，不是「誰是老公誰是老婆」——
+// 資料庫目前沒有 user 對 owner_scope 的欄位。這個家庭是老公建立、老婆用邀請碼
+// 加入的，所以用 role 推：owner 是老公，member 是老婆。
+// 之後若要支援反過來的家庭，就把 owner_scope 存進 household_members，這支只要
+// 改成讀那一欄，其他呼叫端都不用動。
+const memberOwnerScope = () => member?.role === 'member' ? 'wife' : 'husband';
 const categories = {
   asset: ['現金及存款', '台股', '美股', '不動產', '黃金', '保險', '其他'],
   liability: ['房貸', '增貸', '信貸', '信用卡', '其他負債'],
@@ -390,6 +397,9 @@ async function resolveMembership() {
   if (error) return showBlockingError(error.message);
   member = data?.[0] ?? null;
   if (!member) return joinScreen();
+  // 登入後先看自己的資產：老公開起來是老公頁，老婆開起來是老婆頁。
+  // 放在這裡，重新登入換人時也會跟著換過去。
+  tab = memberOwnerScope();
 
   lifecycle = 'loading-data';
   restoreQuoteTimestamp();
