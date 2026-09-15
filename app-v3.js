@@ -41,23 +41,23 @@ const yierFace = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAYAAABc
 // 家庭與健康跟布布、一二共用同一套暖色、棕線、圓臉與腮紅語彙。
 // 用 inline SVG 保持清楚且不增加額外圖片請求；按鈕本身已有 aria-label。
 const navHome = `<svg class="navCharacter navHome" viewBox="0 0 48 48" aria-hidden="true">
-  <path d="M8 23.5 24 9l16 14.5" fill="none" stroke="#5b3d32" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M12 21.5V39h24V21.5L24 11Z" fill="#fff3d1" stroke="#5b3d32" stroke-width="2.8" stroke-linejoin="round"/>
-  <path d="M9 23.5 24 9l15 14.5-4.7 1.8L24 15.7 13.7 25.3Z" fill="#79d4cb" stroke="#5b3d32" stroke-width="2.8" stroke-linejoin="round"/>
-  <path d="M31.5 12.8V7.5h5v10" fill="#f4b982" stroke="#5b3d32" stroke-width="2.6" stroke-linejoin="round"/>
-  <path d="M20.5 39V31h7v8" fill="#e8ad7d" stroke="#5b3d32" stroke-width="2.4" stroke-linejoin="round"/>
+  <path d="M8 23.5 24 9l16 14.5" fill="none" stroke="#5b3d32" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M12 21.5V39h24V21.5L24 11Z" fill="#fff3d1" stroke="#5b3d32" stroke-width="2.1" stroke-linejoin="round"/>
+  <path d="M9 23.5 24 9l15 14.5-4.7 1.8L24 15.7 13.7 25.3Z" fill="#79d4cb" stroke="#5b3d32" stroke-width="2.1" stroke-linejoin="round"/>
+  <path d="M31.5 12.8V7.5h5v10" fill="#f4b982" stroke="#5b3d32" stroke-width="1.9" stroke-linejoin="round"/>
+  <path d="M20.5 39V31h7v8" fill="#e8ad7d" stroke="#5b3d32" stroke-width="1.8" stroke-linejoin="round"/>
   <g class="navFace">
     <circle cx="19.5" cy="25.8" r="1.55" fill="#5b3d32"/><circle cx="28.5" cy="25.8" r="1.55" fill="#5b3d32"/>
-    <path d="M21.4 29.2q2.6 2.3 5.2 0" fill="none" stroke="#5b3d32" stroke-width="1.7" stroke-linecap="round"/>
+    <path d="M21.4 29.2q2.6 2.3 5.2 0" fill="none" stroke="#5b3d32" stroke-width="1.3" stroke-linecap="round"/>
     <circle class="navBlush" cx="16.5" cy="29.2" r="2" fill="#f2a6a1" opacity=".82"/><circle class="navBlush" cx="31.5" cy="29.2" r="2" fill="#f2a6a1" opacity=".82"/>
   </g>
 </svg>`;
 const navHeart = `<svg class="navCharacter navHeart" viewBox="0 0 48 48" aria-hidden="true">
-  <path d="M24 40.3 8.7 25.6C1.2 18.4 5.3 8.5 14.2 8.5c4.7 0 7.5 2.8 9.8 5.8 2.3-3 5.1-5.8 9.8-5.8 8.9 0 13 9.9 5.5 17.1Z" fill="#ffd3dc" stroke="#5b3d32" stroke-width="3" stroke-linejoin="round"/>
-  <path d="M11.7 15.1c1.2-2.4 3.6-3.2 5.7-2.3" fill="none" stroke="#fff8f4" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M24 40.3 8.7 25.6C1.2 18.4 5.3 8.5 14.2 8.5c4.7 0 7.5 2.8 9.8 5.8 2.3-3 5.1-5.8 9.8-5.8 8.9 0 13 9.9 5.5 17.1Z" fill="#ffd3dc" stroke="#5b3d32" stroke-width="2.2" stroke-linejoin="round"/>
+  <path d="M11.7 15.1c1.2-2.4 3.6-3.2 5.7-2.3" fill="none" stroke="#fff8f4" stroke-width="1.8" stroke-linecap="round"/>
   <g class="navFace">
     <circle cx="19" cy="23.2" r="1.65" fill="#5b3d32"/><circle cx="29" cy="23.2" r="1.65" fill="#5b3d32"/>
-    <path d="M21.2 27q2.8 2.4 5.6 0" fill="none" stroke="#5b3d32" stroke-width="1.8" stroke-linecap="round"/>
+    <path d="M21.2 27q2.8 2.4 5.6 0" fill="none" stroke="#5b3d32" stroke-width="1.3" stroke-linecap="round"/>
     <circle class="navBlush" cx="15.8" cy="27" r="2.15" fill="#ef929d" opacity=".78"/><circle class="navBlush" cx="32.2" cy="27" r="2.15" fill="#ef929d" opacity=".78"/>
   </g>
 </svg>`;
