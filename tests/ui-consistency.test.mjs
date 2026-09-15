@@ -97,10 +97,11 @@ test('健康報告是第四個底部分頁，不再佔用家庭頁第一屏', as
   assert.doesNotMatch(trends, /\.bottomNav\{grid-template-columns:repeat\(3,1fr\)/);
   assert.match(trends, /\.bottomNav\{grid-template-columns:repeat\(4,1fr\)/);
   assert.match(trends, /\.bottomNav \.navCharacter\{/);
-  assert.match(app, /class="navCharacter navHome"/);
+  assert.match(app, /class="navCharacter navHome navFamily"/);
+  assert.match(app, /const familyBearsIcon = 'data:image\/png;base64,/);
   assert.match(app, /class="navCharacter navHeart"/);
   assert.doesNotMatch(app, /class="navFace"|class="navBlush"/);
-  const navIcons = app.slice(app.indexOf('const navHome'), app.indexOf('const tabs'));
+  const navIcons = app.slice(app.indexOf('const navHeart'), app.indexOf('const tabs'));
   assert.doesNotMatch(navIcons, /stroke-width="(?:2|3)(?:\.|\")/);
   assert.match(navIcons, /stroke-width="1\.9"/);
 });

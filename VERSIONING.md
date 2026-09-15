@@ -1,6 +1,6 @@
 # KS Wealth 版號規則
 
-目前正式版：**V3.29.4**
+目前正式版：**V3.29.5**
 
 > `V3P26` 是舊制最後一個版號。自下一次「產品正式出貨」起改採 Semantic Versioning 2.0.0（SemVer）的 `VMAJOR.MINOR.PATCH` 格式。歷史版號不重寫；遷移判定時視 `V3P26` 為 `V3.26.0` 的 legacy baseline。
 
