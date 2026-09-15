@@ -42,7 +42,7 @@
 .bottomNav{grid-template-columns:repeat(4,1fr);padding:7px;border-color:#343c4b;background:#11151df8}
 .bottomNav button{min-height:44px;color:#9aa4b5;font-size:12px;font-weight:750}
 .bottomNav button span{font-size:27px;font-weight:900;line-height:1}
-.bottomNav .navBear{display:block;width:34px;height:34px;object-fit:contain;overflow:visible}.bottomNav .navCharacter{display:block;width:34px;height:34px;overflow:visible;filter:drop-shadow(0 1px 1px #57392f22);transition:transform .16s ease}
+.bottomNav .navBear{display:block;width:34px;height:34px;object-fit:contain;overflow:visible}.bottomNav .navCharacter{display:block;width:34px;height:34px;overflow:visible;filter:drop-shadow(0 1px 1px #57392f22);transition:transform .16s ease}.bottomNav .navCharacter.navFamily{width:42px;height:34px;object-fit:contain}
 .bottomNav button.on{background:#252c40;color:#e1e5ff;box-shadow:inset 0 0 0 1px #39425b}
 .status,.status button,.heroLabel,.miniStats span,.ownerTile span,.ownerTile small,.sectionHead span,.itemName span,.itemAmount span,.itemMeta span,.source,.categoryHead small{color:#9ba5b5}
 .itemName b,.itemAmount b,.miniStats b,.sectionHead b,.categoryTotal b{color:#f4f6fa}
