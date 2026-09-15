@@ -84,6 +84,8 @@ test('健康報告是第四個底部分頁，不再佔用家庭頁第一屏', as
   const trends = await readFile(new URL('../v3-trends.css', import.meta.url), 'utf8');
   const health = await readFile(new URL('../health.css', import.meta.url), 'utf8');
   assert.match(app, /\['health', navHeart, '健康報告'\]/);
+  // 順序：家庭、老公、老婆、健康。
+  assert.match(app, /\['dashboard', '◉', '家庭'\],\n\s*\['husband',[^\n]*\n\s*\['wife',[^\n]*\n\s*\['health', navHeart/);
   // 走 tab 而不是 analysisScreen，底部導覽才會把它標成 on，也不會多推一筆歷史。
   assert.match(app, /if \(tab === 'health'\) return healthPage\(\);/);
   assert.doesNotMatch(app, /data-open-health/);
@@ -94,4 +96,12 @@ test('健康報告是第四個底部分頁，不再佔用家庭頁第一屏', as
   assert.doesNotMatch(trends, /\.bottomNav\{grid-template-columns:repeat\(3,1fr\)/);
   assert.match(trends, /\.bottomNav\{grid-template-columns:repeat\(4,1fr\)/);
   assert.match(trends, /\.bottomNav \.navHeart\{/);
+});
+
+test('登入後先看自己的資產，不是家庭總覽', async () => {
+  // household_members 沒有 user 對 owner_scope 的欄位，只能用 role 推：
+  // 建立家庭的是老公，用邀請碼加入的是老婆。
+  assert.match(app, /const memberOwnerScope = \(\) => member\?\.role === 'member' \? 'wife' : 'husband';/);
+  // 要放在 resolveMembership 解出 member 之後，重新登入換人才會跟著換。
+  assert.match(app, /if \(!member\) return joinScreen\(\);[\s\S]{0,240}?tab = memberOwnerScope\(\);/);
 });
