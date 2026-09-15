@@ -83,9 +83,10 @@ test('排序留三個依據加雙向方向鈕，已出清維持核取方塊', as
 test('健康報告是第四個底部分頁，不再佔用家庭頁第一屏', async () => {
   const trends = await readFile(new URL('../v3-trends.css', import.meta.url), 'utf8');
   const health = await readFile(new URL('../health.css', import.meta.url), 'utf8');
+  assert.match(app, /\['dashboard', navHome, '家庭'\]/);
   assert.match(app, /\['health', navHeart, '健康報告'\]/);
   // 順序：家庭、老公、老婆、健康。
-  assert.match(app, /\['dashboard', '◉', '家庭'\],\n\s*\['husband',[^\n]*\n\s*\['wife',[^\n]*\n\s*\['health', navHeart/);
+  assert.match(app, /\['dashboard', navHome, '家庭'\],\n\s*\['husband',[^\n]*\n\s*\['wife',[^\n]*\n\s*\['health', navHeart/);
   // 走 tab 而不是 analysisScreen，底部導覽才會把它標成 on，也不會多推一筆歷史。
   assert.match(app, /if \(tab === 'health'\) return healthPage\(\);/);
   assert.doesNotMatch(app, /data-open-health/);
@@ -95,7 +96,10 @@ test('健康報告是第四個底部分頁，不再佔用家庭頁第一屏', as
   // 四個分頁要平均分欄，不然第四顆會擠掉前三顆。
   assert.doesNotMatch(trends, /\.bottomNav\{grid-template-columns:repeat\(3,1fr\)/);
   assert.match(trends, /\.bottomNav\{grid-template-columns:repeat\(4,1fr\)/);
-  assert.match(trends, /\.bottomNav \.navHeart\{/);
+  assert.match(trends, /\.bottomNav \.navCharacter\{/);
+  assert.match(app, /class="navCharacter navHome"/);
+  assert.match(app, /class="navCharacter navHeart"/);
+  assert.match(app, /class="navBlush"/);
 });
 
 test('登入後先看自己的資產，不是家庭總覽', async () => {
