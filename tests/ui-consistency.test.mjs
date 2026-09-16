@@ -137,3 +137,11 @@ test('登入後先看自己的資產，不是家庭總覽', async () => {
   // 要放在 resolveMembership 解出 member 之後，重新登入換人才會跟著換。
   assert.match(app, /if \(!member\) return joinScreen\(\);[\s\S]{0,240}?tab = memberOwnerScope\(\);/);
 });
+
+test('投資期間不滿一年用天顯示，不會擠成 0.00 年', () => {
+  // 只持有幾天的部位（金益鼎 5 天、MRVL 當沖）用年當單位會全部變成 0.00／0.01 年。
+  assert.match(app, /const holdingPeriodText = years =>/);
+  assert.match(app, /days < 365 \? `\$\{formatNumber\(days\)\} 天` : `\$\{years\.toFixed\(2\)\} 年`/);
+  assert.doesNotMatch(app, /stock\.holdingYears\.toFixed\(2\)/);
+  assert.equal(app.split('holdingPeriodText(stock.holdingYears)').length - 1, 2, '台股與美股兩邊都要換');
+});
