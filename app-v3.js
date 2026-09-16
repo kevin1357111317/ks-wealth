@@ -935,9 +935,13 @@ function shell(body, title, showAdd = false) {
   root.querySelector('.bottomNav').onclick = event => {
     const button = event.target.closest('[data-tab]');
     if (!button) return;
-    tab = button.dataset.tab;
+    const nextTab = button.dataset.tab;
+    // 目前分頁重複點擊不重繪，避免使用者閱讀到一半被無預警拉回頂端。
+    if (nextTab === tab && !analysisScreen) return;
+    tab = nextTab;
     // 在分析頁時 render() 會直接回傳分析畫面，不先收掉就切不出去。
-    // 有推過歷史就用 history.back()，交給 popstate 收 —— 免得歷史多留一筆。
+    // 有推過歷史就用 history.back()，交給 popstate 收；analysisReturnScroll 設為 0，
+    // popstate 完成換頁後同樣會停在新分頁頂端。
     if (analysisScreen) {
       analysisReturnScroll = 0;   // 切到別的分頁是換畫面，不是返回
       if (analysisPushed) return window.history.back();
@@ -945,6 +949,7 @@ function shell(body, title, showAdd = false) {
       expandedStock = null;
     }
     render();
+    window.scrollTo(0, 0);
   };
 }
 
