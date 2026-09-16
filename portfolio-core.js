@@ -149,10 +149,20 @@ export function firstTradeDate(stock) {
     (earliest, tx) => (!earliest || tx.date < earliest ? tx.date : earliest), null);
 }
 
+// 出清後投資期間的結束點是最後一次買賣，不是今天 —— 錢已經拿回來了。
+// 股息不算：賣光之後才入帳的配息只是尾款，不該把期間往後拉（XIRR 仍然吃它的日期）。
+export function lastTradeDate(stock) {
+  return (stock.transactions ?? []).reduce(
+    (latest, tx) => (tx.kind !== 'dividend' && (!latest || tx.date > latest) ? tx.date : latest), null);
+}
+
 export function holdingYears(stock, today = localIsoDate()) {
   const first = firstTradeDate(stock);
   if (!first) return null;
-  const days = (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${first}T00:00:00Z`)) / 86_400_000;
+  // 還握著就算到今天；已經出清就停在最後一次買賣那天。
+  const closed = currentShares(stock) <= EPSILON;
+  const end = closed ? (lastTradeDate(stock) ?? today) : today;
+  const days = (Date.parse(`${end}T00:00:00Z`) - Date.parse(`${first}T00:00:00Z`)) / 86_400_000;
   return days > 0 ? days / 365 : 0;
 }
 
@@ -197,6 +207,7 @@ export function calculateStockMetrics(stock, fxRate, today = localIsoDate()) {
     unrealizedNative: currentValueNative - remainingCostNative,
     remainingCostTwd, remainingCostNative,
     firstTradeDate: firstTradeDate(stock),
+    lastTradeDate: lastTradeDate(stock),
     holdingYears: holdingYears(stock, today),
     returnRate: returnBaseTwd > EPSILON ? profitTwd / returnBaseTwd : null,
     nativeReturnRate: returnBaseNative > EPSILON ? profitNative / returnBaseNative : null,

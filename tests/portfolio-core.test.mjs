@@ -93,6 +93,41 @@ test('投資期間從首筆交易起算', () => {
   assert.ok(Math.abs(metrics.holdingYears - 2) < 0.01);
 });
 
+test('出清後投資期間算到最後一次賣出，不會一直跟著今天長', () => {
+  // 金益鼎：2023-08-04 買、2023-08-09 賣，總共只持有 5 天。
+  // 舊版一律算到今天，2026 年打開會顯示 3.12 年，看起來像抱了三年才賠。
+  const closed = lots([
+    { id: 1, date: '2023-08-04', amount: -53075, shares: 1000, twd: -53075, kind: 'trade' },
+    { id: 2, date: '2023-08-09', amount: 48784, shares: -1000, twd: 48784, kind: 'trade' },
+  ], 0);
+  const metrics = calculateStockMetrics(closed, 1, '2026-09-16');
+  assert.equal(metrics.shares, 0);
+  assert.equal(metrics.lastTradeDate, '2023-08-09');
+  assert.ok(Math.abs(metrics.holdingYears - 5 / 365) < 1e-9,
+    `出清部位要算 5 天，實際 ${metrics.holdingYears * 365} 天`);
+
+  // 還握著的部位仍然算到今天 —— 錢還在裡面。
+  const open = lots([
+    { id: 1, date: '2024-09-16', amount: -10000, shares: 100, twd: -10000, kind: 'trade' },
+  ], 150);
+  const holding = calculateStockMetrics(open, 1, '2026-09-16');
+  assert.ok(holding.shares > 0);
+  assert.ok(Math.abs(holding.holdingYears - 730 / 365) < 1e-9);
+});
+
+test('賣光之後才入帳的股息不算進投資期間', () => {
+  // 期間看的是「錢投在裡面多久」，最後一筆賣出就結束了；
+  // 之後才到帳的股息只是尾款，不該把期間往後拉。XIRR 仍然吃它的日期。
+  const stock = lots([
+    { id: 1, date: '2025-01-01', amount: -10000, shares: 100, twd: -10000, kind: 'trade' },
+    { id: 2, date: '2025-07-01', amount: 11000, shares: -100, twd: 11000, kind: 'trade' },
+    { id: 3, date: '2025-09-01', amount: 300, shares: 0, twd: 300, kind: 'dividend' },
+  ], 0);
+  const metrics = calculateStockMetrics(stock, 1, '2026-09-16');
+  assert.equal(metrics.lastTradeDate, '2025-07-01');
+  assert.ok(Math.abs(metrics.holdingYears - 181 / 365) < 1e-9);
+});
+
 test('彙總的已實現與未實現逐檔相加', () => {
   const a = lots([{ id: 1, date: '2025-01-01', amount: -10000, shares: 100, twd: -10000, kind: 'trade' }], 150);
   const b = { ...lots([{ id: 2, date: '2025-01-01', amount: -5000, shares: 50, twd: -5000, kind: 'trade' }], 80), key: 'B', market: '美股', currency: 'USD' };

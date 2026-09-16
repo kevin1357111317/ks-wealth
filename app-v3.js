@@ -10,12 +10,12 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.29.9';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.29.9';
-import { calculateUsd } from './usd-core.js?v=V3.29.9';
-import { calculateGold } from './gold-core.js?v=V3.29.9';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.29.9';
-import { buildPersonalTrendRows } from './trend-core.js?v=V3.29.9';
+} from './financial-core.js?v=V3.29.10';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.29.10';
+import { calculateUsd } from './usd-core.js?v=V3.29.10';
+import { calculateGold } from './gold-core.js?v=V3.29.10';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.29.10';
+import { buildPersonalTrendRows } from './trend-core.js?v=V3.29.10';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -24,7 +24,7 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.29.9';
+} from './health-core.js?v=V3.29.10';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -1347,6 +1347,13 @@ const signedUsd = value => `${value >= 0 ? '+' : '−'}US$ ${formatNumber(Math.a
 function portfolioStockDetail(stock) {
   // 剛好是零就不上漲跌色，紅綠留給真的有賺賠的時候。
   const tone = portfolioTone;
+  // 短線進出的部位用年當單位會全部擠成「0.00 年」，看不出是一天還是三個月；
+  // 不滿一年就改用天。
+  const holdingPeriodText = years => {
+    if (years === null || years === undefined) return '—';
+    const days = Math.round(years * 365);
+    return days < 365 ? `${formatNumber(days)} 天` : `${years.toFixed(2)} 年`;
+  };
   const pair = (aLabel, aValue, aTone, bLabel, bValue, bTone) =>
     `<div class="portfolioPair"><div><span>${aLabel}</span><b class="${aTone}">${aValue}</b></div><div><span>${bLabel}</span><b class="${bTone}">${bValue}</b></div></div>`;
   const rows = stock.transactions.slice().sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
@@ -1354,14 +1361,14 @@ function portfolioStockDetail(stock) {
   if (stock.currency === 'USD') return `<div class="portfolioStockDetail">
     ${pair('已實現損益', signedUsd(stock.realizedNative), tone(stock.realizedNative), '未實現損益', signedUsd(stock.unrealizedNative), tone(stock.unrealizedNative))}
     ${pair('累計股息', `US$ ${formatNumber(stock.dividendsNative)}`, '', `目前股價${live ? ' · 即時' : ''}`, `US$ ${formatNumber(stock.price)}`, '')}
-    ${pair('投資期間', stock.holdingYears === null ? '—' : `${stock.holdingYears.toFixed(2)} 年`, '', '持有股數', `${shareFormat(stock.shares)} 股`, '')}
+    ${pair('投資期間', holdingPeriodText(stock.holdingYears), '', '持有股數', `${shareFormat(stock.shares)} 股`, '')}
     <div class="sectionHead"><b>交易紀錄</b><span>${rows.length} 筆</span></div>
     <div class="portfolioTxList">${rows.length ? rows.map(tx => transactionRow(tx, stock)).join('') : '<div class="portfolioEmpty">還沒有交易。</div>'}</div>
   </div>`;
   return `<div class="portfolioStockDetail">
     ${pair('已實現損益', signedMoney(stock.realizedTwd), tone(stock.realizedTwd), '未實現損益', signedMoney(stock.unrealizedTwd), tone(stock.unrealizedTwd))}
     ${pair('累計股息', `NT$ ${formatNumber(stock.dividendsTwd)}`, '', `目前股價${live ? ' · 即時' : ''}`, `${stock.currency === 'USD' ? 'US$' : 'NT$'} ${formatNumber(stock.price)}`, '')}
-    ${pair('投資期間', stock.holdingYears === null ? '—' : `${stock.holdingYears.toFixed(2)} 年`, '', '持有股數', `${shareFormat(stock.shares)} 股`, '')}
+    ${pair('投資期間', holdingPeriodText(stock.holdingYears), '', '持有股數', `${shareFormat(stock.shares)} 股`, '')}
     <div class="sectionHead"><b>交易紀錄</b><span>${rows.length} 筆</span></div>
     <div class="portfolioTxList">${rows.length ? rows.map(tx => transactionRow(tx, stock)).join('') : '<div class="portfolioEmpty">還沒有交易。</div>'}</div>
   </div>`;
