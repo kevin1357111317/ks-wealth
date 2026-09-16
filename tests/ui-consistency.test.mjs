@@ -109,6 +109,17 @@ test('健康報告是第四個底部分頁，不再佔用家庭頁第一屏', as
   assert.match(navIcons, /stroke-width="1\.9"/);
 });
 
+test('股票分析先切畫面，台帳在背景預載且不重複重繪', () => {
+  assert.match(app, /scheduleLedgerWarmup\(\);/);
+  assert.match(app, /requestIdleCallback' in window/);
+  const start = app.indexOf('function openAnalysis(screen, ownerScope)');
+  const end = app.indexOf('\n}\n\n// 手勢', start) + 2;
+  const handler = app.slice(start, end);
+  assert.match(handler, /const needsStockLedger = screen === 'stocks' && !ledgerLoaded;/);
+  assert.match(handler, /render\(\);\n\s*window\.scrollTo\(0, 0\);\n\s*if \(needsStockLedger\)/);
+  assert.doesNotMatch(handler, /if \(screen === 'stocks'\) void ensureLedger/);
+});
+
 test('切換不同底部分頁會回到新頁面頂端', () => {
   const start = app.indexOf("root.querySelector('.bottomNav').onclick");
   const end = app.indexOf('\n  };\n}', start);
