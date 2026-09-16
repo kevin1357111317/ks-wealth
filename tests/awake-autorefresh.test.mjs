@@ -22,9 +22,11 @@ for (const specifier of [process.env.PLAYWRIGHT_PATH, 'playwright'].filter(Boole
 }
 
 const REPO = fileURLToPath(new URL('..', import.meta.url));
-const BROWSER = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const CODEX_BROWSER = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const BROWSER = process.env.PLAYWRIGHT_CHROMIUM_PATH
+  || (existsSync(CODEX_BROWSER) ? CODEX_BROWSER : chromium?.executablePath());
 const skip = !chromium ? 'playwright 未安裝'
-  : !existsSync(BROWSER) ? '找不到 Chromium'
+  : !BROWSER || !existsSync(BROWSER) ? '找不到 Chromium'
   : false;
 const TW_TICK = 5 * 1000;
 const FULL_TICK = 60 * 1000;
@@ -91,15 +93,18 @@ Object.defineProperty(navigator, 'wakeLock', { configurable: true, value: {
   const counts = () => page.evaluate(() => globalThis.__scopes ?? { tw: 0, all: 0 });
   const lock = () => page.evaluate(() => globalThis.__wakeLock);
 
-  await t.test('開 App 不載台帳', async () => {
-    // 台帳 92 KB，只有股票分析頁與編輯表單的交易紀錄要用。資產列的股數與市值是
-    // 觸發器算好存在 financial_items 的，開 App 根本不需要它。
-    assert.equal(await page.evaluate(() => globalThis.__bootstraps ?? 0), 0);
-    // 入口按鈕在個人頁上，不能因為台帳還沒載就不顯示
+  await t.test('首頁不等待台帳，閒置預載最多一次', async () => {
+    // 首屏先完成，台帳只在閒置時間背景預載。這兼顧股票分析一點就開，
+    // 也不能讓切換個人頁或重繪重複抓 92 KB。
+    await page.clock.runFor(1500);
+    await page.waitForTimeout(50);
+    const warmed = await page.evaluate(() => globalThis.__bootstraps ?? 0);
+    assert.equal(warmed, 1, `閒置時間應完成一次預載，實際 ${warmed} 次`);
     await page.click('[data-tab="husband"]');
     await page.clock.runFor(500);
-    assert.ok(await page.isVisible('[data-open-portfolio]'), '按鈕還是要在，點了才去載');
-    assert.equal(await page.evaluate(() => globalThis.__bootstraps ?? 0), 0, '光是切到個人頁也不該載');
+    assert.ok(await page.isVisible('[data-open-portfolio]'), '台帳預載與否都要先顯示入口');
+    assert.equal(await page.evaluate(() => globalThis.__bootstraps ?? 0), warmed,
+      '切到個人頁不能再啟動第二次預載');
   });
 
   await t.test('只叫 refresh-tw-quotes 這一支', async () => {

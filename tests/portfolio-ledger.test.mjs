@@ -25,9 +25,11 @@ for (const specifier of [process.env.PLAYWRIGHT_PATH, 'playwright'].filter(Boole
 }
 
 const REPO = fileURLToPath(new URL('..', import.meta.url));
-const BROWSER = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const CODEX_BROWSER = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const BROWSER = process.env.PLAYWRIGHT_CHROMIUM_PATH
+  || (existsSync(CODEX_BROWSER) ? CODEX_BROWSER : chromium?.executablePath());
 const skip = !chromium ? 'playwright 未安裝'
-  : !existsSync(BROWSER) ? '找不到 Chromium'
+  : !BROWSER || !existsSync(BROWSER) ? '找不到 Chromium'
   : false;
 
 test('新增財務項目選台股就能記交易，而且不會重複記帳', { skip }, async t => {
@@ -457,7 +459,10 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     await page.click('[data-portfolio-market="美股"]');
     await page.waitForSelector('[data-portfolio-stock]');
     const summary = await page.textContent('.portfolioSummary');
-    for (const label of ['目前美股市值', '累計淨投入', '累計損益', '年化報酬率', '依 USD 現金流計算']) {
+    // #120 把美股頁的口徑統一成 USD 之後，市值那格就叫「目前市值」——
+    // 只有它是換算成台幣的，標題不再重複講一次「美股」。
+    // ui-consistency.test.mjs 明文禁止 app-v3.js 出現「目前美股市值」，這裡沒跟上就會兩支互相打架。
+    for (const label of ['目前市值', '累計淨投入', '累計損益', '年化報酬率', '依 USD 現金流計算']) {
       assert.match(summary, new RegExp(label));
     }
     assert.match(summary, /NT\$/);
@@ -465,12 +470,15 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     assert.doesNotMatch(summary, /台幣總損益|匯率影響|台幣年化/);
     const sort = page.locator('[data-portfolio-sort]');
     assert.equal(await sort.count(), 1);
-    assert.deepEqual(await sort.locator('option').allTextContents(), [
-      '市值｜高到低', '市值｜低到高', '年化｜高到低', '年化｜低到高',
-      '報酬率｜高到低', '報酬率｜低到高', '損益｜高到低', '損益｜低到高',
-    ]);
-    await sort.selectOption('xirr-desc');
-    assert.equal(await sort.inputValue(), 'xirr-desc');
+    // V3.27.8 起排序拆成「依據」下拉 + 雙向方向鈕，八個組合選項不再存在；
+    // 同時拿掉總報酬率，只留市值／年化報酬率／損益。
+    assert.deepEqual(await sort.locator('option').allTextContents(), ['市值', '年化報酬率', '損益']);
+    await sort.selectOption('xirr');
+    assert.equal(await sort.inputValue(), 'xirr');
+    const direction = page.locator('[data-sort-direction]');
+    assert.equal(await direction.getAttribute('data-sort-direction'), 'desc');
+    await direction.click();
+    assert.equal(await page.locator('[data-sort-direction]').getAttribute('data-sort-direction'), 'asc');
 
     const meta = await page.textContent('.portfolioStockMeta');
     assert.match(meta, /累計損益/);

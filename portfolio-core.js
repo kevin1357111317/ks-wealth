@@ -165,6 +165,12 @@ export function calculateStockMetrics(stock, fxRate, today = localIsoDate()) {
   const nativeCashflows = (stock.transactions ?? []).map(tx => ({ date: tx.date, amount: number(tx.amount) }));
   const netInvestedTwd = -cashflows.reduce((sum, flow) => sum + flow.amount, 0);
   const netInvestedNative = -nativeCashflows.reduce((sum, flow) => sum + flow.amount, 0);
+  const purchaseCostTwd = (stock.transactions ?? [])
+    .filter(tx => tx.kind !== 'dividend' && number(tx.shares) > EPSILON)
+    .reduce((sum, tx) => sum + Math.max(0, -number(tx.twd)), 0);
+  const purchaseCostNative = (stock.transactions ?? [])
+    .filter(tx => tx.kind !== 'dividend' && number(tx.shares) > EPSILON)
+    .reduce((sum, tx) => sum + Math.max(0, -number(tx.amount)), 0);
   const dividendsTwd = (stock.transactions ?? []).filter(tx => tx.kind === 'dividend')
     .reduce((sum, tx) => sum + number(tx.twd), 0);
   const dividendsNative = (stock.transactions ?? []).filter(tx => tx.kind === 'dividend')
@@ -175,10 +181,16 @@ export function calculateStockMetrics(stock, fxRate, today = localIsoDate()) {
   const { realized: realizedNative, remainingCost: remainingCostNative } = splitRealizedBy(stock, 'amount');
   const profitTwd = currentValueTwd - netInvestedTwd;
   const profitNative = currentValueNative - netInvestedNative;
+  // 淨投入仍是畫面上的現金流口徑。部位全部出清後，賣出收入可能讓淨投入
+  // 變成 0 或負數；這時不能讓報酬率消失，改以歷史買進成本當分母。
+  // 尚有正淨投入的既有部位維持原本定義，避免改寫已上線數字。
+  const returnBaseTwd = netInvestedTwd > EPSILON ? netInvestedTwd : purchaseCostTwd;
+  const returnBaseNative = netInvestedNative > EPSILON ? netInvestedNative : purchaseCostNative;
   const stockProfitTwd = stock.currency === 'USD' ? profitNative * number(fxRate) : profitNative;
   return {
     ...stock, shares, price, currentValueNative, currentValueTwd,
-    netInvestedTwd, netInvestedNative, dividendsTwd, dividendsNative,
+    netInvestedTwd, netInvestedNative, purchaseCostTwd, purchaseCostNative,
+    dividendsTwd, dividendsNative,
     profitTwd, profitNative, stockProfitTwd, fxImpactTwd: profitTwd - stockProfitTwd,
     realizedTwd, realizedNative,
     unrealizedTwd: currentValueTwd - remainingCostTwd,
@@ -186,8 +198,8 @@ export function calculateStockMetrics(stock, fxRate, today = localIsoDate()) {
     remainingCostTwd, remainingCostNative,
     firstTradeDate: firstTradeDate(stock),
     holdingYears: holdingYears(stock, today),
-    returnRate: netInvestedTwd > EPSILON ? profitTwd / netInvestedTwd : null,
-    nativeReturnRate: netInvestedNative > EPSILON ? profitNative / netInvestedNative : null,
+    returnRate: returnBaseTwd > EPSILON ? profitTwd / returnBaseTwd : null,
+    nativeReturnRate: returnBaseNative > EPSILON ? profitNative / returnBaseNative : null,
     xirr: xirr(cashflows),
     nativeXirr: xirr(nativeCashflows),
   };
@@ -201,6 +213,8 @@ export function calculatePortfolio(stocks, fxRate, today = localIsoDate()) {
     const totals = rows.reduce((result, row) => ({
       currentValueTwd: result.currentValueTwd + row.currentValueTwd,
       netInvestedTwd: result.netInvestedTwd + row.netInvestedTwd,
+      purchaseCostTwd: result.purchaseCostTwd + row.purchaseCostTwd,
+      purchaseCostNative: result.purchaseCostNative + row.purchaseCostNative,
       dividendsTwd: result.dividendsTwd + row.dividendsTwd,
       stockProfitTwd: result.stockProfitTwd + row.stockProfitTwd,
       fxImpactTwd: result.fxImpactTwd + row.fxImpactTwd,
@@ -208,7 +222,7 @@ export function calculatePortfolio(stocks, fxRate, today = localIsoDate()) {
       unrealizedTwd: result.unrealizedTwd + row.unrealizedTwd,
       transactions: result.transactions + row.transactions.length,
       holdings: result.holdings + (row.shares > EPSILON ? 1 : 0),
-    }), { currentValueTwd: 0, netInvestedTwd: 0, dividendsTwd: 0, stockProfitTwd: 0, fxImpactTwd: 0, realizedTwd: 0, unrealizedTwd: 0, transactions: 0, holdings: 0 });
+    }), { currentValueTwd: 0, netInvestedTwd: 0, purchaseCostTwd: 0, purchaseCostNative: 0, dividendsTwd: 0, stockProfitTwd: 0, fxImpactTwd: 0, realizedTwd: 0, unrealizedTwd: 0, transactions: 0, holdings: 0 });
     const cashflows = rows.flatMap(row => row.transactions.map(tx => ({ date: tx.date, amount: number(tx.twd) })));
     const nativeCashflows = nativeCurrency
       ? rows.flatMap(row => row.transactions.map(tx => ({ date: tx.date, amount: number(tx.amount) })))
@@ -220,13 +234,18 @@ export function calculatePortfolio(stocks, fxRate, today = localIsoDate()) {
     const dividendsNative = nativeCurrency
       ? rows.reduce((sum, row) => sum + row.dividendsNative, 0) : null;
     const profitNative = nativeCurrency ? currentValueNative - netInvestedNative : null;
+    const returnBaseTwd = totals.netInvestedTwd > EPSILON
+      ? totals.netInvestedTwd : totals.purchaseCostTwd;
+    const returnBaseNative = nativeCurrency
+      ? (netInvestedNative > EPSILON ? netInvestedNative : totals.purchaseCostNative)
+      : null;
     if (totals.currentValueTwd > 0) cashflows.push({ date: today, amount: totals.currentValueTwd });
     if (nativeCurrency && currentValueNative > 0) nativeCashflows.push({ date: today, amount: currentValueNative });
     return {
       ...totals, nativeCurrency, currentValueNative, netInvestedNative, dividendsNative, profitNative,
       profitTwd: totals.currentValueTwd - totals.netInvestedTwd,
-      nativeReturnRate: nativeCurrency && netInvestedNative > EPSILON ? profitNative / netInvestedNative : null,
-      returnRate: totals.netInvestedTwd > EPSILON ? (totals.currentValueTwd - totals.netInvestedTwd) / totals.netInvestedTwd : null,
+      nativeReturnRate: nativeCurrency && returnBaseNative > EPSILON ? profitNative / returnBaseNative : null,
+      returnRate: returnBaseTwd > EPSILON ? (totals.currentValueTwd - totals.netInvestedTwd) / returnBaseTwd : null,
       xirr: xirr(cashflows),
       nativeXirr: nativeCurrency ? xirr(nativeCashflows) : null,
     };
@@ -243,7 +262,6 @@ export function calculatePortfolio(stocks, fxRate, today = localIsoDate()) {
 export function sortPortfolioPositions(rows, { criterion = 'marketValue', direction = 'desc', currency = 'TWD' } = {}) {
   const valueOf = stock => {
     if (criterion === 'profit') return currency === 'USD' ? stock.profitNative : stock.profitTwd;
-    if (criterion === 'return') return currency === 'USD' ? stock.nativeReturnRate : stock.returnRate;
     if (criterion === 'xirr') return currency === 'USD' ? stock.nativeXirr : stock.xirr;
     return stock.currentValueTwd;
   };
