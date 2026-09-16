@@ -414,6 +414,8 @@ async function resolveMembership() {
   void applyDueLoanPayments();
   void refreshQuotes({ reason: 'startup' });
   startQuoteAutoRefresh();
+  // 首屏已經顯示後，趁瀏覽器空閒先把股票台帳載好；使用者點股票分析時就能直接進內容。
+  scheduleLedgerWarmup();
 }
 
 // ── 螢幕恆亮與自動更新 ──────────────────────────────────────────────────────
@@ -514,6 +516,7 @@ document.addEventListener('visibilitychange', () => {
       clearRealtime();
       subscribeRealtime();
     }
+    scheduleLedgerWarmup();
   }
   // 螢幕關著的那段時間計時器是停的，回來時先補一次。
   if (session && member && Date.now() - quoteLastAt >= QUOTE_FULL_INTERVAL_MS) {
@@ -637,6 +640,21 @@ async function ensureLedger() {
     return true;
   })().catch(() => false).finally(() => { ledgerFlight = null; });
   return ledgerFlight;
+}
+
+let ledgerWarmupScheduled = false;
+function scheduleLedgerWarmup() {
+  if (ledgerLoaded || ledgerFlight || ledgerWarmupScheduled) return;
+  ledgerWarmupScheduled = true;
+  const warm = () => {
+    ledgerWarmupScheduled = false;
+    if (!session || !member || lifecycle !== 'ready' || document.visibilityState !== 'visible') return;
+    void ensureLedger();
+  };
+  // Safari 支援 requestIdleCallback 時等主畫面完成再做；舊版 WebKit 用短計時器退化，
+  // 仍先讓目前這一幀完成，避免登入首頁跟台帳計算互相搶主執行緒。
+  if ('requestIdleCallback' in window) window.requestIdleCallback(warm, { timeout: 1200 });
+  else window.setTimeout(warm, 250);
 }
 
 async function performDataLoad({ blocking = false } = {}) {
@@ -1828,8 +1846,8 @@ function firstLoanTypeWithRows(ownerScope) {
 }
 
 function openAnalysis(screen, ownerScope) {
-  if (screen === 'stocks') void ensureLedger().then(ok => { if (ok && analysisScreen === 'stocks') render(); });
-  if (screen === 'loans') void ensureLoanSchedule().then(ok => { if (ok && analysisScreen === 'loans') render(); });
+  const needsStockLedger = screen === 'stocks' && !ledgerLoaded;
+  const needsLoanSchedule = screen === 'loans' && !loanScheduleLoaded;
   expandedLoan = null;
   if (screen === 'loans') loanTypeFilter = firstLoanTypeWithRows(ownerScope);
   analysisOwner = ownerScope;
@@ -1838,8 +1856,19 @@ function openAnalysis(screen, ownerScope) {
   analysisScreen = screen;
   window.history.pushState({ ks: 'analysis' }, '');
   analysisPushed = true;
+  // 先切換畫面並回頂部，網路與計算放到下一步；點擊當下不再被台帳載入擋住。
   render();
   window.scrollTo(0, 0);
+  if (needsStockLedger) {
+    void ensureLedger().then(ok => {
+      if (ok && analysisScreen === 'stocks' && analysisOwner === ownerScope) render();
+    });
+  }
+  if (needsLoanSchedule) {
+    void ensureLoanSchedule().then(ok => {
+      if (ok && analysisScreen === 'loans' && analysisOwner === ownerScope) render();
+    });
+  }
 }
 
 // 手勢、返回鍵、以及底部導覽切分頁都走這裡收回分析畫面。
