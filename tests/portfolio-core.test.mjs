@@ -167,7 +167,7 @@ test('分析依結算幣別分組，AMSC 類 TWD 美股歸到台股頁', () => {
   assert.ok(Number.isFinite(result.us.nativeXirr));
 });
 
-test('股票可依市值、損益、報酬率與年化排序，空值永遠排最後', () => {
+test('股票可依市值、損益與年化排序，空值永遠排最後', () => {
   const rows = [
     { display: 'A', currentValueTwd: 100, profitNative: 5, nativeReturnRate: 0.05, nativeXirr: 0.1 },
     { display: 'B', currentValueTwd: 300, profitNative: 20, nativeReturnRate: 0.2, nativeXirr: null },
@@ -175,6 +175,5 @@ test('股票可依市值、損益、報酬率與年化排序，空值永遠排�
   ];
   assert.deepEqual(sortPortfolioPositions(rows, { criterion: 'marketValue', direction: 'desc' }).map(x => x.display), ['B', 'C', 'A']);
   assert.deepEqual(sortPortfolioPositions(rows, { criterion: 'profit', direction: 'asc', currency: 'USD' }).map(x => x.display), ['C', 'A', 'B']);
-  assert.deepEqual(sortPortfolioPositions(rows, { criterion: 'return', direction: 'desc', currency: 'USD' }).map(x => x.display), ['B', 'A', 'C']);
   assert.deepEqual(sortPortfolioPositions(rows, { criterion: 'xirr', direction: 'desc', currency: 'USD' }).map(x => x.display), ['C', 'A', 'B']);
 });

@@ -305,10 +305,11 @@ FIFO 與加權平均會給出不同答案的案例，改回平均成本就會被
 
 - 目前市值＝目前美元市值 × 當下 USD/TWD，只在這一欄顯示台幣，方便併入家庭資產
 - 累計淨投入、累計損益、報酬率、XIRR、股息、已實現與未實現損益全部使用 USD 現金流
+- 報酬率平常沿用「損益 ÷ 累計淨投入」；全部出清後淨投入可能為 0 或負數，改以歷史買進成本為分母，避免已出清獲利顯示成無法計算
 - 個股交易紀錄沿用交易原幣，買賣與股息均顯示 USD
 - 股票分析依結算幣別分組：USD 計價標的進美股頁，TWD 計價標的進台股頁；因此 AMSC 雖是美國市場股票，仍按實際台幣結算歸入台股頁
 - `全部` 分頁與家庭資產仍保留台幣口徑，才能跨台股、美股加總；這些內部計算不出現在美股頁
-- 清單可依市值、累計損益、報酬率、年化報酬率做高低排序；沒有可計算數值的標的一律排最後
+- 清單可依市值、累計損益、年化報酬率做高低排序；沒有可計算數值的標的一律排最後
 
 這是呈現口徑的修正，不改交易資料、資產市值或其他頁面的計算定義。
 
@@ -671,12 +672,13 @@ Fugle 的每分鐘上限沒有查到明文；4 檔 × 每 5 秒 = 48 次／分�
 `tests/awake-autorefresh.test.mjs` 會數 `klfan_bootstrap` 被叫了幾次：三輪完整報價更新之後
 必須還是 0 次。
 
-### 台帳是延遲載入的
+### 台帳先開畫面、閒置預載
 
-開 App **完全不載台帳**。資產列的股數與市值是 `sync_klfan_financial_item()` 觸發器算好存在
-`financial_items` 的，那 92 KB 只有兩個地方要用：
+開 App 的首屏**不等待台帳**。資產列的股數與市值是 `sync_klfan_financial_item()` 觸發器算好存在
+`financial_items` 的；首屏完成後才用 `requestIdleCallback`（不支援時退回短延遲 timer）在背景預載
+92 KB 台帳，讓股票分析一點就能進去：
 
-- 股票分析頁 → `openAnalysis('stocks')` 時 `ensureLedger()`，載好再 render 一次
+- 股票分析頁 → 先切進畫面；若閒置預載尚未完成，再由 `ensureLedger()` 接手，載好後只補 render 一次
 - 編輯表單的交易紀錄 → `editItem()` 在 `item.portfolio_stock_key` 有值時才等
 
 **`saveLedgerStock()` 一定要先 `await ensureLedger()`**：它要靠 `portfolioStocks` 比對有沒有
@@ -684,8 +686,8 @@ Fugle 的每分鐘上限沒有查到明文；4 檔 × 每 5 秒 = 48 次／分�
 
 `ensureLedger()` 是單飛行的，載過就不再載；`loadData()` 只有在**已經載過**的情況下才重載它。
 
-`tests/awake-autorefresh.test.mjs` 守住「開 App 跟切到個人頁都不該叫 `klfan_bootstrap`，
-但入口按鈕還是要在」。
+`tests/awake-autorefresh.test.mjs` 守住「首屏不等待台帳、背景最多預載一次、切到個人頁與行情更新
+不會重複叫 `klfan_bootstrap`，而且入口按鈕先顯示」。
 
 ## 行情額度與 klfan_quotes
 

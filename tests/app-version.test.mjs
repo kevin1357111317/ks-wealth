@@ -23,6 +23,23 @@ test('版號三個地方要一致', async () => {
   assert.equal(cacheBust, source, `index.html 的 ?v= 是 ${cacheBust}，app-version.js 是 ${source}`);
 });
 
+test('正式 CSS、模組與內部 import 的快取字串跟版號一致', async () => {
+  const [versionScript, html, app] = await Promise.all([
+    read('app-version.js'), read('index.html'), read('app-v3.js'),
+  ]);
+  const version = versionScript.match(/const APP_VERSION = '([^']+)'/)?.[1];
+  const shellAssets = [
+    ...html.matchAll(/(?:href|src)="\/(?:[^"?]+\.(?:css|js))\?v=([^"&]+)"/g),
+  ].map(match => match[1]);
+  const moduleImports = [...app.matchAll(/from '\.\/[^'?]+\.js\?v=([^']+)'/g)]
+    .map(match => match[1]);
+
+  assert.ok(shellAssets.length > 0, 'index.html 找不到帶版號的正式資產');
+  assert.ok(moduleImports.length > 0, 'app-v3.js 找不到帶版號的內部模組');
+  assert.deepEqual([...new Set([...shellAssets, ...moduleImports])], [version],
+    '正式資產的 cache-bust 不可各自停在舊版');
+});
+
 test('正式版號只允許 legacy V3P26 或 SemVer', async () => {
   const source = (await read('app-version.js')).match(/const APP_VERSION = '([^']+)'/)?.[1];
   const legacyBaseline = source === 'V3P26';

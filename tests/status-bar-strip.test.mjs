@@ -21,9 +21,11 @@ for (const specifier of [process.env.PLAYWRIGHT_PATH, 'playwright'].filter(Boole
 }
 
 const REPO = fileURLToPath(new URL('..', import.meta.url));
-const BROWSER = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const CODEX_BROWSER = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const BROWSER = process.env.PLAYWRIGHT_CHROMIUM_PATH
+  || (existsSync(CODEX_BROWSER) ? CODEX_BROWSER : chromium?.executablePath());
 const skip = !chromium ? 'playwright 未安裝'
-  : !existsSync(BROWSER) ? '找不到 Chromium'
+  : !BROWSER || !existsSync(BROWSER) ? '找不到 Chromium'
   : false;
 
 test('狀態列那條顏色跟畫面接得起來', { skip }, async t => {

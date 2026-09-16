@@ -10,12 +10,12 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=hide-sold-out-1';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.27.1';
-import { calculateUsd } from './usd-core.js?v=usd-1';
-import { calculateGold } from './gold-core.js?v=gold-trim-1';
-import { calculateLoanCashflow } from './loan-core.js?v=cashflow-1';
-import { buildPersonalTrendRows } from './trend-core.js?v=V3P25';
+} from './financial-core.js?v=V3.29.9';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.29.9';
+import { calculateUsd } from './usd-core.js?v=V3.29.9';
+import { calculateGold } from './gold-core.js?v=V3.29.9';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.29.9';
+import { buildPersonalTrendRows } from './trend-core.js?v=V3.29.9';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -24,7 +24,7 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3P17';
+} from './health-core.js?v=V3.29.9';
 
 // App / Supabase -------------------------------------------------------------
 
