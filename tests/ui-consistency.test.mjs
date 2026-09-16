@@ -109,6 +109,16 @@ test('健康報告是第四個底部分頁，不再佔用家庭頁第一屏', as
   assert.match(navIcons, /stroke-width="1\.9"/);
 });
 
+test('切換不同底部分頁會回到新頁面頂端', () => {
+  const start = app.indexOf("root.querySelector('.bottomNav').onclick");
+  const end = app.indexOf('\n  };\n}', start);
+  const handler = app.slice(start, end);
+  assert.match(handler, /const nextTab = button\.dataset\.tab;/);
+  assert.match(handler, /if \(nextTab === tab && !analysisScreen\) return;/);
+  assert.match(handler, /tab = nextTab;/);
+  assert.match(handler, /render\(\);\n\s*window\.scrollTo\(0, 0\);/);
+});
+
 test('登入後先看自己的資產，不是家庭總覽', async () => {
   // household_members 沒有 user 對 owner_scope 的欄位，只能用 role 推：
   // 建立家庭的是老公，用邀請碼加入的是老婆。
