@@ -10,12 +10,12 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.32.0';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.32.0';
-import { calculateUsd } from './usd-core.js?v=V3.32.0';
-import { calculateGold } from './gold-core.js?v=V3.32.0';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.32.0';
-import { buildPersonalTrendRows } from './trend-core.js?v=V3.32.0';
+} from './financial-core.js?v=V3.33.0';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.33.0';
+import { calculateUsd } from './usd-core.js?v=V3.33.0';
+import { calculateGold } from './gold-core.js?v=V3.33.0';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.33.0';
+import { buildPersonalTrendRows } from './trend-core.js?v=V3.33.0';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -24,7 +24,7 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.32.0';
+} from './health-core.js?v=V3.33.0';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -152,6 +152,7 @@ let portfolioSort = 'marketValue-desc';
 let portfolioPerformance = new Map();
 let portfolioPerformanceFlights = new Map();
 let portfolioPerformancePeriod = 'ytd';
+const portfolioPerformanceBenchmark = { all: 'mixed', tw: '0050', us: 'VOO' };
 let openGroups = new Set();
 let trendMode = 'value';
 let currentTrendSeries = [];
@@ -316,7 +317,7 @@ function showPortfolioPerformancePoint(event, svg) {
   const lowestY = Math.max(point.portfolioY, benchmarkY);
   const tooltipY = highestY > 98 ? highestY - 86 : Math.min(112, lowestY + 12);
   const excess = benchmarkReady ? point.portfolio - point.benchmark : null;
-  const excessCopy = excess === null ? '大盤資料缺漏' : `${excess >= 0 ? '領先' : '落後'} ${Math.abs(excess).toFixed(2)}`;
+  const excessCopy = excess === null ? '大盤資料缺漏' : `${excess >= 0 ? '領先' : '落後'} ${Math.abs(excess).toFixed(2)}pp`;
 
   selection.removeAttribute('hidden');
   selection.querySelector('[data-portfolio-performance-guide]').setAttribute('x1', point.chartX);
@@ -1422,26 +1423,31 @@ function portfolioSummaryCards(bucket, market) {
   if (market === '美股') {
     const nativeProfitTone = portfolioTone(bucket.profitNative);
     const nativeXirrTone = portfolioTone(bucket.nativeXirr);
-    return `<div class="portfolioSummary"><div class="portfolioMetric"><span>目前市值</span><b>NT$ ${formatNumber(bucket.currentValueTwd)}</b><small>以目前匯率換算 · ${bucket.holdings} 檔</small></div><div class="portfolioMetric"><span>累計淨投入</span><b>US$ ${formatNumber(bucket.netInvestedNative)}</b><small>買進－賣出－股息</small></div><div class="portfolioMetric"><span>累計損益</span><b class="${nativeProfitTone}">${signedUsd(bucket.profitNative)}</b><small>${formatPercent(bucket.nativeReturnRate)}</small></div><div class="portfolioMetric"><span>年化報酬率</span><b class="${nativeXirrTone}">${formatPercent(bucket.nativeXirr)}</b><small>依 USD 現金流計算</small></div></div>`;
+    return `<div class="portfolioSummary"><div class="portfolioMetric"><span>目前市值</span><b>NT$ ${formatNumber(bucket.currentValueTwd)}</b><small>以目前匯率換算 · ${bucket.holdings} 檔</small></div><div class="portfolioMetric"><span>累計淨投入</span><b>US$ ${formatNumber(bucket.netInvestedNative)}</b><small>買進－賣出－股息</small></div><div class="portfolioMetric"><span>累計損益</span><b class="${nativeProfitTone}">${signedUsd(bucket.profitNative)}</b><small>${formatPercent(bucket.nativeReturnRate)}</small></div><div class="portfolioMetric"><span>XIRR 年化報酬</span><b class="${nativeXirrTone}">${formatPercent(bucket.nativeXirr)}</b><small>考慮實際投入金額與時間 · USD</small></div></div>`;
   }
   const profitLabel = market === 'all' ? '台幣綜合損益' : '累計損益';
-  const xirrLabel = market === 'all' ? '台幣綜合年化' : '年化報酬率';
   const profitHint = market === 'all' ? `${formatPercent(bucket.returnRate)} · 美股含匯率` : formatPercent(bucket.returnRate);
-  return `<div class="portfolioSummary"><div class="portfolioMetric"><span>目前市值</span><b>NT$ ${formatNumber(bucket.currentValueTwd)}</b><small>${bucket.holdings} 檔持有中</small></div><div class="portfolioMetric"><span>累計淨投入</span><b>NT$ ${formatNumber(bucket.netInvestedTwd)}</b><small>買進－賣出－股息</small></div><div class="portfolioMetric"><span>${profitLabel}</span><b class="${profitTone}">NT$ ${formatNumber(bucket.profitTwd)}</b><small>${profitHint}</small></div><div class="portfolioMetric"><span>${xirrLabel}</span><b class="${xirrTone}">${formatPercent(bucket.xirr)}</b><small>計入每筆買賣的時點</small></div></div>`;
+  return `<div class="portfolioSummary"><div class="portfolioMetric"><span>目前市值</span><b>NT$ ${formatNumber(bucket.currentValueTwd)}</b><small>${bucket.holdings} 檔持有中</small></div><div class="portfolioMetric"><span>累計淨投入</span><b>NT$ ${formatNumber(bucket.netInvestedTwd)}</b><small>買進－賣出－股息</small></div><div class="portfolioMetric"><span>${profitLabel}</span><b class="${profitTone}">NT$ ${formatNumber(bucket.profitTwd)}</b><small>${profitHint}</small></div><div class="portfolioMetric"><span>XIRR 年化報酬</span><b class="${xirrTone}">${formatPercent(bucket.xirr)}</b><small>考慮實際投入金額與時間${market === 'all' ? ' · 美股含匯率' : ''}</small></div></div>`;
 }
 
 function portfolioPerformanceCard() {
   currentPortfolioPerformanceSeries = [];
   const data = portfolioPerformance.get(analysisOwner);
-  if (!data) return `<section class="portfolioPerformance"><div class="portfolioPerformanceHead"><div><span>投資績效趨勢</span><h2>我的投資組合 vs 大盤</h2></div><b>起始＝100</b></div><div class="portfolioPerformanceLoading"><i></i><span>正在整理可比較的每日績效…</span></div></section>`;
+  if (!data) return `<section class="portfolioPerformance"><div class="portfolioPerformanceHead"><div><span>TWR 績效趨勢</span><h2>我的投資組合 vs 大盤</h2></div><b>起始＝100</b></div><div class="portfolioPerformanceLoading"><i></i><span>正在整理可比較的每日績效…</span></div></section>`;
   const key = portfolioMarket === '台股' ? 'tw' : portfolioMarket === '美股' ? 'us' : 'all';
   const periodData = data.periods?.[portfolioPerformancePeriod] ?? data;
-  const rows = periodData[key] ?? [];
-  const benchmarkLabel = data.benchmarkLabels?.[key] ?? (key === 'tw' ? '0050' : key === 'us' ? 'VOO' : '混合大盤');
+  const benchmarkOptions = data.benchmarkOptions?.[key] ?? (key === 'tw' ? ['0050'] : key === 'us' ? ['VOO'] : ['mixed']);
+  if (!benchmarkOptions.includes(portfolioPerformanceBenchmark[key])) portfolioPerformanceBenchmark[key] = benchmarkOptions[0];
+  const benchmarkKey = portfolioPerformanceBenchmark[key];
+  const rows = periodData.benchmarks?.[key]?.[benchmarkKey] ?? periodData[key] ?? [];
+  const benchmarkLabel = data.benchmarkLabels?.[benchmarkKey] ?? (benchmarkKey === 'mixed' ? '0050＋VOO 動態混合' : benchmarkKey);
   const periodControls = `<div class="portfolioPerformancePeriods"><button data-performance-period="ytd" class="${portfolioPerformancePeriod === 'ytd' ? 'on' : ''}">今年以來</button><button data-performance-period="year" class="${portfolioPerformancePeriod === 'year' ? 'on' : ''}">近一年</button><button data-performance-period="all" class="${portfolioPerformancePeriod === 'all' ? 'on' : ''}">全部</button></div>`;
+  const benchmarkControl = benchmarkOptions.length > 1
+    ? `<label class="portfolioBenchmarkControl"><span>比較基準</span><select data-performance-benchmark aria-label="比較基準">${benchmarkOptions.map(value => `<option value="${escapeHtml(value)}" ${value === benchmarkKey ? 'selected' : ''}>${escapeHtml(data.benchmarkLabels?.[value] ?? value)}</option>`).join('')}</select></label>`
+    : `<div class="portfolioBenchmarkControl fixed"><span>比較基準</span><b>${escapeHtml(benchmarkLabel)}</b></div>`;
   if (rows.length < 2) {
     const copy = data.status === 'error' ? '績效資料暫時載入失敗，稍後重新進入再試。' : '每日績效從現在開始累積，有兩個以上交易日後就會顯示折線。';
-    return `<section class="portfolioPerformance"><div class="portfolioPerformanceHead"><div><span>投資績效趨勢</span><h2>我的投資組合 vs ${escapeHtml(benchmarkLabel)}</h2></div><b>起始＝100</b></div>${periodControls}<div class="portfolioPerformanceEmpty">${copy}</div></section>`;
+    return `<section class="portfolioPerformance"><div class="portfolioPerformanceHead"><div><span>TWR 績效趨勢</span><h2>我的投資組合 vs 大盤</h2></div><b>起始＝100</b></div>${periodControls}${benchmarkControl}<div class="portfolioPerformanceEmpty">${copy}</div></section>`;
   }
 
   const values = rows.flatMap(row => [row.portfolio, row.benchmark]).filter(Number.isFinite);
@@ -1482,7 +1488,7 @@ function portfolioPerformanceCard() {
   const period = `${chartDate(rows[0].date)}－${chartDate(last.date)}`;
   const coverageNote = data.coverage?.missing ? ` · ${formatNumber(data.coverage.missing)} 檔歷史行情缺漏` : '';
   const selection = `<rect class="portfolioPerformanceHit" x="82" y="8" width="572" height="192"/><g class="portfolioPerformanceSelection" data-portfolio-performance-selection hidden><line data-portfolio-performance-guide y1="12" y2="192"/><circle class="mine" data-portfolio-performance-mine r="7"/><circle class="benchmark" data-portfolio-performance-benchmark r="7"/><g class="portfolioPerformanceTooltip" data-portfolio-performance-tooltip><rect x="-140" y="0" width="280" height="76" rx="13"/><text class="date" data-portfolio-performance-date x="0" y="19" text-anchor="middle"></text><text class="values" data-portfolio-performance-values x="0" y="43" text-anchor="middle"></text><text class="excess" data-portfolio-performance-excess x="0" y="64" text-anchor="middle"></text></g></g>`;
-  return `<section class="portfolioPerformance"><div class="portfolioPerformanceHead"><div><span>投資績效趨勢</span><h2>我的投資組合 vs 大盤</h2></div><b>起始＝100</b></div>${periodControls}<div class="portfolioPerformanceStats"><div><span>我的報酬</span><b class="${portfolioTone(portfolioReturn)}">${signed(portfolioReturn)}</b></div><div><span>大盤報酬</span><b class="${portfolioTone(benchmarkReturn)}">${benchmarkReturn === null ? '—' : signed(benchmarkReturn)}</b></div><div><span>超額報酬</span><b class="${portfolioTone(excess)}">${excess === null ? '—' : signed(excess)}</b></div></div><div class="portfolioPerformanceLegend"><span class="mine"><i></i>我的投資組合</span><span class="market"><i></i>${escapeHtml(benchmarkLabel)}</span><small>${period} · 已排除入金與提款${coverageNote}</small></div><svg class="portfolioPerformanceChart" data-trend-chart data-trend-kind="portfolio" viewBox="0 0 680 238" role="img" aria-label="投資組合與${escapeHtml(benchmarkLabel)}累積報酬趨勢，點選或左右滑動可查看每日數值，起始為100"><g class="portfolioPerformanceAxis">${ticks}${dates}</g><path class="benchmark" d="${path('benchmark')}"/><path class="mine" d="${path('portfolio')}"/>${selection}</svg><p>採每日時間加權報酬；全部頁的美股包含匯率，混合大盤會依每日期初的台美股比重調整。</p></section>`;
+  return `<section class="portfolioPerformance"><div class="portfolioPerformanceHead"><div><span>TWR 績效趨勢</span><h2>我的投資組合 vs 大盤</h2></div><b>起始＝100</b></div>${periodControls}${benchmarkControl}<div class="portfolioPerformanceStats"><div><span>我的 TWR</span><b class="${portfolioTone(portfolioReturn)}">${signed(portfolioReturn)}</b></div><div><span>大盤 TWR</span><b class="${portfolioTone(benchmarkReturn)}">${benchmarkReturn === null ? '—' : signed(benchmarkReturn)}</b></div><div><span>超額報酬</span><b class="${portfolioTone(excess)}">${excess === null ? '—' : `${excess >= 0 ? '+' : ''}${excess.toFixed(2)}pp`}</b></div></div><div class="portfolioPerformanceLegend"><span class="mine"><i></i>我的投資組合</span><span class="market"><i></i>${escapeHtml(benchmarkLabel)}｜含息總報酬</span><small>${period} · 已排除入金與提款${coverageNote}</small></div><svg class="portfolioPerformanceChart" data-trend-chart data-trend-kind="portfolio" viewBox="0 0 680 238" role="img" aria-label="投資組合與${escapeHtml(benchmarkLabel)}累積TWR趨勢，點選或左右滑動可查看每日數值，起始為100"><g class="portfolioPerformanceAxis">${ticks}${dates}</g><path class="benchmark" d="${path('benchmark')}"/><path class="mine" d="${path('portfolio')}"/>${selection}</svg><p>採每日收盤計算TWR；持股股息依台帳計入，Benchmark使用股息再投入的含息總報酬。全部頁比較單一美股基準時包含匯率。</p></section>`;
 }
 
 const shareFormat = value => new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 6 }).format(value);
@@ -1525,9 +1531,9 @@ function portfolioStockCard(stock, expanded) {
   if (stock.currency === 'USD') {
     const nativeProfitTone = portfolioTone(stock.profitNative);
     const nativeXirrTone = portfolioTone(stock.nativeXirr);
-    return `<article class="portfolioStockCard ${expanded ? 'open' : ''}"><button class="portfolioStockSummary" data-portfolio-stock="${escapeHtml(stock.key)}"><div class="portfolioStockTop"><div><b>${escapeHtml(stock.display)}</b></div><div><b>NT$ ${formatNumber(stock.currentValueTwd)}</b></div></div><div class="portfolioStockMeta"><div><span>累計損益</span><b class="${nativeProfitTone}">${signedUsd(stock.profitNative)}</b></div><div><span>年化報酬率</span><b class="${nativeXirrTone}">${formatPercent(stock.nativeXirr)}</b></div></div></button>${expanded ? portfolioStockDetail(stock) : ''}</article>`;
+    return `<article class="portfolioStockCard ${expanded ? 'open' : ''}"><button class="portfolioStockSummary" data-portfolio-stock="${escapeHtml(stock.key)}"><div class="portfolioStockTop"><div><b>${escapeHtml(stock.display)}</b></div><div><b>NT$ ${formatNumber(stock.currentValueTwd)}</b></div></div><div class="portfolioStockMeta"><div><span>累計損益</span><b class="${nativeProfitTone}">${signedUsd(stock.profitNative)}</b></div><div><span>XIRR 年化</span><b class="${nativeXirrTone}">${formatPercent(stock.nativeXirr)}</b></div></div></button>${expanded ? portfolioStockDetail(stock) : ''}</article>`;
   }
-  return `<article class="portfolioStockCard ${expanded ? 'open' : ''}"><button class="portfolioStockSummary" data-portfolio-stock="${escapeHtml(stock.key)}"><div class="portfolioStockTop"><div><b>${escapeHtml(stock.display)}</b></div><div><b>NT$ ${formatNumber(stock.currentValueTwd)}</b></div></div><div class="portfolioStockMeta"><div><span>累計損益</span><b class="${profitTone}">NT$ ${formatNumber(stock.profitTwd)}</b></div><div><span>年化報酬率</span><b class="${xirrTone}">${formatPercent(stock.xirr)}</b></div></div></button>${expanded ? portfolioStockDetail(stock) : ''}</article>`;
+  return `<article class="portfolioStockCard ${expanded ? 'open' : ''}"><button class="portfolioStockSummary" data-portfolio-stock="${escapeHtml(stock.key)}"><div class="portfolioStockTop"><div><b>${escapeHtml(stock.display)}</b></div><div><b>NT$ ${formatNumber(stock.currentValueTwd)}</b></div></div><div class="portfolioStockMeta"><div><span>累計損益</span><b class="${profitTone}">NT$ ${formatNumber(stock.profitTwd)}</b></div><div><span>XIRR 年化</span><b class="${xirrTone}">${formatPercent(stock.xirr)}</b></div></div></button>${expanded ? portfolioStockDetail(stock) : ''}</article>`;
 }
 
 function portfolioListPage() {
@@ -1547,7 +1553,7 @@ function portfolioListPage() {
   // 之前八個「依據 + 方向」的組合全塞進一個 select，光是讀選項就佔掉半行寬度。
   // 總報酬率拿掉了：它跟年化報酬率在講同一件事，投入時間不同時年化才可比。
   const sortOptions = [
-    ['marketValue', '市值'], ['xirr', '年化報酬率'], ['profit', '損益'],
+    ['marketValue', '市值'], ['xirr', 'XIRR 年化'], ['profit', '損益'],
   ].map(([value, label]) => `<option value="${value}" ${sortCriterion === value ? 'selected' : ''}>${label}</option>`).join('');
   const ascending = sortDirection === 'asc';
   const directionLabel = ascending ? '低到高' : '高到低';
@@ -1556,6 +1562,12 @@ function portfolioListPage() {
   shell(`<div class="portfolioView"><div class="seg"><button data-portfolio-market="all" class="${portfolioMarket === 'all' ? 'on' : ''}">全部</button><button data-portfolio-market="台股" class="${portfolioMarket === '台股' ? 'on' : ''}">台股</button><button data-portfolio-market="美股" class="${portfolioMarket === '美股' ? 'on' : ''}">美股</button></div>${portfolioSummaryCards(bucket, portfolioMarket)}${portfolioPerformanceCard()}<div class="portfolioToolbar"><div class="portfolioFilters"><span class="portfolioCount">${rows.length} 檔標的</span><label class="portfolioExited"><input type="checkbox" data-show-exited ${portfolioShowExited ? 'checked' : ''}> 顯示已出清</label></div><div class="portfolioSort"><select data-portfolio-sort aria-label="排序依據">${sortOptions}</select><button type="button" class="portfolioSortDir" data-sort-direction="${sortDirection}" aria-label="切換排序方向，目前${directionLabel}" title="${directionLabel}">${sortArrow}</button></div></div><div class="portfolioList">${rows.length ? rows.map(stock => portfolioStockCard(stock, stock.key === expandedStock)).join('') : '<div class="portfolioEmpty">這個篩選條件目前沒有標的。</div>'}</div></div>`, `${ownerName(analysisOwner)}股票分析`);
   root.querySelectorAll('[data-portfolio-market]').forEach(button => { button.onclick = () => { portfolioMarket = button.dataset.portfolioMarket; render(); }; });
   root.querySelectorAll('[data-performance-period]').forEach(button => { button.onclick = () => { portfolioPerformancePeriod = button.dataset.performancePeriod; render(); }; });
+  const benchmarkSelect = root.querySelector('[data-performance-benchmark]');
+  if (benchmarkSelect) benchmarkSelect.onchange = event => {
+    const key = portfolioMarket === '台股' ? 'tw' : portfolioMarket === '美股' ? 'us' : 'all';
+    portfolioPerformanceBenchmark[key] = event.target.value;
+    render();
+  };
   root.querySelector('[data-portfolio-sort]').onchange = event => { portfolioSort = `${event.target.value}-${sortDirection}`; render(); };
   root.querySelector('[data-sort-direction]').onclick = () => { portfolioSort = `${sortCriterion}-${ascending ? 'desc' : 'asc'}`; render(); };
   root.querySelector('[data-show-exited]').onchange = event => { portfolioShowExited = event.target.checked; render(); };

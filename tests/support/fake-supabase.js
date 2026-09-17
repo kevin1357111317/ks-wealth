@@ -132,13 +132,28 @@ export function makeClient() {
     functions: { invoke: async (name, options) => {
       if (name === 'portfolio-performance') return { data: {
         status: 'ok',
-        benchmarkLabels: { all: '0050＋VOO 動態混合', tw: '0050', us: 'VOO' },
+        benchmarkLabels: { mixed: '0050＋VOO 動態混合', '0050': '0050', VOO: 'VOO', QQQ: 'QQQ', SOXX: 'SOXX' },
+        benchmarkOptions: { all: ['mixed', 'VOO', 'QQQ', 'SOXX'], tw: ['0050'], us: ['VOO', 'QQQ', 'SOXX'] },
         coverage: { requested: 6, missing: 0 },
         periods: {
           ytd: {
             all: [{ date: '2026-01-02', portfolio: 100, benchmark: 100 }, { date: '2026-09-16', portfolio: 103.25, benchmark: 101.1 }],
             tw: [{ date: '2026-01-02', portfolio: 100, benchmark: 100 }, { date: '2026-09-16', portfolio: 104, benchmark: 102 }],
             us: [{ date: '2026-01-02', portfolio: 100, benchmark: 100 }, { date: '2026-09-16', portfolio: 102, benchmark: 100.5 }],
+            benchmarks: {
+              all: {
+                mixed: [{ date: '2026-01-02', portfolio: 100, benchmark: 100 }, { date: '2026-09-16', portfolio: 103.25, benchmark: 101.1 }],
+                VOO: [{ date: '2026-01-02', portfolio: 100, benchmark: 100 }, { date: '2026-09-16', portfolio: 103.25, benchmark: 101.5 }],
+                QQQ: [{ date: '2026-01-02', portfolio: 100, benchmark: 100 }, { date: '2026-09-16', portfolio: 103.25, benchmark: 102 }],
+                SOXX: [{ date: '2026-01-02', portfolio: 100, benchmark: 100 }, { date: '2026-09-16', portfolio: 103.25, benchmark: 99.5 }],
+              },
+              tw: { '0050': [{ date: '2026-01-02', portfolio: 100, benchmark: 100 }, { date: '2026-09-16', portfolio: 104, benchmark: 102 }] },
+              us: {
+                VOO: [{ date: '2026-01-02', portfolio: 100, benchmark: 100 }, { date: '2026-09-16', portfolio: 102, benchmark: 100.5 }],
+                QQQ: [{ date: '2026-01-02', portfolio: 100, benchmark: 100 }, { date: '2026-09-16', portfolio: 102, benchmark: 101 }],
+                SOXX: [{ date: '2026-01-02', portfolio: 100, benchmark: 100 }, { date: '2026-09-16', portfolio: 102, benchmark: 99 }],
+              },
+            },
           },
           year: {
             all: [{ date: '2025-09-17', portfolio: 100, benchmark: 100 }, { date: '2026-09-16', portfolio: 106, benchmark: 103 }],

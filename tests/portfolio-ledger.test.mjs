@@ -160,12 +160,19 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     await page.waitForSelector('[data-portfolio-stock]');
     await page.waitForSelector('.portfolioPerformanceChart');
     assert.match(await page.textContent('.portfolioPerformance'), /我的投資組合 vs 大盤/);
-    assert.match(await page.textContent('.portfolioPerformanceStats'), /我的報酬.*大盤報酬.*超額報酬/s);
+    assert.match(await page.textContent('.portfolioPerformance'), /TWR 績效趨勢/);
+    assert.match(await page.textContent('.portfolioPerformanceStats'), /我的 TWR.*大盤 TWR.*超額報酬/s);
+    assert.match(await page.textContent('.portfolioSummary'), /XIRR 年化報酬.*考慮實際投入金額與時間/s);
     assert.doesNotMatch(await page.textContent('.portfolioPerformanceStats'), /0050＋VOO 動態混合/);
+    assert.match(await page.textContent('.portfolioPerformanceLegend'), /含息總報酬/);
+    await page.selectOption('[data-performance-benchmark]', 'QQQ');
+    assert.match(await page.textContent('.portfolioPerformanceLegend'), /QQQ｜含息總報酬/);
+    assert.match(await page.textContent('.portfolioPerformanceStats'), /大盤 TWR.*\+2\.00%.*超額報酬.*\+1\.25pp/s);
+    await page.selectOption('[data-performance-benchmark]', 'mixed');
     await page.locator('.portfolioPerformanceChart').click({ position: { x: 190, y: 100 } });
     assert.equal(await page.locator('[data-portfolio-performance-selection]').getAttribute('hidden'), null);
     assert.match(await page.textContent('[data-portfolio-performance-selection]'), /2026\/.*我的.*大盤.*(領先|落後)/s);
-    assert.match(await page.textContent('.portfolioPerformanceStats'), /我的報酬.*\+3\.25%.*超額報酬/s);
+    assert.match(await page.textContent('.portfolioPerformanceStats'), /我的 TWR.*\+3\.25%.*超額報酬/s);
     await page.click('[data-performance-period="all"]');
     assert.match(await page.textContent('.portfolioPerformanceLegend'), /10\/23－9\/16/);
     assert.match(await page.textContent('.portfolioPerformanceStats'), /\+40\.00%/);
@@ -179,10 +186,10 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     assert.doesNotMatch(await page.textContent('.portfolioStockTop'), /TPE:|NASDAQ:|NYSEARCA:/);
     // 標題列只留名字與市值：報酬率會被切掉，下面那一列也講得更清楚
     assert.doesNotMatch(await page.textContent('.portfolioStockTop'), /%/);
-    // 收合摘要只留累計損益與年化報酬率；股數與淨投入移到展開區／不再重複
+    // 收合摘要只留累計損益與 XIRR 年化；股數與淨投入移到展開區／不再重複
     const meta = await page.textContent('.portfolioStockMeta');
     assert.match(meta, /累計損益/);
-    assert.match(meta, /年化報酬率/);
+    assert.match(meta, /XIRR 年化/);
     assert.doesNotMatch(meta, /累計淨投入|持有股數/);
     await page.click('[data-portfolio-stock]');
     await page.waitForSelector('.portfolioStockDetail');
@@ -478,7 +485,7 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     // #120 把美股頁的口徑統一成 USD 之後，市值那格就叫「目前市值」——
     // 只有它是換算成台幣的，標題不再重複講一次「美股」。
     // ui-consistency.test.mjs 明文禁止 app-v3.js 出現「目前美股市值」，這裡沒跟上就會兩支互相打架。
-    for (const label of ['目前市值', '累計淨投入', '累計損益', '年化報酬率', '依 USD 現金流計算']) {
+    for (const label of ['目前市值', '累計淨投入', '累計損益', 'XIRR 年化報酬', '考慮實際投入金額與時間']) {
       assert.match(summary, new RegExp(label));
     }
     assert.match(summary, /NT\$/);
@@ -487,8 +494,8 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     const sort = page.locator('[data-portfolio-sort]');
     assert.equal(await sort.count(), 1);
     // V3.27.8 起排序拆成「依據」下拉 + 雙向方向鈕，八個組合選項不再存在；
-    // 同時拿掉總報酬率，只留市值／年化報酬率／損益。
-    assert.deepEqual(await sort.locator('option').allTextContents(), ['市值', '年化報酬率', '損益']);
+    // 同時拿掉總報酬率，只留市值／XIRR 年化／損益。
+    assert.deepEqual(await sort.locator('option').allTextContents(), ['市值', 'XIRR 年化', '損益']);
     await sort.selectOption('xirr');
     assert.equal(await sort.inputValue(), 'xirr');
     const direction = page.locator('[data-sort-direction]');
@@ -498,7 +505,7 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
 
     const meta = await page.textContent('.portfolioStockMeta');
     assert.match(meta, /累計損益/);
-    assert.match(meta, /年化報酬率/);
+    assert.match(meta, /XIRR 年化/);
     assert.match(meta, /US\$/);
     assert.doesNotMatch(meta, /台幣總損益|匯率影響/);
 

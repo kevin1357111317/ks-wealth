@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.95.0";
-import { buildHistoricalSnapshots, buildPerformanceSeries, downsampleSeries, transactionFlows } from "./core.js";
+import { buildHistoricalSnapshots, buildPerformanceSeries, downsampleSeries, transactionFlows, yahooPriceRows } from "./core.js";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -25,27 +25,25 @@ const dateShift = (date: string, { years = 0, days = 0 }) => {
 
 type PriceRow = { date: string; value: number };
 type StockRow = { key: string; symbol: string; market: string; currency: string; owner_scope: string };
+type YahooHistory = { close: PriceRow[]; adjusted: PriceRow[] };
 
-async function yahooHistory(symbol: string, start: string, end: string): Promise<PriceRow[]> {
+async function yahooHistory(symbol: string, start: string, end: string): Promise<YahooHistory> {
   const period1 = Math.floor(Date.parse(`${dateShift(start, { days: -7 })}T00:00:00Z`) / 1000);
   const period2 = Math.floor(Date.parse(`${dateShift(end, { days: 2 })}T00:00:00Z`) / 1000);
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${period1}&period2=${period2}&interval=1d&events=div%2Csplits&includeAdjustedClose=true`;
   try {
     const response = await fetch(url, { headers: { "Accept": "application/json", "User-Agent": "KS-Wealth/1.0" } });
-    if (!response.ok) return [];
+    if (!response.ok) return { close: [], adjusted: [] };
     const payload = await response.json();
     const result = payload?.chart?.result?.[0];
-    const timestamps = result?.timestamp ?? [];
-    // Yahoo 的 close 已回溯調整拆股、但不調整現金股息，正好能搭配台帳的股息現金流。
-    const closes = result?.indicators?.quote?.[0]?.close ?? [];
-    return timestamps.map((timestamp: number, index: number) => ({
-      date: new Date(timestamp * 1000).toISOString().slice(0, 10), value: number(closes[index]),
-    })).filter((row: PriceRow) => row.value > 0);
-  } catch { return []; }
+    // 持股市值用 close，因為台帳已另外記錄股息；Benchmark 用 adjusted close，
+    // 才能把現金股息再投入納入總報酬，且不會和個人台帳重複計息。
+    return { close: yahooPriceRows(result, "close"), adjusted: yahooPriceRows(result, "adjusted") };
+  } catch { return { close: [], adjusted: [] }; }
 }
 
 async function fetchHistories(symbols: string[], start: string, end: string) {
-  const output = new Map<string, PriceRow[]>();
+  const output = new Map<string, YahooHistory>();
   let cursor = 0;
   const workers = Array.from({ length: Math.min(6, symbols.length) }, async () => {
     while (cursor < symbols.length) {
@@ -112,10 +110,10 @@ Deno.serve(async (req: Request) => {
     const yahoo = stock.market === "台股" ? `${code}.${boardByCode.get(code) === "TWO" ? "TWO" : "TW"}` : code;
     return [stock.key, yahoo];
   }));
-  const requested = [...new Set([...yahooByKey.values(), "0050.TW", "VOO", "TWD=X"])];
+  const requested = [...new Set([...yahooByKey.values(), "0050.TW", "VOO", "QQQ", "SOXX", "TWD=X"])];
   const histories = await fetchHistories(requested, earliest, today);
-  const fxHistory = (histories.get("TWD=X") ?? []).map(row => ({ date: row.date, rate: row.value }));
-  const priceHistory = new Map(stocks.map((stock: StockRow) => [stock.key, histories.get(yahooByKey.get(stock.key) ?? "") ?? []]));
+  const fxHistory = (histories.get("TWD=X")?.close ?? []).map(row => ({ date: row.date, rate: row.value }));
+  const priceHistory = new Map(stocks.map((stock: StockRow) => [stock.key, histories.get(yahooByKey.get(stock.key) ?? "")?.close ?? []]));
   const missing = stocks.filter((stock: StockRow) => !(priceHistory.get(stock.key)?.length)).map((stock: StockRow) => stock.key);
   const snapshots = buildHistoricalSnapshots({ stocks, transactions, priceHistory, fxHistory });
   const stockByKey = new Map(stocks.map((stock: StockRow) => [stock.key, stock]));
@@ -125,23 +123,42 @@ Deno.serve(async (req: Request) => {
     return { ...transaction, twd: stock?.currency === "USD" ? number(transaction.amount) * rate : number(transaction.amount) };
   });
   const flows = transactionFlows(txWithTwd, stockByKey);
-  const twBenchmark = histories.get("0050.TW") ?? [];
-  const usBenchmark = histories.get("VOO") ?? [];
+  const twBenchmark = histories.get("0050.TW")?.adjusted ?? [];
+  const usBenchmarks = new Map(["VOO", "QQQ", "SOXX"].map(symbol => [symbol, histories.get(symbol)?.adjusted ?? []]));
+  const usBenchmark = usBenchmarks.get("VOO") ?? [];
   const periods: Record<string, unknown> = {};
   for (const period of ["ytd", "year", "all"]) {
     const start = periodStart(period, today, earliest);
     const periodSnapshots = snapshots.filter(row => row.date >= start);
+    const series = (market: string, benchmarkMode: string, benchmark: PriceRow[]) => downsampleSeries(buildPerformanceSeries({
+      snapshots: periodSnapshots, flows, twBenchmark,
+      usBenchmark: benchmark, fxHistory, market, benchmarkMode,
+    }));
+    const allBenchmarks = {
+      mixed: series("all", "mixed", usBenchmark),
+      VOO: series("all", "us", usBenchmarks.get("VOO") ?? []),
+      QQQ: series("all", "us", usBenchmarks.get("QQQ") ?? []),
+      SOXX: series("all", "us", usBenchmarks.get("SOXX") ?? []),
+    };
+    const twBenchmarks = { "0050": series("tw", "tw", []) };
+    const usComparisons = {
+      VOO: series("us", "us", usBenchmarks.get("VOO") ?? []),
+      QQQ: series("us", "us", usBenchmarks.get("QQQ") ?? []),
+      SOXX: series("us", "us", usBenchmarks.get("SOXX") ?? []),
+    };
     periods[period] = {
       start: periodSnapshots[0]?.date ?? start,
-      all: downsampleSeries(buildPerformanceSeries({ snapshots: periodSnapshots, flows, twBenchmark, usBenchmark, fxHistory, market: "all" })),
-      tw: downsampleSeries(buildPerformanceSeries({ snapshots: periodSnapshots, flows, twBenchmark, usBenchmark, fxHistory, market: "tw" })),
-      us: downsampleSeries(buildPerformanceSeries({ snapshots: periodSnapshots, flows, twBenchmark, usBenchmark, fxHistory, market: "us" })),
+      all: allBenchmarks.mixed,
+      tw: twBenchmarks["0050"],
+      us: usComparisons.VOO,
+      benchmarks: { all: allBenchmarks, tw: twBenchmarks, us: usComparisons },
     };
   }
   const ytd = periods.ytd as { all: unknown[]; tw: unknown[]; us: unknown[] };
   return json({
     ownerScope, earliest, periods, all: ytd.all, tw: ytd.tw, us: ytd.us,
-    benchmarkLabels: { all: "0050＋VOO 動態混合", tw: "0050", us: "VOO" },
+    benchmarkLabels: { mixed: "0050＋VOO 動態混合", "0050": "0050", VOO: "VOO", QQQ: "QQQ", SOXX: "SOXX" },
+    benchmarkOptions: { all: ["mixed", "VOO", "QQQ", "SOXX"], tw: ["0050"], us: ["VOO", "QQQ", "SOXX"] },
     coverage: { requested: stocks.length, missing: missing.length },
     status: missing.length || !twBenchmark.length || !usBenchmark.length ? "benchmark_partial" : "ok",
   });

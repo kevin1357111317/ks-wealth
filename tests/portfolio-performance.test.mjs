@@ -7,6 +7,7 @@ import {
   downsampleSeries,
   transactionFlows,
   transactionShareScale,
+  yahooPriceRows,
 } from '../supabase/functions/portfolio-performance/core.js';
 
 test('績效指數排除新增投入，不把入金當成報酬', () => {
@@ -41,6 +42,39 @@ test('全部頁用前一期台美股權重組成含匯率的混合大盤', () =>
   });
   assert.equal(rows[1].benchmark, 114);
   assert.equal(rows.at(-1).benchmark, 120.6);
+});
+
+test('單一美股基準在全部頁包含匯率，在美股頁維持美元報酬', () => {
+  const input = {
+    flows: {}, benchmarkMode: 'us', twBenchmark: [],
+    snapshots: [
+      { date: '2026-09-01', twTwd: 60, usTwd: 40, usUsd: 1 },
+      { date: '2026-09-02', twTwd: 66, usTwd: 48, usUsd: 1.1 },
+    ],
+    usBenchmark: [{ date: '2026-09-01', value: 100 }, { date: '2026-09-02', value: 110 }],
+    fxHistory: [{ date: '2026-09-01', rate: 40 }, { date: '2026-09-02', rate: 44 }],
+  };
+  assert.equal(buildPerformanceSeries({ ...input, market: 'all' }).at(-1).benchmark, 121);
+  assert.equal(buildPerformanceSeries({ ...input, market: 'us' }).at(-1).benchmark, 110);
+});
+
+test('Yahoo 持股用 close，Benchmark 用含股息的 adjusted close', () => {
+  const result = {
+    timestamp: [Date.UTC(2026, 0, 2) / 1000, Date.UTC(2026, 0, 5) / 1000],
+    indicators: {
+      quote: [{ close: [100, 98] }],
+      adjclose: [{ adjclose: [95, 95] }],
+    },
+  };
+  assert.deepEqual(yahooPriceRows(result, 'close').map(row => row.value), [100, 98]);
+  assert.deepEqual(yahooPriceRows(result, 'adjusted').map(row => row.value), [95, 95]);
+});
+
+test('Edge Function 把持股與 Benchmark 接到正確的 Yahoo 價格欄位', () => {
+  const source = readFileSync(new URL('../supabase/functions/portfolio-performance/index.ts', import.meta.url), 'utf8');
+  assert.match(source, /priceHistory = new Map[\s\S]*?\?\.close \?\? \[\]/);
+  assert.match(source, /histories\.get\("0050\.TW"\)\?\.adjusted \?\? \[\]/);
+  assert.match(source, /histories\.get\(symbol\)\?\.adjusted \?\? \[\]/);
 });
 
 test('買進是外部投入、賣出與股息是提款', () => {
