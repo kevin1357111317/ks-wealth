@@ -168,3 +168,49 @@ test('完整期間會分頁抓完超過一千筆的交易台帳', () => {
   assert.match(source, /\.range\(from, from \+ 999\)/);
   assert.match(source, /if \(\(page\?\.length \?\? 0\) < 1000\) break/);
 });
+
+// 快照會整天被丟掉：持股裡只要有一檔當天沒有收盤價（Yahoo 抓不到的冷門代號），
+// buildHistoricalSnapshots 就不輸出那一天。原本 buildPerformanceSeries 只扣「當天」
+// 的現金流，斷掉那幾天的買進與賣出就完全沒被扣掉，賣出價金會被當成報酬。
+test('快照中斷期間的買賣要一起扣掉，不能當成報酬', () => {
+  const rows = buildPerformanceSeries({
+    market: 'tw',
+    snapshots: [
+      { date: '2026-06-01', twTwd: 1_000_000, usTwd: 0, usUsd: 0 },
+      // 6/02 買進一檔 Yahoo 抓不到報價的標的 → 6/02～6/04 整段沒有快照，
+      // 6/05 把它賣掉，剩下的持股又都有報價，快照才接回來。
+      { date: '2026-06-05', twTwd: 1_100_000, usTwd: 0, usUsd: 0 },
+    ],
+    flows: {
+      '2026-06-02': { twTwd: 500_000 },
+      '2026-06-05': { twTwd: -500_000 },
+    },
+    twBenchmark: [], usBenchmark: [], fxHistory: [],
+  });
+  // 一買一賣打平，市值 100 萬 → 110 萬就是純漲 10%；
+  // 只扣 6/05 那天的賣出會變成 (110 萬 + 50 萬) / 100 萬 = 160。
+  assert.equal(rows.at(-1).portfolio, 110);
+});
+
+test('出清後再買回不會吃掉出清那天的漲幅', () => {
+  const stocks = [{ key: 'A', symbol: 'A', market: '台股', currency: 'TWD', owner_scope: 'husband' }];
+  const priceHistory = new Map([['A', [
+    { date: '2026-01-02', value: 100 }, { date: '2026-01-05', value: 130 },
+    { date: '2026-01-06', value: 130 }, { date: '2026-01-07', value: 140 },
+  ]]]);
+  const transactions = [
+    { id: 1, stock_key: 'A', tx_date: '2026-01-02', amount: -100_000, shares: 1000, kind: 'trade' },
+    { id: 2, stock_key: 'A', tx_date: '2026-01-05', amount: 130_000, shares: -1000, kind: 'trade' },
+    { id: 3, stock_key: 'A', tx_date: '2026-01-06', amount: -130_000, shares: 1000, kind: 'trade' },
+  ];
+  const flows = transactionFlows(
+    transactions.map(tx => ({ ...tx, twd: tx.amount })),
+    new Map(stocks.map(stock => [stock.key, stock])),
+  );
+  const rows = buildPerformanceSeries({
+    snapshots: buildHistoricalSnapshots({ stocks, transactions, priceHistory, fxHistory: [] }),
+    flows, twBenchmark: [], usBenchmark: [], fxHistory: [], market: 'tw', benchmarkMode: 'tw',
+  });
+  // 同一檔、同樣的價格路徑，中間進出一趟不該改變累積 TWR
+  assert.equal(rows.at(-1).portfolio, 140);
+});

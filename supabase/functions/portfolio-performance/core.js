@@ -29,18 +29,31 @@ export function buildPerformanceSeries({ snapshots, flows, twBenchmark, usBenchm
   const ordered = [...(snapshots ?? [])].sort((a, b) => a.date.localeCompare(b.date));
   if (!ordered.length) return [];
 
-  const valueOf = row => market === 'tw' ? n(row.twTwd)
+  const pick = row => market === 'tw' ? n(row.twTwd)
     : market === 'us' ? n(row.usUsd)
       : n(row.twTwd) + n(row.usTwd);
-  const flowOf = date => {
-    const row = flows?.[date] ?? {};
-    return market === 'tw' ? n(row.twTwd)
-      : market === 'us' ? n(row.usUsd)
-        : n(row.twTwd) + n(row.usTwd);
-  };
+  const valueOf = pick;
 
   const first = ordered.find(row => valueOf(row) > 0);
   if (!first) return [];
+
+  // 快照不是每天都有：持股裡只要有一檔當天沒有收盤價，buildHistoricalSnapshots 就整天
+  // 不輸出；出清到市值 0 的日子也會被跳過。所以要扣的是「上一個有快照的日子之後到今天
+  // 為止」的所有現金流，只扣當天的話，斷掉那幾天的買進與賣出會被當成報酬 —— 抓不到報價
+  // 的冷門代號買進 50 萬、賣出時才接回快照，那 50 萬價金會整筆變成漲幅。
+  const orderedFlows = Object.keys(flows ?? {}).sort()
+    .map(date => ({ date, amount: pick(flows[date] ?? {}) }));
+  let flowIndex = 0;
+  // 起點當天（含）以前的現金流不計：那一天的指數本來就重設成 100。
+  while (flowIndex < orderedFlows.length && orderedFlows[flowIndex].date <= first.date) flowIndex += 1;
+  const flowsThrough = date => {
+    let total = 0;
+    while (flowIndex < orderedFlows.length && orderedFlows[flowIndex].date <= date) {
+      total += orderedFlows[flowIndex].amount;
+      flowIndex += 1;
+    }
+    return total;
+  };
   let portfolioIndex = 100;
   let benchmarkIndex = 100;
   let previousValue = valueOf(first);
@@ -50,7 +63,7 @@ export function buildPerformanceSeries({ snapshots, flows, twBenchmark, usBenchm
     const value = valueOf(row);
     if (value <= 0) continue;
     if (row !== first && previousValue > 0) {
-      const dailyReturn = (value - flowOf(row.date)) / previousValue - 1;
+      const dailyReturn = (value - flowsThrough(row.date)) / previousValue - 1;
       // 日資料不完整時，不讓單日異常值把整張圖炸掉；後續完整快照仍會自然接上。
       if (Number.isFinite(dailyReturn) && dailyReturn > -0.95 && dailyReturn < 2) {
         portfolioIndex *= 1 + dailyReturn;
