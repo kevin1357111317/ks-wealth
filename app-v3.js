@@ -10,12 +10,12 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.33.0';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.33.0';
-import { calculateUsd } from './usd-core.js?v=V3.33.0';
-import { calculateGold } from './gold-core.js?v=V3.33.0';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.33.0';
-import { buildPersonalTrendRows } from './trend-core.js?v=V3.33.0';
+} from './financial-core.js?v=V3.33.1';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.33.1';
+import { calculateUsd } from './usd-core.js?v=V3.33.1';
+import { calculateGold } from './gold-core.js?v=V3.33.1';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.33.1';
+import { buildPersonalTrendRows } from './trend-core.js?v=V3.33.1';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -24,7 +24,7 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.33.0';
+} from './health-core.js?v=V3.33.1';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -697,7 +697,9 @@ async function ensureLedger() {
 }
 
 async function ensurePortfolioPerformance(ownerScope) {
-  if (portfolioPerformance.has(ownerScope)) return true;
+  const cached = portfolioPerformance.get(ownerScope);
+  if (cached && cached.status !== 'error') return true;
+  if (cached?.status === 'error') portfolioPerformance.delete(ownerScope);
   if (portfolioPerformanceFlights.has(ownerScope)) return portfolioPerformanceFlights.get(ownerScope);
   const flight = (async () => {
     const { data, error } = await sb.functions.invoke('portfolio-performance', {
@@ -1446,8 +1448,9 @@ function portfolioPerformanceCard() {
     ? `<label class="portfolioBenchmarkControl"><span>比較基準</span><select data-performance-benchmark aria-label="比較基準">${benchmarkOptions.map(value => `<option value="${escapeHtml(value)}" ${value === benchmarkKey ? 'selected' : ''}>${escapeHtml(data.benchmarkLabels?.[value] ?? value)}</option>`).join('')}</select></label>`
     : `<div class="portfolioBenchmarkControl fixed"><span>比較基準</span><b>${escapeHtml(benchmarkLabel)}</b></div>`;
   if (rows.length < 2) {
-    const copy = data.status === 'error' ? '績效資料暫時載入失敗，稍後重新進入再試。' : '每日績效從現在開始累積，有兩個以上交易日後就會顯示折線。';
-    return `<section class="portfolioPerformance"><div class="portfolioPerformanceHead"><div><span>TWR 績效趨勢</span><h2>我的投資組合 vs 大盤</h2></div><b>起始＝100</b></div>${periodControls}${benchmarkControl}<div class="portfolioPerformanceEmpty">${copy}</div></section>`;
+    const copy = data.status === 'error' ? '績效資料暫時載入失敗。' : '每日績效從現在開始累積，有兩個以上交易日後就會顯示折線。';
+    const retry = data.status === 'error' ? '<button type="button" data-performance-retry>重新載入</button>' : '';
+    return `<section class="portfolioPerformance"><div class="portfolioPerformanceHead"><div><span>TWR 績效趨勢</span><h2>我的投資組合 vs 大盤</h2></div><b>起始＝100</b></div>${periodControls}${benchmarkControl}<div class="portfolioPerformanceEmpty"><span>${copy}</span>${retry}</div></section>`;
   }
 
   const values = rows.flatMap(row => [row.portfolio, row.benchmark]).filter(Number.isFinite);
@@ -1567,6 +1570,14 @@ function portfolioListPage() {
     const key = portfolioMarket === '台股' ? 'tw' : portfolioMarket === '美股' ? 'us' : 'all';
     portfolioPerformanceBenchmark[key] = event.target.value;
     render();
+  };
+  const performanceRetry = root.querySelector('[data-performance-retry]');
+  if (performanceRetry) performanceRetry.onclick = async () => {
+    const ownerScope = analysisOwner;
+    portfolioPerformance.delete(ownerScope);
+    render();
+    await ensurePortfolioPerformance(ownerScope);
+    if (analysisScreen === 'stocks' && analysisOwner === ownerScope) render();
   };
   root.querySelector('[data-portfolio-sort]').onchange = event => { portfolioSort = `${event.target.value}-${sortDirection}`; render(); };
   root.querySelector('[data-sort-direction]').onclick = () => { portfolioSort = `${sortCriterion}-${ascending ? 'desc' : 'asc'}`; render(); };
@@ -2029,7 +2040,7 @@ function openAnalysis(screen, ownerScope) {
       if (ok && analysisScreen === 'stocks' && analysisOwner === ownerScope) render();
     });
   }
-  if (screen === 'stocks' && !portfolioPerformance.has(ownerScope)) {
+  if (screen === 'stocks' && !['ok', 'benchmark_partial'].includes(portfolioPerformance.get(ownerScope)?.status)) {
     void ensurePortfolioPerformance(ownerScope).then(() => {
       if (analysisScreen === 'stocks' && analysisOwner === ownerScope) render();
     });

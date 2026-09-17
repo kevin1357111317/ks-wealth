@@ -58,6 +58,28 @@ test('單一美股基準在全部頁包含匯率，在美股頁維持美元報�
   assert.equal(buildPerformanceSeries({ ...input, market: 'us' }).at(-1).benchmark, 110);
 });
 
+test('多年每日資料與多組 Benchmark 能在 Edge Function 預算內完成', () => {
+  const snapshots = [];
+  const benchmark = [];
+  const fxHistory = [];
+  const start = Date.UTC(2019, 0, 1);
+  for (let index = 0; index < 2800; index += 1) {
+    const date = new Date(start + index * 86400000).toISOString().slice(0, 10);
+    snapshots.push({ date, twTwd: 100 + index / 20, usTwd: 100 + index / 15, usUsd: 4 + index / 10000 });
+    benchmark.push({ date, value: 100 + index / 25 });
+    fxHistory.push({ date, rate: 30 + index / 100000 });
+  }
+  const started = performance.now();
+  for (let index = 0; index < 24; index += 1) {
+    buildPerformanceSeries({
+      snapshots, flows: {}, twBenchmark: benchmark, usBenchmark: benchmark, fxHistory,
+      market: index % 3 === 0 ? 'tw' : index % 3 === 1 ? 'us' : 'all',
+      benchmarkMode: index % 3 === 0 ? 'tw' : index % 3 === 1 ? 'us' : 'mixed',
+    });
+  }
+  assert.ok(performance.now() - started < 1000, '多年資料的績效計算不應退化成逐日全表掃描');
+});
+
 test('Yahoo 持股用 close，Benchmark 用含股息的 adjusted close', () => {
   const result = {
     timestamp: [Date.UTC(2026, 0, 2) / 1000, Date.UTC(2026, 0, 5) / 1000],
@@ -75,6 +97,13 @@ test('Edge Function 把持股與 Benchmark 接到正確的 Yahoo 價格欄位', 
   assert.match(source, /priceHistory = new Map[\s\S]*?\?\.close \?\? \[\]/);
   assert.match(source, /histories\.get\("0050\.TW"\)\?\.adjusted \?\? \[\]/);
   assert.match(source, /histories\.get\(symbol\)\?\.adjusted \?\? \[\]/);
+});
+
+test('績效載入失敗不會永久快取，畫面提供立即重試', () => {
+  const source = readFileSync(new URL('../app-v3.js', import.meta.url), 'utf8');
+  assert.match(source, /cached\?\.status === 'error'\) portfolioPerformance\.delete/);
+  assert.match(source, /data-performance-retry>重新載入/);
+  assert.match(source, /performanceRetry\.onclick = async/);
 });
 
 test('買進是外部投入、賣出與股息是提款', () => {
