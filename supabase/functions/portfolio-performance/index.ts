@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.95.0";
-import { buildPerformanceSeries, transactionFlows } from "./core.js";
+import { buildHistoricalSnapshots, buildPerformanceSeries, downsampleSeries, transactionFlows } from "./core.js";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -9,15 +9,57 @@ const corsHeaders = {
 };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status,
-  headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "private, max-age=300" },
+  headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "private, max-age=1800" },
 });
 const taipeiDate = (value = new Date()) => new Intl.DateTimeFormat("en-CA", {
   timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit",
 }).format(value);
-const dayOf = (value: string) => taipeiDate(new Date(value));
 const number = (value: unknown) => Number.isFinite(Number(value)) ? Number(value) : 0;
+const bareSymbol = (value: unknown) => String(value ?? "").replace(/^(TPE:|TWO:|NASDAQ:|NYSEARCA:|NYSE:|BATS:)/i, "").toUpperCase();
+const dateShift = (date: string, { years = 0, days = 0 }) => {
+  const value = new Date(`${date}T00:00:00Z`);
+  value.setUTCFullYear(value.getUTCFullYear() + years);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+};
 
-type ScopeSnapshot = { date: string; twTwd: number; usTwd: number; usUsd: number };
+type PriceRow = { date: string; value: number };
+type StockRow = { key: string; symbol: string; market: string; currency: string; owner_scope: string };
+
+async function yahooHistory(symbol: string, start: string, end: string): Promise<PriceRow[]> {
+  const period1 = Math.floor(Date.parse(`${dateShift(start, { days: -7 })}T00:00:00Z`) / 1000);
+  const period2 = Math.floor(Date.parse(`${dateShift(end, { days: 2 })}T00:00:00Z`) / 1000);
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${period1}&period2=${period2}&interval=1d&events=div%2Csplits&includeAdjustedClose=true`;
+  try {
+    const response = await fetch(url, { headers: { "Accept": "application/json", "User-Agent": "KS-Wealth/1.0" } });
+    if (!response.ok) return [];
+    const payload = await response.json();
+    const result = payload?.chart?.result?.[0];
+    const timestamps = result?.timestamp ?? [];
+    // Yahoo 的 close 已回溯調整拆股、但不調整現金股息，正好能搭配台帳的股息現金流。
+    const closes = result?.indicators?.quote?.[0]?.close ?? [];
+    return timestamps.map((timestamp: number, index: number) => ({
+      date: new Date(timestamp * 1000).toISOString().slice(0, 10), value: number(closes[index]),
+    })).filter((row: PriceRow) => row.value > 0);
+  } catch { return []; }
+}
+
+async function fetchHistories(symbols: string[], start: string, end: string) {
+  const output = new Map<string, PriceRow[]>();
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(6, symbols.length) }, async () => {
+    while (cursor < symbols.length) {
+      const symbol = symbols[cursor++];
+      output.set(symbol, await yahooHistory(symbol, start, end));
+    }
+  });
+  await Promise.all(workers);
+  return output;
+}
+
+const periodStart = (period: string, today: string, earliest: string) => period === "ytd"
+  ? `${today.slice(0, 4)}-01-01`
+  : period === "year" ? dateShift(today, { years: -1 }) : earliest;
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -28,160 +70,79 @@ Deno.serve(async (req: Request) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
   const publishableKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-  const fugleKey = Deno.env.get("FUGLE_MARKETDATA_API_KEY") ?? "";
-  const twelveKey = Deno.env.get("TWELVE_DATA_API_KEY") ?? "";
   if (!supabaseUrl || !publishableKey || !serviceRoleKey) return json({ error: "supabase_config_missing" }, 500);
-
   const userClient = createClient(supabaseUrl, publishableKey, {
-    global: { headers: { Authorization: authHeader } },
-    auth: { persistSession: false, autoRefreshToken: false },
+    global: { headers: { Authorization: authHeader } }, auth: { persistSession: false, autoRefreshToken: false },
   });
-  const service = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  const token = authHeader.slice(7);
-  const { data: userData, error: userError } = await userClient.auth.getUser(token);
+  const service = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
+  const { data: userData, error: userError } = await userClient.auth.getUser(authHeader.slice(7));
   if (userError || !userData.user) return json({ error: "unauthorized" }, 401);
-
   const { data: membership, error: memberError } = await userClient.from("household_members")
     .select("household_id").eq("user_id", userData.user.id).limit(1).maybeSingle();
   if (memberError || !membership?.household_id) return json({ error: "household_unavailable" }, 403);
   const householdId = String(membership.household_id);
   let ownerScope = "husband";
-  try {
-    const body = await req.json();
-    if (body?.owner_scope === "wife") ownerScope = "wife";
-  } catch { /* default husband */ }
+  try { if ((await req.json())?.owner_scope === "wife") ownerScope = "wife"; } catch { /* default husband */ }
 
-  const { data: currentItems, error: itemError } = await service.from("financial_items")
-    .select("id,owner_scope,market,amount_twd,quantity,fx_rate_twd,created_at,portfolio_stock_key")
-    .eq("household_id", householdId).eq("kind", "asset").not("portfolio_stock_key", "is", null);
-  if (itemError) return json({ error: "items_unavailable" }, 500);
-
-  const today = taipeiDate();
-  const scopeTotals = { husband: { twTwd: 0, usTwd: 0, usUsd: 0 }, wife: { twTwd: 0, usTwd: 0, usUsd: 0 } };
-  for (const item of currentItems ?? []) {
-    const scope = item.owner_scope === "wife" ? "wife" : "husband";
-    if (item.market === "TW") scopeTotals[scope].twTwd += number(item.amount_twd);
-    if (item.market === "US") {
-      scopeTotals[scope].usTwd += number(item.amount_twd);
-      const fx = number(item.fx_rate_twd);
-      if (fx > 0) scopeTotals[scope].usUsd += number(item.amount_twd) / fx;
-    }
-  }
-
-  // 每天第一次開啟股票分析時留一筆收盤附近快照；06:00 的排程即使沒開 App 也會再補。
-  const dayStart = `${today}T00:00:00+08:00`;
-  const { data: todaySnapshot } = await service.from("activity_log").select("id")
-    .eq("household_id", householdId).eq("entity_type", "portfolio_snapshot")
-    .gte("created_at", dayStart).limit(1).maybeSingle();
-  if (!todaySnapshot) await service.from("activity_log").insert({
-    household_id: householdId,
-    user_id: userData.user.id,
-    entity_type: "portfolio_snapshot",
-    entity_id: householdId,
-    action: "snapshot",
-    payload: { recorded_on: today, scopes: scopeTotals },
-  });
-
-  const historyStart = "2026-09-01";
-  const events = [];
+  const { data: allStocks, error: stockError } = await service.from("klfan_stocks")
+    .select("key,symbol,market,currency,owner_scope").eq("household_id", householdId);
+  if (stockError) return json({ error: "stocks_unavailable" }, 500);
+  const stocks = (allStocks ?? []).filter((stock: StockRow) => (stock.owner_scope ?? "husband") === ownerScope);
+  if (!stocks.length) return json({ ownerScope, periods: {}, status: "building" });
+  const stockKeys = stocks.map((stock: StockRow) => stock.key);
+  const transactions = [];
   for (let from = 0; ; from += 1000) {
-    const { data: page, error: eventError } = await service.from("activity_log")
-      .select("entity_id,entity_type,payload,created_at")
-      .eq("household_id", householdId)
-      .in("entity_type", ["financial_items", "portfolio_snapshot"])
-      .gte("created_at", `${historyStart}T00:00:00+08:00`)
-      .order("created_at", { ascending: true }).range(from, from + 999);
-    if (eventError) return json({ error: "history_unavailable" }, 500);
-    events.push(...(page ?? []));
+    const { data: page, error: txError } = await service.from("klfan_transactions")
+      .select("id,stock_key,tx_date,amount,shares,kind").in("stock_key", stockKeys)
+      .order("tx_date").order("id").range(from, from + 999);
+    if (txError) return json({ error: "transactions_unavailable" }, 500);
+    transactions.push(...(page ?? []));
     if ((page?.length ?? 0) < 1000) break;
   }
+  const earliest = String(transactions?.[0]?.tx_date ?? taipeiDate());
+  const today = taipeiDate();
 
-  const itemState = new Map<string, Record<string, unknown>>();
-  const createdOn = new Map((currentItems ?? []).map(item => [String(item.id), dayOf(String(item.created_at))]));
-  const daily = new Map<string, Record<string, ScopeSnapshot>>();
-  const eventsByDay = new Map<string, typeof events>();
-  for (const event of events) {
-    const day = dayOf(String(event.created_at));
-    eventsByDay.set(day, [...(eventsByDay.get(day) ?? []), event]);
-  }
-  for (const [date, dayEvents] of eventsByDay) {
-    let saved: Record<string, ScopeSnapshot> | null = null;
-    for (const event of dayEvents ?? []) {
-      if (event.entity_type === "portfolio_snapshot") {
-        const scopes = event.payload?.scopes;
-        if (scopes) saved = {
-          husband: { date, ...scopes.husband }, wife: { date, ...scopes.wife },
-        };
-      } else if (event.payload?.portfolio_stock_key) itemState.set(String(event.entity_id), event.payload);
-    }
-    if (saved) {
-      daily.set(date, saved);
-      continue;
-    }
-    const required = (currentItems ?? []).filter(item => (createdOn.get(String(item.id)) ?? date) <= date);
-    if (!required.length || required.some(item => !itemState.has(String(item.id)))) continue;
-    const totals = { husband: { date, twTwd: 0, usTwd: 0, usUsd: 0 }, wife: { date, twTwd: 0, usTwd: 0, usUsd: 0 } };
-    for (const item of required) {
-      const state = itemState.get(String(item.id));
-      if (!state) continue;
-      const scope = state.owner_scope === "wife" ? "wife" : "husband";
-      const amount = number(state.amount_twd);
-      if (state.market === "TW") totals[scope].twTwd += amount;
-      if (state.market === "US") {
-        totals[scope].usTwd += amount;
-        const fx = number(state.fx_rate_twd);
-        if (fx > 0) totals[scope].usUsd += amount / fx;
-      }
-    }
-    daily.set(date, totals);
-  }
-  daily.set(today, {
-    husband: { date: today, ...scopeTotals.husband }, wife: { date: today, ...scopeTotals.wife },
-  });
-  const snapshots = [...daily.values()].map(scopes => scopes[ownerScope]).filter(Boolean);
-  if (snapshots.length < 2) return json({ ownerScope, start: snapshots[0]?.date ?? today, all: [], tw: [], us: [], status: "building" });
-  const start = snapshots[0].date;
-
-  const [{ data: stocks }, { data: transactions }, { data: fxRows }] = await Promise.all([
-    service.from("klfan_stocks").select("key,currency,owner_scope").eq("household_id", householdId),
-    service.from("klfan_transactions").select("stock_key,tx_date,amount").gte("tx_date", start),
-    service.from("klfan_fx_daily").select("fx_date,rate").gte("fx_date", start).order("fx_date"),
-  ]);
-  const ownedStocks = (stocks ?? []).filter(stock => (stock.owner_scope ?? "husband") === ownerScope);
-  const stockByKey = new Map(ownedStocks.map(stock => [stock.key, stock]));
-  const fxHistory = (fxRows ?? []).map(row => ({ date: String(row.fx_date), rate: number(row.rate) }));
-  const txWithTwd = (transactions ?? []).filter(tx => stockByKey.has(tx.stock_key)).map(tx => {
-    const stock = stockByKey.get(tx.stock_key);
-    const rate = [...fxHistory].reverse().find(row => row.date <= String(tx.tx_date))?.rate ?? 0;
-    return { ...tx, twd: stock?.currency === "USD" ? number(tx.amount) * rate : number(tx.amount) };
+  const twCodes = stocks.filter((stock: StockRow) => stock.market === "台股").map((stock: StockRow) => bareSymbol(stock.symbol));
+  const { data: boards } = twCodes.length
+    ? await service.from("tw_stock_names").select("code,board").in("code", twCodes)
+    : { data: [] };
+  const boardByCode = new Map((boards ?? []).map((row: { code: string; board: string }) => [row.code, row.board]));
+  const yahooByKey = new Map(stocks.map((stock: StockRow) => {
+    const code = bareSymbol(stock.symbol || stock.key);
+    const yahoo = stock.market === "台股" ? `${code}.${boardByCode.get(code) === "TWO" ? "TWO" : "TW"}` : code;
+    return [stock.key, yahoo];
+  }));
+  const requested = [...new Set([...yahooByKey.values(), "0050.TW", "VOO", "TWD=X"])];
+  const histories = await fetchHistories(requested, earliest, today);
+  const fxHistory = (histories.get("TWD=X") ?? []).map(row => ({ date: row.date, rate: row.value }));
+  const priceHistory = new Map(stocks.map((stock: StockRow) => [stock.key, histories.get(yahooByKey.get(stock.key) ?? "") ?? []]));
+  const missing = stocks.filter((stock: StockRow) => !(priceHistory.get(stock.key)?.length)).map((stock: StockRow) => stock.key);
+  const snapshots = buildHistoricalSnapshots({ stocks, transactions, priceHistory, fxHistory });
+  const stockByKey = new Map(stocks.map((stock: StockRow) => [stock.key, stock]));
+  const txWithTwd = (transactions ?? []).map((transaction: Record<string, unknown>) => {
+    const stock = stockByKey.get(String(transaction.stock_key));
+    const rate = [...fxHistory].reverse().find(row => row.date <= String(transaction.tx_date))?.rate ?? 0;
+    return { ...transaction, twd: stock?.currency === "USD" ? number(transaction.amount) * rate : number(transaction.amount) };
   });
   const flows = transactionFlows(txWithTwd, stockByKey);
-
-  const [twResponse, usResponse] = await Promise.all([
-    fugleKey ? fetch(`https://api.fugle.tw/marketdata/v1.0/stock/historical/candles/0050?from=${start}&to=${today}&fields=close`, {
-      headers: { "X-API-KEY": fugleKey, "Accept": "application/json" },
-    }).catch(() => null) : null,
-    twelveKey ? fetch(`https://api.twelvedata.com/time_series?symbol=VOO&interval=1day&start_date=${start}&end_date=${today}&outputsize=5000&order=ASC&apikey=${encodeURIComponent(twelveKey)}`, {
-      headers: { "Accept": "application/json" },
-    }).catch(() => null) : null,
-  ]);
-  const twJson = twResponse?.ok ? await twResponse.json().catch(() => ({})) : {};
-  const usJson = usResponse?.ok ? await usResponse.json().catch(() => ({})) : {};
-  const twBenchmark = (twJson.data ?? twJson.values ?? []).map((row: Record<string, unknown>) => ({
-    date: String(row.date ?? row.datetime ?? "").slice(0, 10), value: number(row.close),
-  })).filter((row: { date: string; value: number }) => row.date && row.value > 0).sort((a, b) => a.date.localeCompare(b.date));
-  const usBenchmark = (usJson.values ?? []).map((row: Record<string, unknown>) => ({
-    date: String(row.datetime ?? row.date ?? "").slice(0, 10), value: number(row.close),
-  })).filter((row: { date: string; value: number }) => row.date && row.value > 0).sort((a, b) => a.date.localeCompare(b.date));
+  const twBenchmark = histories.get("0050.TW") ?? [];
+  const usBenchmark = histories.get("VOO") ?? [];
+  const periods: Record<string, unknown> = {};
+  for (const period of ["ytd", "year", "all"]) {
+    const start = periodStart(period, today, earliest);
+    const periodSnapshots = snapshots.filter(row => row.date >= start);
+    periods[period] = {
+      start: periodSnapshots[0]?.date ?? start,
+      all: downsampleSeries(buildPerformanceSeries({ snapshots: periodSnapshots, flows, twBenchmark, usBenchmark, fxHistory, market: "all" })),
+      tw: downsampleSeries(buildPerformanceSeries({ snapshots: periodSnapshots, flows, twBenchmark, usBenchmark, fxHistory, market: "tw" })),
+      us: downsampleSeries(buildPerformanceSeries({ snapshots: periodSnapshots, flows, twBenchmark, usBenchmark, fxHistory, market: "us" })),
+    };
+  }
+  const ytd = periods.ytd as { all: unknown[]; tw: unknown[]; us: unknown[] };
   return json({
-    ownerScope,
-    start,
-    benchmarkLabels: { all: "0050＋VOO 混合", tw: "0050", us: "VOO" },
-    all: buildPerformanceSeries({ snapshots, flows, twBenchmark, usBenchmark, fxHistory, market: "all" }),
-    tw: buildPerformanceSeries({ snapshots, flows, twBenchmark, usBenchmark, fxHistory, market: "tw" }),
-    us: buildPerformanceSeries({ snapshots, flows, twBenchmark, usBenchmark, fxHistory, market: "us" }),
-    status: twBenchmark.length && usBenchmark.length ? "ok" : "benchmark_partial",
+    ownerScope, earliest, periods, all: ytd.all, tw: ytd.tw, us: ytd.us,
+    benchmarkLabels: { all: "0050＋VOO 動態混合", tw: "0050", us: "VOO" },
+    coverage: { requested: stocks.length, missing: missing.length },
+    status: missing.length || !twBenchmark.length || !usBenchmark.length ? "benchmark_partial" : "ok",
   });
 });

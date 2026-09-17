@@ -326,12 +326,19 @@ FIFO 與加權平均會給出不同答案的案例，改回平均成本就會被
 美股比較 VOO；全部頁以比較起始日的台美股市值權重建立固定混合基準，美股與 VOO 都換算成台幣，
 因此包含 USD/TWD 影響。
 
-`portfolio-performance` Edge Function 讀取既有 `activity_log` 的歷史金融項目事件與每日
-`portfolio_snapshot`。為避免 production migration 尚未 reconcile 時再加新表，每天只在既有事件流
-保存老公／老婆各自的台股台幣市值、美股台幣市值與美股美元市值三個彙總數，不保存個股明細。
-2026-09-03 以前沒有可靠的逐日股票市值，因此圖表只從第一個完整可比日開始；資料不足兩天時明確顯示
-「正在累積」，不得用年化報酬率內插假造歷史曲線。每天 06:00 的 `daily-wealth-snapshot` 會補快照，
-當天第一次開啟股票分析也會冪等地補一筆。
+`portfolio-performance` Edge Function 直接從完整交易台帳重建每日持股，配合 Yahoo Chart 的歷史
+收盤價與 USD/TWD；因此不再受 2026-09-03 才開始保存每日市值的限制。老公的完整期間會從第一筆
+交易 2019-10-23 開始，美股則從第一筆美元交易 2024-05-23 開始。畫面可切「今年以來／近一年／全部」，
+每個期間都各自在第一個可比交易日重新設為 100，長期間最多抽樣 280 點，起點與終點一定保留。
+
+Yahoo 的 `close` 已回溯調整拆股、但不調整現金股息；台帳的股息因此仍當提款排除。歷史交易有兩種
+股數口徑：0050 保留拆股前股數，NVDA 已手動換成拆股後股數。不能一律再乘拆股倍率；函式會以
+「成交金額 ÷ 股數」和當日拆股調整後收盤價的比例逐筆判斷，測試同時守住這兩個案例。全部頁的
+0050＋VOO 基準會依前一日實際台美股市值權重動態混合，新增美股後才開始取得美股基準曝險。
+
+行情抓不到的標的不會假造價格；回應會帶缺漏檔數並顯示在圖表期間旁。production migration history
+仍未 reconcile，所以這版不新增資料表、不執行 migration，既有每日 `portfolio_snapshot` 只保留作為
+未來資料核對來源。
 
 `tests/portfolio-ledger.test.mjs` 在真的瀏覽器裡跑這條路徑，supabase client 換成記憶體版
 （`tests/support/fake-supabase.js`，含觸發器與 FK cascade 的行為）。它需要 playwright，沒裝會
