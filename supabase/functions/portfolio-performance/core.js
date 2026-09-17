@@ -4,12 +4,25 @@ const n = value => {
 };
 
 const latestOnOrBefore = (rows, date, key = 'value') => {
-  let hit = null;
-  for (const row of rows ?? []) {
-    if (row.date > date) break;
-    if (n(row[key]) > 0) hit = n(row[key]);
+  const ordered = rows ?? [];
+  let low = 0;
+  let high = ordered.length - 1;
+  let hit = -1;
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    if (ordered[middle].date <= date) {
+      hit = middle;
+      low = middle + 1;
+    } else high = middle - 1;
   }
-  return hit;
+  // Yahoo 偶爾會在交易日留下 null；從定位點往前找最近的有效值，
+  // 不再為每一個績效日從整段歷史的第一天重新掃描。
+  while (hit >= 0) {
+    const value = n(ordered[hit]?.[key]);
+    if (value > 0) return value;
+    hit -= 1;
+  }
+  return null;
 };
 
 export function buildPerformanceSeries({ snapshots, flows, twBenchmark, usBenchmark, fxHistory, market, benchmarkMode = market === 'all' ? 'mixed' : market }) {
