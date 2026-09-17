@@ -1,3 +1,5 @@
+import { summarizePerformance } from './return-math.js';
+
 const n = value => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -51,10 +53,7 @@ export function buildPerformanceSeries({ snapshots, flows, twBenchmark, usBenchm
     if (value <= 0) continue;
     if (row !== first && previousValue > 0) {
       const dailyReturn = (value - flowOf(row.date)) / previousValue - 1;
-      // 日資料不完整時，不讓單日異常值把整張圖炸掉；後續完整快照仍會自然接上。
-      if (Number.isFinite(dailyReturn) && dailyReturn > -0.95 && dailyReturn < 2) {
-        portfolioIndex *= 1 + dailyReturn;
-      }
+      if (Number.isFinite(dailyReturn)) portfolioIndex *= 1 + dailyReturn;
     }
     previousValue = value;
 
@@ -91,6 +90,8 @@ export function buildPerformanceSeries({ snapshots, flows, twBenchmark, usBenchm
       date: row.date,
       portfolio: Math.round(portfolioIndex * 100) / 100,
       benchmark: comparable ? Math.round(benchmarkIndex * 100) / 100 : null,
+      portfolioRaw: portfolioIndex,
+      benchmarkRaw: comparable ? benchmarkIndex : null,
     });
     previousRow = row;
   }
@@ -110,7 +111,9 @@ export function yahooPriceRows(result, field = 'close') {
 
 const recognizedScale = ratio => {
   if (!Number.isFinite(ratio) || ratio <= 0) return 1;
-  const candidates = [1, 2, 3, 4, 5, 10, 20, 50, 100];
+  // 除了拆股，也要涵蓋長榮等現金減資造成的反向股數調整。Yahoo close 會回溯
+  // 調整企業行動；台帳仍是成交當時股數，倍率因此可能小於 1。
+  const candidates = [0.1, 0.2, 0.25, 1 / 3, 0.4, 0.5, 1, 2, 3, 4, 5, 10, 20, 50, 100];
   const closest = candidates.reduce((best, candidate) =>
     Math.abs(Math.log(ratio / candidate)) < Math.abs(Math.log(ratio / best)) ? candidate : best, 1);
   return Math.abs(Math.log(ratio / closest)) <= Math.log(1.18) ? closest : 1;
@@ -210,3 +213,5 @@ export function transactionFlows(transactions, stockByKey) {
   }
   return result;
 }
+
+export { summarizePerformance };
