@@ -145,3 +145,19 @@ test('投資期間不滿一年用天顯示，不會擠成 0.00 年', () => {
   assert.doesNotMatch(app, /stock\.holdingYears\.toFixed\(2\)/);
   assert.equal(app.split('holdingPeriodText(stock.holdingYears)').length - 1, 2, '台股與美股兩邊都要換');
 });
+
+test('股票模型有快取，報價重繪不會重算年化', () => {
+  // calculatePortfolio 要跑每檔加三個彙總的 XIRR，1496 筆交易實測 ~300ms。
+  // 台股報價每 5 秒 render() 一次，在股票分析頁就是每 5 秒卡 0.3 秒。
+  assert.match(app, /let portfolioRevision = 0;/);
+  assert.match(app, /let portfolioModelCache = \{ revision: -1, fxRate: null, byOwner: new Map\(\) \};/);
+  // 快取鍵必須同時看版本號與匯率 —— 只看其中一個，換匯率或換台帳就會拿到舊數字。
+  assert.match(app, /portfolioModelCache\.revision !== portfolioRevision \|\| portfolioModelCache\.fxRate !== fxRate/);
+  // 畫面只准透過 portfolioModelFor\(\) 拿模型，不准自己再算一次。
+  assert.equal(app.split('calculatePortfolio(').length - 1, 1,
+    'calculatePortfolio() 只准在 portfolioModelFor() 裡呼叫一次，其他地方一律吃快取');
+  assert.match(app, /const model = portfolioModelFor\(analysisOwner\);/);
+  // 台帳、報價、換帳號三個地方都要讓快取失效，漏掉任何一個就會顯示舊數字。
+  assert.equal(app.split('portfolioRevision += 1;').length - 1, 3,
+    '報價更新、台帳載入、換帳號三處都要 bump 版本號');
+});

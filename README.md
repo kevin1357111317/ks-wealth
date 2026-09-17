@@ -695,6 +695,23 @@ Fugle 的每分鐘上限沒有查到明文；4 檔 × 每 5 秒 = 48 次／分�
 `tests/awake-autorefresh.test.mjs` 守住「首屏不等待台帳、背景最多預載一次、切到個人頁與行情更新
 不會重複叫 `klfan_bootstrap`，而且入口按鈕先顯示」。
 
+### 股票模型是算好快取的，不是每次重繪重算
+
+`calculatePortfolio()` 要跑每一檔的 XIRR 加上台股／美股／全部三個彙總 XIRR。XIRR 是掃上千個
+利率再二分逼近，1496 筆交易實測 **~300ms**。
+
+台股報價每 5 秒更新一次，只要有價格變動就 `render()` —— 在股票分析頁上，以前等於每 5 秒把
+整包重算一遍，主執行緒卡 0.3 秒。而且那條輕量更新只改 `financial_items` 的金額，
+`portfolioStocks` 一個字都沒動，重算的輸入完全一樣。
+
+所以模型走 `portfolioModelFor(ownerScope)`：用 `portfolioRevision`（台帳重載、報價套用、
+換帳號時 +1）加上 `fxRate` 當快取鍵，同一版之內每個 scope 只算一次。實測一分鐘 12 次重繪
+從 3,526ms 降到 0.006ms；匯率一變仍然會重算。
+
+**`calculatePortfolio()` 只准在 `portfolioModelFor()` 裡呼叫**，其他地方一律吃快取 ——
+`tests/ui-consistency.test.mjs` 會數呼叫次數，也會數三個 `portfolioRevision += 1` 有沒有漏掉。
+漏掉任何一個，畫面就會停在舊數字。
+
 ## 行情額度與 klfan_quotes
 
 Twelve Data 免費方案是每分鐘 8 credits、一個 symbol 算一個。這一輪要 `USD/TWD` + 美股
