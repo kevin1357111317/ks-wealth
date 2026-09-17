@@ -136,7 +136,7 @@ Deno.serve(async (req: Request) => {
 
   const { data: refreshedItems, error: refreshedError } = await client
     .from("financial_items")
-    .select("household_id,owner_scope,kind,amount_twd");
+    .select("household_id,owner_scope,kind,amount_twd,market,fx_rate_twd,portfolio_stock_key");
   if (refreshedError) return json({ error: "snapshot_read_failed", detail: refreshedError.message }, 500);
 
   const taipeiToday = new Intl.DateTimeFormat("en-CA", {
@@ -148,12 +148,24 @@ Deno.serve(async (req: Request) => {
   const households = new Set<string>();
   const scopeTotals = new Map<string, number>();
   const familyTotals = new Map<string, number>();
+  const portfolioTotals = new Map<string, { twTwd: number; usTwd: number; usUsd: number }>();
   for (const item of refreshedItems ?? []) {
     const hid = String(item.household_id);
     const amount = Number(item.amount_twd) || 0;
     households.add(hid);
     scopeTotals.set(`${hid}:${item.owner_scope}:${item.kind}`, (scopeTotals.get(`${hid}:${item.owner_scope}:${item.kind}`) ?? 0) + amount);
     familyTotals.set(hid, (familyTotals.get(hid) ?? 0) + (item.kind === "asset" ? amount : -amount));
+    if (item.kind === "asset" && item.portfolio_stock_key && ["TW", "US"].includes(item.market)) {
+      const key = `${hid}:${item.owner_scope}`;
+      const totals = portfolioTotals.get(key) ?? { twTwd: 0, usTwd: 0, usUsd: 0 };
+      if (item.market === "TW") totals.twTwd += amount;
+      if (item.market === "US") {
+        totals.usTwd += amount;
+        const itemFx = Number(item.fx_rate_twd) || fxRate || 0;
+        if (itemFx > 0) totals.usUsd += amount / itemFx;
+      }
+      portfolioTotals.set(key, totals);
+    }
   }
 
   const scopeRows = [...households].flatMap((householdId) =>
@@ -187,6 +199,28 @@ Deno.serve(async (req: Request) => {
     scope: scopeWrite.error?.message ?? null,
     family: familyWrite.error?.message ?? null,
   }, 500);
+
+  // 股票績效圖只存每日三個彙總值，不複製交易台帳或個股資料。activity_log 本來就是
+  // 家庭事件流，沿用它可避免在 migration history 尚未 reconcile 前新增正式資料表。
+  for (const householdId of households) {
+    const { data: existing } = await client.from("activity_log").select("id")
+      .eq("household_id", householdId).eq("entity_type", "portfolio_snapshot")
+      .contains("payload", { recorded_on: recordedOn }).limit(1).maybeSingle();
+    if (!existing) await client.from("activity_log").insert({
+      household_id: householdId,
+      user_id: null,
+      entity_type: "portfolio_snapshot",
+      entity_id: householdId,
+      action: "snapshot",
+      payload: {
+        recorded_on: recordedOn,
+        scopes: {
+          husband: portfolioTotals.get(`${householdId}:husband`) ?? { twTwd: 0, usTwd: 0, usUsd: 0 },
+          wife: portfolioTotals.get(`${householdId}:wife`) ?? { twTwd: 0, usTwd: 0, usUsd: 0 },
+        },
+      },
+    });
+  }
 
   // 快照寫完才扣當天到期的貸款期數：這一輪 06:00 記的是「昨天」的收盤數字，先扣的話
   // 今天的還款會被算進昨天。放在後面，前端沒開 App 的日子也還是有人把款扣掉。

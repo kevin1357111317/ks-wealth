@@ -319,6 +319,20 @@ FIFO 與加權平均會給出不同答案的案例，改回平均成本就會被
 
 這是呈現口徑的修正，不改交易資料、資產市值或其他頁面的計算定義。
 
+### 投資組合 vs 大盤趨勢
+
+股票分析摘要下方使用「累積報酬指數，起始＝100」，不拿市值或 XIRR 畫折線：每日股票市值先扣除
+當日買進／賣出／股息現金流，再逐日連乘時間加權報酬，避免加碼被誤認成績效。台股比較 0050、
+美股比較 VOO；全部頁以比較起始日的台美股市值權重建立固定混合基準，美股與 VOO 都換算成台幣，
+因此包含 USD/TWD 影響。
+
+`portfolio-performance` Edge Function 讀取既有 `activity_log` 的歷史金融項目事件與每日
+`portfolio_snapshot`。為避免 production migration 尚未 reconcile 時再加新表，每天只在既有事件流
+保存老公／老婆各自的台股台幣市值、美股台幣市值與美股美元市值三個彙總數，不保存個股明細。
+2026-09-03 以前沒有可靠的逐日股票市值，因此圖表只從第一個完整可比日開始；資料不足兩天時明確顯示
+「正在累積」，不得用年化報酬率內插假造歷史曲線。每天 06:00 的 `daily-wealth-snapshot` 會補快照，
+當天第一次開啟股票分析也會冪等地補一筆。
+
 `tests/portfolio-ledger.test.mjs` 在真的瀏覽器裡跑這條路徑，supabase client 換成記憶體版
 （`tests/support/fake-supabase.js`，含觸發器與 FK cascade 的行為）。它需要 playwright，沒裝會
 自動跳過；裝在專案外面的話用 `PLAYWRIGHT_PATH` 指到進入點。

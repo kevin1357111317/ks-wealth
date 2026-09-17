@@ -10,12 +10,12 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.29.11';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.29.11';
-import { calculateUsd } from './usd-core.js?v=V3.29.11';
-import { calculateGold } from './gold-core.js?v=V3.29.11';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.29.11';
-import { buildPersonalTrendRows } from './trend-core.js?v=V3.29.11';
+} from './financial-core.js?v=V3.30.0';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.30.0';
+import { calculateUsd } from './usd-core.js?v=V3.30.0';
+import { calculateGold } from './gold-core.js?v=V3.30.0';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.30.0';
+import { buildPersonalTrendRows } from './trend-core.js?v=V3.30.0';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -24,7 +24,7 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.29.11';
+} from './health-core.js?v=V3.30.0';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -149,6 +149,8 @@ if ('scrollRestoration' in window.history) window.history.scrollRestoration = 'm
 let portfolioMarket = 'all';
 let portfolioShowExited = false;
 let portfolioSort = 'marketValue-desc';
+let portfolioPerformance = new Map();
+let portfolioPerformanceFlights = new Map();
 let openGroups = new Set();
 let trendMode = 'value';
 let currentTrendSeries = [];
@@ -556,6 +558,8 @@ async function applySession(nextSession) {
   scopeHistory = [];
   portfolioStocks = [];
   portfolioRevision += 1;
+  portfolioPerformance = new Map();
+  portfolioPerformanceFlights = new Map();
   ledgerLoaded = false;
   ledgerFlight = null;
   loanSchedule = [];
@@ -645,6 +649,27 @@ async function ensureLedger() {
     return true;
   })().catch(() => false).finally(() => { ledgerFlight = null; });
   return ledgerFlight;
+}
+
+async function ensurePortfolioPerformance(ownerScope) {
+  if (portfolioPerformance.has(ownerScope)) return true;
+  if (portfolioPerformanceFlights.has(ownerScope)) return portfolioPerformanceFlights.get(ownerScope);
+  const flight = (async () => {
+    const { data, error } = await sb.functions.invoke('portfolio-performance', {
+      body: { owner_scope: ownerScope },
+    });
+    if (error || !data) {
+      portfolioPerformance.set(ownerScope, { status: 'error', all: [], tw: [], us: [] });
+      return false;
+    }
+    portfolioPerformance.set(ownerScope, data);
+    return true;
+  })().catch(() => {
+    portfolioPerformance.set(ownerScope, { status: 'error', all: [], tw: [], us: [] });
+    return false;
+  }).finally(() => { portfolioPerformanceFlights.delete(ownerScope); });
+  portfolioPerformanceFlights.set(ownerScope, flight);
+  return flight;
 }
 
 let ledgerWarmupScheduled = false;
@@ -1361,6 +1386,50 @@ function portfolioSummaryCards(bucket, market) {
   return `<div class="portfolioSummary"><div class="portfolioMetric"><span>目前市值</span><b>NT$ ${formatNumber(bucket.currentValueTwd)}</b><small>${bucket.holdings} 檔持有中</small></div><div class="portfolioMetric"><span>累計淨投入</span><b>NT$ ${formatNumber(bucket.netInvestedTwd)}</b><small>買進－賣出－股息</small></div><div class="portfolioMetric"><span>${profitLabel}</span><b class="${profitTone}">NT$ ${formatNumber(bucket.profitTwd)}</b><small>${profitHint}</small></div><div class="portfolioMetric"><span>${xirrLabel}</span><b class="${xirrTone}">${formatPercent(bucket.xirr)}</b><small>計入每筆買賣的時點</small></div></div>`;
 }
 
+function portfolioPerformanceCard() {
+  const data = portfolioPerformance.get(analysisOwner);
+  if (!data) return `<section class="portfolioPerformance"><div class="portfolioPerformanceHead"><div><span>投資績效趨勢</span><h2>我的投資組合 vs 大盤</h2></div><b>起始＝100</b></div><div class="portfolioPerformanceLoading"><i></i><span>正在整理可比較的每日績效…</span></div></section>`;
+  const key = portfolioMarket === '台股' ? 'tw' : portfolioMarket === '美股' ? 'us' : 'all';
+  const rows = data[key] ?? [];
+  const benchmarkLabel = data.benchmarkLabels?.[key] ?? (key === 'tw' ? '0050' : key === 'us' ? 'VOO' : '混合大盤');
+  if (rows.length < 2) {
+    const copy = data.status === 'error' ? '績效資料暫時載入失敗，稍後重新進入再試。' : '每日績效從現在開始累積，有兩個以上交易日後就會顯示折線。';
+    return `<section class="portfolioPerformance"><div class="portfolioPerformanceHead"><div><span>投資績效趨勢</span><h2>我的投資組合 vs ${escapeHtml(benchmarkLabel)}</h2></div><b>起始＝100</b></div><div class="portfolioPerformanceEmpty">${copy}</div></section>`;
+  }
+
+  const values = rows.flatMap(row => [row.portfolio, row.benchmark]).filter(Number.isFinite);
+  const low = Math.min(...values);
+  const high = Math.max(...values);
+  const pad = Math.max((high - low) * 0.14, 0.8);
+  const yLow = low - pad;
+  const yHigh = high + pad;
+  const x = index => 82 + index / Math.max(1, rows.length - 1) * 572;
+  const y = value => 18 + (yHigh - value) / Math.max(0.0001, yHigh - yLow) * 174;
+  const path = field => {
+    let started = false;
+    return rows.map((row, index) => {
+      if (!Number.isFinite(row[field])) return '';
+      const command = started ? 'L' : 'M';
+      started = true;
+      return `${command}${x(index).toFixed(1)} ${y(row[field]).toFixed(1)}`;
+    }).filter(Boolean).join(' ');
+  };
+  const ticks = [0, 1, 2, 3].map(index => {
+    const value = yHigh - (yHigh - yLow) * index / 3;
+    const py = y(value);
+    return `<line x1="82" x2="654" y1="${py}" y2="${py}"/><text x="70" y="${py + 5}" text-anchor="end">${value.toFixed(1)}</text>`;
+  }).join('');
+  const dateIndexes = [...new Set([0, Math.floor((rows.length - 1) / 2), rows.length - 1])];
+  const dates = dateIndexes.map(index => `<text x="${x(index)}" y="224" text-anchor="${index === 0 ? 'start' : index === rows.length - 1 ? 'end' : 'middle'}">${chartDate(rows[index].date)}</text>`).join('');
+  const last = rows.at(-1);
+  const portfolioReturn = last.portfolio - 100;
+  const benchmarkReturn = Number.isFinite(last.benchmark) ? last.benchmark - 100 : null;
+  const excess = benchmarkReturn === null ? null : portfolioReturn - benchmarkReturn;
+  const signed = value => `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
+  const period = `${chartDate(rows[0].date)}－${chartDate(last.date)}`;
+  return `<section class="portfolioPerformance"><div class="portfolioPerformanceHead"><div><span>投資績效趨勢</span><h2>我的投資組合 vs ${escapeHtml(benchmarkLabel)}</h2></div><b>起始＝100</b></div><div class="portfolioPerformanceStats"><div><span>我的報酬</span><b class="${portfolioTone(portfolioReturn)}">${signed(portfolioReturn)}</b></div><div><span>${escapeHtml(benchmarkLabel)}</span><b class="${portfolioTone(benchmarkReturn)}">${benchmarkReturn === null ? '—' : signed(benchmarkReturn)}</b></div><div><span>超額報酬</span><b class="${portfolioTone(excess)}">${excess === null ? '—' : signed(excess)}</b></div></div><div class="portfolioPerformanceLegend"><span class="mine"><i></i>我的投資組合</span><span class="market"><i></i>${escapeHtml(benchmarkLabel)}</span><small>${period} · 已排除入金與提款</small></div><svg class="portfolioPerformanceChart" viewBox="0 0 680 238" role="img" aria-label="投資組合與${escapeHtml(benchmarkLabel)}累積報酬趨勢，起始為100"><g class="portfolioPerformanceAxis">${ticks}${dates}</g><path class="benchmark" d="${path('benchmark')}"/><path class="mine" d="${path('portfolio')}"/></svg><p>採每日時間加權報酬；全部頁的美股包含美元匯率，混合大盤依比較起始日的台美股權重計算。</p></section>`;
+}
+
 const shareFormat = value => new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 6 }).format(value);
 const signedMoney = value => `${value >= 0 ? '+' : '−'}NT$ ${formatNumber(Math.abs(value))}`;
 const signedUsd = value => `${value >= 0 ? '+' : '−'}US$ ${formatNumber(Math.abs(value))}`;
@@ -1429,7 +1498,7 @@ function portfolioListPage() {
   const directionLabel = ascending ? '低到高' : '高到低';
   // 雙向箭頭：兩支箭頭同時在，一眼看得出按了會反向；目前方向那一支才是實色。
   const sortArrow = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><g class="sortAsc"><path d="M8 19V5"/><path d="m4 9 4-4 4 4"/></g><g class="sortDesc"><path d="M16 5v14"/><path d="m20 15-4 4-4-4"/></g></svg>';
-  shell(`<div class="portfolioView"><div class="seg"><button data-portfolio-market="all" class="${portfolioMarket === 'all' ? 'on' : ''}">全部</button><button data-portfolio-market="台股" class="${portfolioMarket === '台股' ? 'on' : ''}">台股</button><button data-portfolio-market="美股" class="${portfolioMarket === '美股' ? 'on' : ''}">美股</button></div>${portfolioSummaryCards(bucket, portfolioMarket)}<div class="portfolioToolbar"><div class="portfolioFilters"><span class="portfolioCount">${rows.length} 檔標的</span><label class="portfolioExited"><input type="checkbox" data-show-exited ${portfolioShowExited ? 'checked' : ''}> 顯示已出清</label></div><div class="portfolioSort"><select data-portfolio-sort aria-label="排序依據">${sortOptions}</select><button type="button" class="portfolioSortDir" data-sort-direction="${sortDirection}" aria-label="切換排序方向，目前${directionLabel}" title="${directionLabel}">${sortArrow}</button></div></div><div class="portfolioList">${rows.length ? rows.map(stock => portfolioStockCard(stock, stock.key === expandedStock)).join('') : '<div class="portfolioEmpty">這個篩選條件目前沒有標的。</div>'}</div></div>`, `${ownerName(analysisOwner)}股票分析`);
+  shell(`<div class="portfolioView"><div class="seg"><button data-portfolio-market="all" class="${portfolioMarket === 'all' ? 'on' : ''}">全部</button><button data-portfolio-market="台股" class="${portfolioMarket === '台股' ? 'on' : ''}">台股</button><button data-portfolio-market="美股" class="${portfolioMarket === '美股' ? 'on' : ''}">美股</button></div>${portfolioSummaryCards(bucket, portfolioMarket)}${portfolioPerformanceCard()}<div class="portfolioToolbar"><div class="portfolioFilters"><span class="portfolioCount">${rows.length} 檔標的</span><label class="portfolioExited"><input type="checkbox" data-show-exited ${portfolioShowExited ? 'checked' : ''}> 顯示已出清</label></div><div class="portfolioSort"><select data-portfolio-sort aria-label="排序依據">${sortOptions}</select><button type="button" class="portfolioSortDir" data-sort-direction="${sortDirection}" aria-label="切換排序方向，目前${directionLabel}" title="${directionLabel}">${sortArrow}</button></div></div><div class="portfolioList">${rows.length ? rows.map(stock => portfolioStockCard(stock, stock.key === expandedStock)).join('') : '<div class="portfolioEmpty">這個篩選條件目前沒有標的。</div>'}</div></div>`, `${ownerName(analysisOwner)}股票分析`);
   root.querySelectorAll('[data-portfolio-market]').forEach(button => { button.onclick = () => { portfolioMarket = button.dataset.portfolioMarket; render(); }; });
   root.querySelector('[data-portfolio-sort]').onchange = event => { portfolioSort = `${event.target.value}-${sortDirection}`; render(); };
   root.querySelector('[data-sort-direction]').onclick = () => { portfolioSort = `${sortCriterion}-${ascending ? 'desc' : 'asc'}`; render(); };
@@ -1890,6 +1959,11 @@ function openAnalysis(screen, ownerScope) {
   if (needsStockLedger) {
     void ensureLedger().then(ok => {
       if (ok && analysisScreen === 'stocks' && analysisOwner === ownerScope) render();
+    });
+  }
+  if (screen === 'stocks' && !portfolioPerformance.has(ownerScope)) {
+    void ensurePortfolioPerformance(ownerScope).then(() => {
+      if (analysisScreen === 'stocks' && analysisOwner === ownerScope) render();
     });
   }
   if (needsLoanSchedule) {

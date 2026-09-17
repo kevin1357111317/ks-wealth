@@ -130,6 +130,22 @@ export function makeClient() {
     channel: () => ({ on() { return this; }, subscribe() { return this; } }),
     removeChannel: () => {},
     functions: { invoke: async (name, options) => {
+      if (name === 'portfolio-performance') return { data: {
+        status: 'ok',
+        benchmarkLabels: { all: '0050＋VOO 混合', tw: '0050', us: 'VOO' },
+        all: [
+          { date: '2026-09-04', portfolio: 100, benchmark: 100 },
+          { date: '2026-09-16', portfolio: 103.25, benchmark: 101.1 },
+        ],
+        tw: [
+          { date: '2026-09-04', portfolio: 100, benchmark: 100 },
+          { date: '2026-09-16', portfolio: 104, benchmark: 102 },
+        ],
+        us: [
+          { date: '2026-09-04', portfolio: 100, benchmark: 100 },
+          { date: '2026-09-16', portfolio: 102, benchmark: 100.5 },
+        ],
+      }, error: null };
       // 自動更新的測試靠這個計數。台股走 scope='tw' 的輕量路徑，跟完整那一輪分開記。
       const scope = options?.body?.scope === 'tw' ? 'tw' : 'all';
       globalThis.__invokes = globalThis.__invokes ?? {};
