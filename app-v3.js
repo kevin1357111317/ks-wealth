@@ -10,12 +10,12 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.29.10';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.29.10';
-import { calculateUsd } from './usd-core.js?v=V3.29.10';
-import { calculateGold } from './gold-core.js?v=V3.29.10';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.29.10';
-import { buildPersonalTrendRows } from './trend-core.js?v=V3.29.10';
+} from './financial-core.js?v=V3.29.11';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.29.11';
+import { calculateUsd } from './usd-core.js?v=V3.29.11';
+import { calculateGold } from './gold-core.js?v=V3.29.11';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.29.11';
+import { buildPersonalTrendRows } from './trend-core.js?v=V3.29.11';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -24,7 +24,7 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.29.10';
+} from './health-core.js?v=V3.29.11';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -110,7 +110,12 @@ let fxRate = null;
 // 資產列的股數與市值是觸發器算好存在 financial_items 的，開 App 根本不需要台帳，
 // 所以改成第一次真的要用時才載。
 let portfolioStocks = [];
-let portfolioModel = null;
+// 台帳或報價換過就 +1。calculatePortfolio 要跑每一檔的 XIRR 加三個彙總 XIRR，
+// 1496 筆交易實測 ~300ms；台股報價每 5 秒 render() 一次，但那條路只改
+// financial_items 的金額，portfolioStocks 一個字都沒動 —— 重算的輸入完全一樣。
+// 所以用「版本號 + 匯率」當快取鍵，只有真的變了才重算。
+let portfolioRevision = 0;
+let portfolioModelCache = { revision: -1, fxRate: null, byOwner: new Map() };
 let ledgerLoaded = false;
 let ledgerFlight = null;
 // 美金部位自己一本帳，跟 financial_items 沒有連動：買賣只在美金分析頁裡進出。
@@ -474,7 +479,7 @@ async function applyQuoteRefresh(data) {
     const quote = bySymbol.get(String(stock.symbol ?? '').toUpperCase());
     if (quote) stock.quote = quote;
   }
-  portfolioModel = calculatePortfolio(portfolioStocks, fxRate);
+  portfolioRevision += 1;
 }
 
 // 台股的輕量更新：只拿價格套進畫面，不寫資料庫、不重載、不動狀態列。
@@ -550,7 +555,7 @@ async function applySession(nextSession) {
   history = [];
   scopeHistory = [];
   portfolioStocks = [];
-  portfolioModel = null;
+  portfolioRevision += 1;
   ledgerLoaded = false;
   ledgerFlight = null;
   loanSchedule = [];
@@ -635,7 +640,7 @@ async function ensureLedger() {
     const { data, error } = await sb.rpc('klfan_bootstrap');
     if (error || !data) return false;
     portfolioStocks = decodePortfolioBootstrap(data);
-    portfolioModel = calculatePortfolio(portfolioStocks, fxRate);
+    portfolioRevision += 1;
     ledgerLoaded = true;
     return true;
   })().catch(() => false).finally(() => { ledgerFlight = null; });
@@ -1030,7 +1035,7 @@ function analysisEntry() {
   return `<div class="analysisEntry"><button data-open-portfolio>股票分析<i>›</i></button><button data-open-loans>貸款分析<i>›</i></button><button data-open-gold>黃金分析<i>›</i></button><button data-open-usd>美金分析<i>›</i></button></div>`;
 }
 
-// 分析頁只看單一個人的部位。全部合起來的 portfolioModel 還是要留著 ——
+// 分析頁只看單一個人的部位。兩個人合起來的那份也還是要留著 ——
 // 編輯表單與 syncPortfolioFinancialItem() 是照 key 找標的，跟歸屬無關。
 const ownerName = ownerScope => ownerScope === 'wife' ? '老婆' : '老公';
 
@@ -1309,8 +1314,24 @@ function healthPage() {
   bindHealthControls();
 }
 
-function ownerPortfolioModel(ownerScope) {
-  return calculatePortfolio(portfolioStocks.filter(stock => stock.ownerScope === ownerScope), fxRate);
+// 版本號或匯率一變就整包丟掉重來；同一版之內每個 scope 只算一次。
+function portfolioModelFor(ownerScope) {
+  if (portfolioModelCache.revision !== portfolioRevision || portfolioModelCache.fxRate !== fxRate) {
+    portfolioModelCache = { revision: portfolioRevision, fxRate, byOwner: new Map() };
+  }
+  const cached = portfolioModelCache.byOwner.get(ownerScope);
+  if (cached) return cached;
+  const rows = ownerScope === 'all'
+    ? portfolioStocks
+    : portfolioStocks.filter(stock => stock.ownerScope === ownerScope);
+  const model = calculatePortfolio(rows, fxRate);
+  portfolioModelCache.byOwner.set(ownerScope, model);
+  return model;
+}
+
+// 兩個人合起來的部位，只有查單一標的時才會用到 —— 沒載台帳就不要算。
+function allPortfolioModel() {
+  return ledgerLoaded ? portfolioModelFor('all') : null;
 }
 
 function ownerUsdModel(ownerScope) {
@@ -1386,7 +1407,7 @@ function portfolioStockCard(stock, expanded) {
 }
 
 function portfolioListPage() {
-  const model = ownerPortfolioModel(analysisOwner);
+  const model = portfolioModelFor(analysisOwner);
   const marketRows = portfolioMarket === 'all'
     ? model.positions
     : model.positions.filter(stock => stock.currency === (portfolioMarket === '美股' ? 'USD' : 'TWD'));
@@ -1438,7 +1459,7 @@ function transactionRow(transaction, stock) {
 }
 
 async function syncPortfolioFinancialItem(stockKey, { ownerScope, notes } = {}) {
-  const metrics = portfolioModel?.positions.find(stock => stock.key === stockKey);
+  const metrics = allPortfolioModel()?.positions.find(stock => stock.key === stockKey);
   if (!metrics) return;
   const linked = items.find(item => item.portfolio_stock_key === stockKey);
   const market = metrics.market === '美股' ? 'US' : 'TW';
@@ -1470,7 +1491,7 @@ function analysisPage() {
   if (analysisScreen === 'gold') return goldPage();
   if (analysisScreen === 'loans') return loanPage();
   // 點進來才去載台帳，載好會再 render 一次。
-  if (!portfolioModel) {
+  if (!ledgerLoaded) {
     return shell('<div class="portfolioView"><div class="portfolioEmpty">載入交易紀錄…</div></div>',
       `${ownerName(analysisOwner)}股票分析`);
   }
@@ -2074,7 +2095,7 @@ async function editItem(item, defaultOwner, defaultKind) {
   // sync_klfan_financial_item 觸發器就會把結果寫回 financial_items），所以這種
   // 項目在這張表單裡直接編台帳、記買賣，而不是手打股數。
   const ledgerStock = item?.portfolio_stock_key
-    ? portfolioModel?.positions.find(row => row.key === item.portfolio_stock_key) ?? null
+    ? allPortfolioModel()?.positions.find(row => row.key === item.portfolio_stock_key) ?? null
     : null;
   let owner = item?.owner_scope || defaultOwner || 'husband';
   let kind = item?.kind || defaultKind || 'asset';
