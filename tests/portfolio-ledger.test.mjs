@@ -175,13 +175,22 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     assert.equal(await page.locator('[data-portfolio-performance-selection]').getAttribute('hidden'), null);
     assert.match(await page.textContent('[data-portfolio-performance-selection]'), /2026\/.*我的.*大盤.*(領先|落後)/s);
     assert.match(await page.textContent('.portfolioPerformanceStats'), /我的 TWR.*\+3\.25%.*超額報酬/s);
+    // 日期區間要帶年份：只有 M/D 的話「9/17－9/16」看起來像同一天
+    assert.match(await page.textContent('.portfolioPerformanceLegend'), /2026\/1\/2－2026\/9\/16/);
     await page.click('[data-performance-period="all"]');
-    assert.match(await page.textContent('.portfolioPerformanceLegend'), /10\/23－9\/16/);
+    assert.match(await page.textContent('.portfolioPerformanceLegend'), /2019\/10\/23－2026\/9\/16/);
     assert.match(await page.textContent('.portfolioPerformanceStats'), /\+40\.00%/);
     assert.match(await page.textContent('.portfolioPerformance'), /我的年化 TWR.*\+5\.00%.*大盤年化 TWR.*\+3\.80%.*年化超額報酬.*\+1\.20pp/s);
+    // 跨年時 X 軸刻度也要看得到年份
+    assert.match(await page.textContent('.portfolioPerformanceAxis'), /2019\/10\/23/);
     await page.click('[data-performance-period="year"]');
-    assert.match(await page.textContent('.portfolioPerformanceLegend'), /9\/17－9\/16/);
+    assert.match(await page.textContent('.portfolioPerformanceLegend'), /2025\/9\/17－2026\/9\/16/);
+    // 期間剛好一年，年化 TWR 必然等於累積 TWR，加註說明而不是讓兩個一樣的數字看起來像 bug
+    assert.match(await page.textContent('.portfolioPerformance'), /年化比較.*期間為一年，年化＝累積/s);
+    assert.match(await page.textContent('.portfolioPerformance'), /我的年化 TWR.*\+6\.00%/s);
+    assert.match(await page.textContent('.portfolioPerformanceStats'), /我的 TWR.*\+6\.00%/s);
     await page.click('[data-performance-period="ytd"]');
+    assert.match(await page.textContent('.portfolioPerformance'), /年化比較.*期間未滿一年，不年化/s);
     await page.click('[data-portfolio-market="台股"]');
     assert.match(await page.textContent('.portfolioPerformanceHead'), /我的投資組合 vs 大盤/);
     assert.match(await page.textContent('.portfolioPerformanceLegend'), /0050/);

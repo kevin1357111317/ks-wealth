@@ -279,8 +279,45 @@ test('交易與拆股後價格可重建每日台美股市值', () => {
     ],
     fxHistory: [{ date: '2025-06-17', rate: 30 }, { date: '2025-06-18', rate: 31 }],
   });
-  assert.deepEqual(rows[0], { date: '2025-06-17', twTwd: 20000, usTwd: 15000, usUsd: 500 });
-  assert.deepEqual(rows[1], { date: '2025-06-18', twTwd: 20800, usTwd: 15810, usUsd: 510 });
+  // flow 是當日買賣以「當日收盤價」計價的外部金流，跟同一列的市值同一把尺。
+  assert.deepEqual(rows[0], {
+    date: '2025-06-17', twTwd: 20000, usTwd: 15000, usUsd: 500,
+    flow: { twTwd: 20000, usTwd: 15000, usUsd: 500 },
+  });
+  assert.deepEqual(rows[1], {
+    date: '2025-06-18', twTwd: 20800, usTwd: 15810, usUsd: 510,
+    flow: { twTwd: 0, usTwd: 0, usUsd: 0 },
+  });
+});
+
+// 2020-07-22 把 0050 只剩一萬出頭的部位拿去買一張台積電：成交 381,336、當日收盤 384,000，
+// 兩者差 2,664 除以前一日市值 10,956 就成了 +24.57% 的假單日報酬。同一個機制在 2020-08-18
+// 與 2020-11-17 反向做出 -32.66% 與 -26.02%，全期累積 TWR 因此少了兩百多個百分點。
+test('部位很小時加碼，成交價與收盤價的價差不會被當成單日報酬', () => {
+  const stocks = [
+    { key: '0050', market: '台股', currency: 'TWD' },
+    { key: '台積電', market: '台股', currency: 'TWD' },
+  ];
+  const priceHistory = new Map([
+    ['0050', [{ date: '2020-07-21', value: 100 }, { date: '2020-07-22', value: 101 }]],
+    ['台積電', [{ date: '2020-07-21', value: 395 }, { date: '2020-07-22', value: 400 }]],
+  ]);
+  const transactions = [
+    { stock_key: '0050', tx_date: '2020-07-21', amount: -10000, shares: 100, kind: 'trade' },
+    { stock_key: '台積電', tx_date: '2020-07-22', amount: -390000, shares: 1000, kind: 'trade' },
+  ];
+  const snapshots = buildHistoricalSnapshots({ stocks, transactions, priceHistory, fxHistory: [] });
+  assert.equal(snapshots[1].twTwd, 410100);
+  assert.equal(snapshots[1].flow.twTwd, 400000, '金流要用當日收盤價，不是成交金額');
+  const rows = buildPerformanceSeries({
+    market: 'tw', benchmarkMode: 'tw', snapshots,
+    flows: transactionFlows(transactions.map(row => ({ ...row, twd: row.amount })),
+      new Map(stocks.map(stock => [stock.key, stock]))),
+    twBenchmark: [{ date: '2020-07-21', value: 50 }, { date: '2020-07-22', value: 50 }],
+    usBenchmark: [], fxHistory: [],
+  });
+  // 當天真正的報酬只有既有部位的 0050 +1%；用成交金額扣會變成 +101%。
+  assert.equal(rows.at(-1).portfolio, 101);
 });
 
 test('長期間只抽樣顯示，不改起點與終點', () => {

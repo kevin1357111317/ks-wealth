@@ -34,11 +34,13 @@ export function buildPerformanceSeries({ snapshots, flows, twBenchmark, usBenchm
   const valueOf = row => market === 'tw' ? n(row.twTwd)
     : market === 'us' ? n(row.usUsd)
       : n(row.twTwd) + n(row.usTwd);
-  const flowOf = date => {
-    const row = flows?.[date] ?? {};
-    return market === 'tw' ? n(row.twTwd)
-      : market === 'us' ? n(row.usUsd)
-        : n(row.twTwd) + n(row.usTwd);
+  // 每日 TWR 的分子要跟市值同一把尺：快照自己帶的 flow 已用當日收盤價計價，優先採用；
+  // 只有手工組出來、沒有 flow 的快照才退回台帳現金金額。
+  const flowOf = row => {
+    const source = row.flow ?? flows?.[row.date] ?? {};
+    return market === 'tw' ? n(source.twTwd)
+      : market === 'us' ? n(source.usUsd)
+        : n(source.twTwd) + n(source.usTwd);
   };
 
   const first = ordered.find(row => valueOf(row) > 0);
@@ -52,7 +54,7 @@ export function buildPerformanceSeries({ snapshots, flows, twBenchmark, usBenchm
     const value = valueOf(row);
     if (value <= 0) continue;
     if (row !== first && previousValue > 0) {
-      const dailyReturn = (value - flowOf(row.date)) / previousValue - 1;
+      const dailyReturn = (value - flowOf(row)) / previousValue - 1;
       if (Number.isFinite(dailyReturn)) portfolioIndex *= 1 + dailyReturn;
     }
     previousValue = value;
@@ -161,10 +163,31 @@ export function buildHistoricalSnapshots({ stocks, transactions, priceHistory, f
   for (const date of [...dates].filter(Boolean).sort()) {
     for (const [key, value] of pricesByDate.get(date) ?? []) if (value > 0) currentPrices.set(key, value);
     if (fxByDate.get(date) > 0) currentFx = fxByDate.get(date);
+    // 當日的外部金流。買賣用「當日收盤價 × 股數」計價，不用成交金額：市值本來就是收盤價，
+    // 拿成交價去扣就會把成交價與收盤價的價差（手續費、盤中價位）當成報酬。部位很小時加碼，
+    // 這個價差除以前一日市值會變成幾十趴的假單日報酬（2020-07-22、2020-08-18、2020-11-17）。
+    const flow = { twTwd: 0, usTwd: 0, usUsd: 0 };
     for (const transaction of txByDate.get(date) ?? []) {
-      if (transaction.kind === 'dividend') continue;
+      const stock = stockByKey.get(transaction.stock_key);
+      if (!stock) continue;
+      if (transaction.kind === 'dividend') {
+        // 股息沒有股數，現金直接離開部位，照台帳金額當提款。
+        if (stock.currency === 'USD') {
+          flow.usUsd -= n(transaction.amount);
+          flow.usTwd -= n(transaction.amount) * currentFx;
+        } else flow.twTwd -= n(transaction.amount);
+        continue;
+      }
       const next = n(shares.get(transaction.stock_key)) + n(transaction.adjustedShares);
       shares.set(transaction.stock_key, Math.abs(next) < 0.000001 ? 0 : next);
+      const price = currentPrices.get(transaction.stock_key);
+      if (!price) continue;
+      const moved = n(transaction.adjustedShares) * price;
+      if (stock.currency === 'USD') {
+        flow.usUsd += moved;
+        flow.usTwd += moved * currentFx;
+      } else if (stock.market === '美股') flow.twTwd += moved * currentFx;
+      else flow.twTwd += moved;
     }
     let twTwd = 0;
     let usTwd = 0;
@@ -185,7 +208,7 @@ export function buildHistoricalSnapshots({ stocks, transactions, priceHistory, f
         twTwd += quantity * price * currentFx;
       } else twTwd += quantity * price;
     }
-    if (complete && twTwd + usTwd > 0) snapshots.push({ date, twTwd, usTwd, usUsd });
+    if (complete && twTwd + usTwd > 0) snapshots.push({ date, twTwd, usTwd, usUsd, flow });
   }
   return snapshots;
 }
