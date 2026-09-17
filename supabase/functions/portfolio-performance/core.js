@@ -12,7 +12,7 @@ const latestOnOrBefore = (rows, date, key = 'value') => {
   return hit;
 };
 
-export function buildPerformanceSeries({ snapshots, flows, twBenchmark, usBenchmark, fxHistory, market }) {
+export function buildPerformanceSeries({ snapshots, flows, twBenchmark, usBenchmark, fxHistory, market, benchmarkMode = market === 'all' ? 'mixed' : market }) {
   const ordered = [...(snapshots ?? [])].sort((a, b) => a.date.localeCompare(b.date));
   if (!ordered.length) return [];
 
@@ -54,12 +54,15 @@ export function buildPerformanceSeries({ snapshots, flows, twBenchmark, usBenchm
       const fx = latestOnOrBefore(fxHistory, row.date, 'rate');
       const previousFx = latestOnOrBefore(fxHistory, previousRow.date, 'rate');
       let benchmarkReturn = 0;
-      if (market === 'tw') {
+      if (benchmarkMode === 'tw') {
         comparable = Boolean(tw && previousTw);
         if (comparable) benchmarkReturn = tw / previousTw - 1;
-      } else if (market === 'us') {
-        comparable = Boolean(us && previousUs);
-        if (comparable) benchmarkReturn = us / previousUs - 1;
+      } else if (benchmarkMode === 'us') {
+        const includeFx = market === 'all';
+        comparable = Boolean(us && previousUs && (!includeFx || fx && previousFx));
+        if (comparable) benchmarkReturn = includeFx
+          ? (us * fx) / (previousUs * previousFx) - 1
+          : us / previousUs - 1;
       } else {
         const previousTotal = n(previousRow.twTwd) + n(previousRow.usTwd);
         const twWeight = previousTotal > 0 ? n(previousRow.twTwd) / previousTotal : 0;
@@ -79,6 +82,17 @@ export function buildPerformanceSeries({ snapshots, flows, twBenchmark, usBenchm
     previousRow = row;
   }
   return output;
+}
+
+export function yahooPriceRows(result, field = 'close') {
+  const timestamps = result?.timestamp ?? [];
+  const values = field === 'adjusted'
+    ? result?.indicators?.adjclose?.[0]?.adjclose ?? []
+    : result?.indicators?.quote?.[0]?.close ?? [];
+  return timestamps.map((timestamp, index) => ({
+    date: new Date(timestamp * 1000).toISOString().slice(0, 10),
+    value: n(values[index]),
+  })).filter(row => row.value > 0);
 }
 
 const recognizedScale = ratio => {

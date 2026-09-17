@@ -62,7 +62,7 @@ test('版號收在內容最後當頁尾，不佔標題也不浮在內容上', as
 test('排序留三個依據加雙向方向鈕，已出清維持核取方塊', async () => {
   // 八個「依據 + 方向」的組合擠在一個 select 裡，光讀選項就吃掉半行寬度。
   assert.match(app, /data-portfolio-sort aria-label="排序依據"/);
-  assert.match(app, /\['marketValue', '市值'\], \['xirr', '年化報酬率'\], \['profit', '損益'\]/);
+  assert.match(app, /\['marketValue', '市值'\], \['xirr', 'XIRR 年化'\], \['profit', '損益'\]/);
   // 總報酬率跟年化在講同一件事，投入時間不同時只有年化可比，所以選單裡只留年化。
   assert.doesNotMatch(app, /\['return', /);
   assert.match(app, /data-sort-direction="\$\{sortDirection\}"/);
