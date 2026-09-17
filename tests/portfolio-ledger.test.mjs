@@ -162,6 +162,8 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     assert.match(await page.textContent('.portfolioPerformance'), /我的投資組合 vs 大盤/);
     assert.match(await page.textContent('.portfolioPerformance'), /TWR 績效趨勢/);
     assert.match(await page.textContent('.portfolioPerformanceStats'), /我的 TWR.*大盤 TWR.*超額報酬/s);
+    assert.match(await page.textContent('.portfolioPerformance'), /年化比較.*期間未滿一年.*我的年化 TWR.*大盤年化 TWR.*年化超額報酬/s);
+    assert.match(await page.textContent('.portfolioPerformance'), /實際資金績效.*我的 XIRR.*\+8\.00%.*Benchmark XIRR.*\+6\.00%.*XIRR 差距.*\+2\.00pp/s);
     assert.match(await page.textContent('.portfolioSummary'), /XIRR 年化報酬.*考慮實際投入金額與時間/s);
     assert.doesNotMatch(await page.textContent('.portfolioPerformanceStats'), /0050＋VOO 動態混合/);
     assert.match(await page.textContent('.portfolioPerformanceLegend'), /含息總報酬/);
@@ -176,10 +178,15 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     await page.click('[data-performance-period="all"]');
     assert.match(await page.textContent('.portfolioPerformanceLegend'), /10\/23－9\/16/);
     assert.match(await page.textContent('.portfolioPerformanceStats'), /\+40\.00%/);
+    assert.match(await page.textContent('.portfolioPerformance'), /我的年化 TWR.*\+5\.00%.*大盤年化 TWR.*\+3\.80%.*年化超額報酬.*\+1\.20pp/s);
+    await page.click('[data-performance-period="year"]');
+    assert.match(await page.textContent('.portfolioPerformanceLegend'), /9\/17－9\/16/);
     await page.click('[data-performance-period="ytd"]');
     await page.click('[data-portfolio-market="台股"]');
     assert.match(await page.textContent('.portfolioPerformanceHead'), /我的投資組合 vs 大盤/);
     assert.match(await page.textContent('.portfolioPerformanceLegend'), /0050/);
+    await page.click('[data-portfolio-market="美股"]');
+    assert.match(await page.textContent('.portfolioPerformanceLegend'), /VOO/);
     await page.click('[data-portfolio-market="all"]');
     assert.equal(await page.locator('.portfolioStockDetail').count(), 0, '一開始是收合的');
     // 台股名字是中文、美股名字就是代號，標題不該再貼一組報價代號

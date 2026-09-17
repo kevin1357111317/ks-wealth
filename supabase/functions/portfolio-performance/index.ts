@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.95.0";
-import { buildHistoricalSnapshots, buildPerformanceSeries, downsampleSeries, transactionFlows, yahooPriceRows } from "./core.js";
+import { buildHistoricalSnapshots, buildPerformanceSeries, downsampleSeries, summarizePerformance, transactionFlows, yahooPriceRows } from "./core.js";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -130,21 +130,42 @@ Deno.serve(async (req: Request) => {
   for (const period of ["ytd", "year", "all"]) {
     const start = periodStart(period, today, earliest);
     const periodSnapshots = snapshots.filter(row => row.date >= start);
-    const series = (market: string, benchmarkMode: string, benchmark: PriceRow[]) => downsampleSeries(buildPerformanceSeries({
-      snapshots: periodSnapshots, flows, twBenchmark,
-      usBenchmark: benchmark, fxHistory, market, benchmarkMode,
-    }));
-    const allBenchmarks = {
-      mixed: series("all", "mixed", usBenchmark),
-      VOO: series("all", "us", usBenchmarks.get("VOO") ?? []),
-      QQQ: series("all", "us", usBenchmarks.get("QQQ") ?? []),
-      SOXX: series("all", "us", usBenchmarks.get("SOXX") ?? []),
+    const portfolioXirrByMarket = new Map<string, number | null>();
+    const comparison = (market: string, benchmarkMode: string, benchmark: PriceRow[]) => {
+      const fullSeries = buildPerformanceSeries({
+        snapshots: periodSnapshots, flows, twBenchmark,
+        usBenchmark: benchmark, fxHistory, market, benchmarkMode,
+      });
+      const rows = downsampleSeries(fullSeries).map(({ portfolioRaw: _portfolioRaw, benchmarkRaw: _benchmarkRaw, ...row }) => row);
+      const metrics = summarizePerformance({
+        series: fullSeries, snapshots: periodSnapshots, flows, market,
+        portfolioXirrOverride: portfolioXirrByMarket.has(market) ? portfolioXirrByMarket.get(market) : undefined,
+      });
+      if (!portfolioXirrByMarket.has(market)) portfolioXirrByMarket.set(market, metrics?.portfolioXirr ?? null);
+      return {
+        rows,
+        metrics,
+      };
     };
-    const twBenchmarks = { "0050": series("tw", "tw", []) };
+    const mixed = comparison("all", "mixed", usBenchmark);
+    const allVoo = comparison("all", "us", usBenchmarks.get("VOO") ?? []);
+    const allQqq = comparison("all", "us", usBenchmarks.get("QQQ") ?? []);
+    const allSoxx = comparison("all", "us", usBenchmarks.get("SOXX") ?? []);
+    const tw0050 = comparison("tw", "tw", []);
+    const usVoo = comparison("us", "us", usBenchmarks.get("VOO") ?? []);
+    const usQqq = comparison("us", "us", usBenchmarks.get("QQQ") ?? []);
+    const usSoxx = comparison("us", "us", usBenchmarks.get("SOXX") ?? []);
+    const allBenchmarks = {
+      mixed: mixed.rows,
+      VOO: allVoo.rows,
+      QQQ: allQqq.rows,
+      SOXX: allSoxx.rows,
+    };
+    const twBenchmarks = { "0050": tw0050.rows };
     const usComparisons = {
-      VOO: series("us", "us", usBenchmarks.get("VOO") ?? []),
-      QQQ: series("us", "us", usBenchmarks.get("QQQ") ?? []),
-      SOXX: series("us", "us", usBenchmarks.get("SOXX") ?? []),
+      VOO: usVoo.rows,
+      QQQ: usQqq.rows,
+      SOXX: usSoxx.rows,
     };
     periods[period] = {
       start: periodSnapshots[0]?.date ?? start,
@@ -152,6 +173,11 @@ Deno.serve(async (req: Request) => {
       tw: twBenchmarks["0050"],
       us: usComparisons.VOO,
       benchmarks: { all: allBenchmarks, tw: twBenchmarks, us: usComparisons },
+      metrics: {
+        all: { mixed: mixed.metrics, VOO: allVoo.metrics, QQQ: allQqq.metrics, SOXX: allSoxx.metrics },
+        tw: { "0050": tw0050.metrics },
+        us: { VOO: usVoo.metrics, QQQ: usQqq.metrics, SOXX: usSoxx.metrics },
+      },
     };
   }
   const ytd = periods.ytd as { all: unknown[]; tw: unknown[]; us: unknown[] };

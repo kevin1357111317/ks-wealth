@@ -1,3 +1,7 @@
+import { xirr } from './supabase/functions/portfolio-performance/return-math.js?v=V3.34.0';
+
+export { xirr };
+
 const EPSILON = 1e-7;
 
 export const MARKET_LABELS = Object.freeze({ 台股: '台股', 美股: '美股' });
@@ -47,52 +51,6 @@ export function currentShares(stock) {
 export function effectivePrice(stock) {
   const live = number(stock.quote?.price);
   return live > 0 ? live : Math.max(0, number(stock.manualPrice));
-}
-
-export function xirr(cashflows) {
-  const flows = (cashflows ?? []).filter(flow => flow.date && Number.isFinite(Number(flow.amount)))
-    .map(flow => ({ date: String(flow.date), amount: Number(flow.amount) }));
-  if (!flows.some(flow => flow.amount > 0) || !flows.some(flow => flow.amount < 0)) return null;
-  const base = flows.reduce((earliest, flow) => flow.date < earliest ? flow.date : earliest, flows[0].date);
-  const baseMs = Date.parse(`${base}T00:00:00Z`);
-  const npv = rate => flows.reduce((sum, flow) => {
-    const years = (Date.parse(`${flow.date}T00:00:00Z`) - baseMs) / 86_400_000 / 365;
-    return sum + flow.amount / ((1 + rate) ** years);
-  }, 0);
-  const rates = [-0.9999, -0.999, -0.995, -0.99, -0.98, -0.95, -0.9, -0.85, -0.8,
-    -0.7, -0.6, -0.5, -0.4, -0.3, -0.2, -0.1];
-  for (let rate = -0.05; rate <= 1000; rate = rate < 1 ? rate + 0.01 : (rate < 10 ? rate + 0.1 : rate * 1.15)) {
-    rates.push(Math.round(rate * 1e6) / 1e6);
-  }
-  rates.push(1000);
-  let previousRate = null;
-  let previousValue = null;
-  for (const rate of rates) {
-    const value = npv(rate);
-    if (!Number.isFinite(value)) {
-      previousRate = previousValue = null;
-      continue;
-    }
-    if (Math.abs(value) < 1e-9) return rate;
-    if (previousValue !== null && (previousValue < 0) !== (value < 0)) {
-      let low = previousRate;
-      let lowValue = previousValue;
-      let high = rate;
-      for (let i = 0; i < 200; i += 1) {
-        const middle = (low + high) / 2;
-        const middleValue = npv(middle);
-        if (Math.abs(middleValue) < 1e-9) return middle;
-        if ((lowValue < 0) === (middleValue < 0)) {
-          low = middle;
-          lowValue = middleValue;
-        } else high = middle;
-      }
-      return (low + high) / 2;
-    }
-    previousRate = rate;
-    previousValue = value;
-  }
-  return null;
 }
 
 // 把台幣現金流拆成「已實現」與「還壓在手上的成本」，用先進先出配對賣出。

@@ -154,6 +154,20 @@ export function makeClient() {
                 SOXX: [{ date: '2026-01-02', portfolio: 100, benchmark: 100 }, { date: '2026-09-16', portfolio: 102, benchmark: 99 }],
               },
             },
+            metrics: {
+              all: {
+                mixed: { days: 257, portfolioAnnualizedTwr: null, benchmarkAnnualizedTwr: null, annualizedExcess: null, portfolioXirr: .08, benchmarkXirr: .06, xirrGap: .02 },
+                VOO: { days: 257, portfolioAnnualizedTwr: null, benchmarkAnnualizedTwr: null, annualizedExcess: null, portfolioXirr: .08, benchmarkXirr: .055, xirrGap: .025 },
+                QQQ: { days: 257, portfolioAnnualizedTwr: null, benchmarkAnnualizedTwr: null, annualizedExcess: null, portfolioXirr: .08, benchmarkXirr: .07, xirrGap: .01 },
+                SOXX: { days: 257, portfolioAnnualizedTwr: null, benchmarkAnnualizedTwr: null, annualizedExcess: null, portfolioXirr: .08, benchmarkXirr: -.01, xirrGap: .09 },
+              },
+              tw: { '0050': { days: 257, portfolioAnnualizedTwr: null, benchmarkAnnualizedTwr: null, annualizedExcess: null, portfolioXirr: .09, benchmarkXirr: .05, xirrGap: .04 } },
+              us: {
+                VOO: { days: 257, portfolioAnnualizedTwr: null, benchmarkAnnualizedTwr: null, annualizedExcess: null, portfolioXirr: .07, benchmarkXirr: .04, xirrGap: .03 },
+                QQQ: { days: 257, portfolioAnnualizedTwr: null, benchmarkAnnualizedTwr: null, annualizedExcess: null, portfolioXirr: .07, benchmarkXirr: .05, xirrGap: .02 },
+                SOXX: { days: 257, portfolioAnnualizedTwr: null, benchmarkAnnualizedTwr: null, annualizedExcess: null, portfolioXirr: .07, benchmarkXirr: -.02, xirrGap: .09 },
+              },
+            },
           },
           year: {
             all: [{ date: '2025-09-17', portfolio: 100, benchmark: 100 }, { date: '2026-09-16', portfolio: 106, benchmark: 103 }],
@@ -164,6 +178,11 @@ export function makeClient() {
             all: [{ date: '2019-10-23', portfolio: 100, benchmark: 100 }, { date: '2026-09-16', portfolio: 140, benchmark: 130 }],
             tw: [{ date: '2019-10-23', portfolio: 100, benchmark: 100 }, { date: '2026-09-16', portfolio: 135, benchmark: 128 }],
             us: [{ date: '2024-05-23', portfolio: 100, benchmark: 100 }, { date: '2026-09-16', portfolio: 145, benchmark: 132 }],
+            metrics: {
+              all: { mixed: { days: 2520, portfolioAnnualizedTwr: .05, benchmarkAnnualizedTwr: .038, annualizedExcess: .012, portfolioXirr: .12, benchmarkXirr: .09, xirrGap: .03 } },
+              tw: { '0050': { days: 2520, portfolioAnnualizedTwr: .045, benchmarkAnnualizedTwr: .036, annualizedExcess: .009, portfolioXirr: .1, benchmarkXirr: .08, xirrGap: .02 } },
+              us: { VOO: { days: 846, portfolioAnnualizedTwr: .18, benchmarkAnnualizedTwr: .14, annualizedExcess: .04, portfolioXirr: .2, benchmarkXirr: .16, xirrGap: .04 } },
+            },
           },
         },
         all: [
