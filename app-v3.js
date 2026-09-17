@@ -10,12 +10,12 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.31.0';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.31.0';
-import { calculateUsd } from './usd-core.js?v=V3.31.0';
-import { calculateGold } from './gold-core.js?v=V3.31.0';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.31.0';
-import { buildPersonalTrendRows } from './trend-core.js?v=V3.31.0';
+} from './financial-core.js?v=V3.32.0';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.32.0';
+import { calculateUsd } from './usd-core.js?v=V3.32.0';
+import { calculateGold } from './gold-core.js?v=V3.32.0';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.32.0';
+import { buildPersonalTrendRows } from './trend-core.js?v=V3.32.0';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -24,7 +24,7 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.31.0';
+} from './health-core.js?v=V3.32.0';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -155,6 +155,7 @@ let portfolioPerformancePeriod = 'ytd';
 let openGroups = new Set();
 let trendMode = 'value';
 let currentTrendSeries = [];
+let currentPortfolioPerformanceSeries = [];
 let trendDrag = null;
 const pageKind = { husband: 'asset', wife: 'asset' };
 const distributionMode = { dashboard: 'asset', husband: 'asset', wife: 'asset' };
@@ -262,9 +263,11 @@ function trendChart(rows) {
 
 function clearTrendPoint() {
   root.querySelector('[data-trend-selection]')?.setAttribute('hidden', '');
+  root.querySelector('[data-portfolio-performance-selection]')?.setAttribute('hidden', '');
 }
 
 function showTrendPoint(event, svg) {
+  if (svg.dataset.trendKind === 'portfolio') return showPortfolioPerformancePoint(event, svg);
   if (!currentTrendSeries.length) return;
   const bounds = trendDrag?.chart === svg ? trendDrag.bounds : svg.getBoundingClientRect();
   if (!bounds.width) return;
@@ -291,6 +294,46 @@ function showTrendPoint(event, svg) {
   selection.querySelector('[data-trend-tooltip-value]').textContent = masked
     ? 'NT$ ••••••'
     : `NT$ ${integerFormatter.format(Math.round(toFiniteNumber(point.total_twd)))}`;
+}
+
+function showPortfolioPerformancePoint(event, svg) {
+  if (!currentPortfolioPerformanceSeries.length) return;
+  const bounds = trendDrag?.chart === svg ? trendDrag.bounds : svg.getBoundingClientRect();
+  if (!bounds.width) return;
+  const svgX = (event.clientX - bounds.left) / bounds.width * 680;
+  const ratio = Math.max(0, Math.min(1, (svgX - 82) / 572));
+  const index = Math.round(ratio * Math.max(0, currentPortfolioPerformanceSeries.length - 1));
+  const point = currentPortfolioPerformanceSeries[index];
+  const selection = svg.querySelector('[data-portfolio-performance-selection]');
+  if (!point || !selection) return;
+  if (!selection.hasAttribute('hidden') && selection.dataset.index === String(index)) return;
+  selection.dataset.index = String(index);
+
+  const benchmarkReady = Number.isFinite(point.benchmark);
+  const benchmarkY = benchmarkReady ? point.benchmarkY : point.portfolioY;
+  const tooltipX = Math.max(147, Math.min(533, point.chartX));
+  const highestY = Math.min(point.portfolioY, benchmarkY);
+  const lowestY = Math.max(point.portfolioY, benchmarkY);
+  const tooltipY = highestY > 98 ? highestY - 86 : Math.min(112, lowestY + 12);
+  const excess = benchmarkReady ? point.portfolio - point.benchmark : null;
+  const excessCopy = excess === null ? '大盤資料缺漏' : `${excess >= 0 ? '領先' : '落後'} ${Math.abs(excess).toFixed(2)}`;
+
+  selection.removeAttribute('hidden');
+  selection.querySelector('[data-portfolio-performance-guide]').setAttribute('x1', point.chartX);
+  selection.querySelector('[data-portfolio-performance-guide]').setAttribute('x2', point.chartX);
+  const mine = selection.querySelector('[data-portfolio-performance-mine]');
+  mine.setAttribute('cx', point.chartX);
+  mine.setAttribute('cy', point.portfolioY);
+  const benchmark = selection.querySelector('[data-portfolio-performance-benchmark]');
+  benchmark.toggleAttribute('hidden', !benchmarkReady);
+  if (benchmarkReady) {
+    benchmark.setAttribute('cx', point.chartX);
+    benchmark.setAttribute('cy', point.benchmarkY);
+  }
+  selection.querySelector('[data-portfolio-performance-tooltip]').setAttribute('transform', `translate(${tooltipX} ${tooltipY})`);
+  selection.querySelector('[data-portfolio-performance-date]').textContent = chartFullDate(point.date);
+  selection.querySelector('[data-portfolio-performance-values]').textContent = `我的 ${point.portfolio.toFixed(2)}｜大盤 ${benchmarkReady ? point.benchmark.toFixed(2) : '—'}`;
+  selection.querySelector('[data-portfolio-performance-excess]').textContent = excessCopy;
 }
 
 function familyTrendRows(currentNetWorth) {
@@ -1388,6 +1431,7 @@ function portfolioSummaryCards(bucket, market) {
 }
 
 function portfolioPerformanceCard() {
+  currentPortfolioPerformanceSeries = [];
   const data = portfolioPerformance.get(analysisOwner);
   if (!data) return `<section class="portfolioPerformance"><div class="portfolioPerformanceHead"><div><span>投資績效趨勢</span><h2>我的投資組合 vs 大盤</h2></div><b>起始＝100</b></div><div class="portfolioPerformanceLoading"><i></i><span>正在整理可比較的每日績效…</span></div></section>`;
   const key = portfolioMarket === '台股' ? 'tw' : portfolioMarket === '美股' ? 'us' : 'all';
@@ -1408,6 +1452,12 @@ function portfolioPerformanceCard() {
   const yHigh = high + pad;
   const x = index => 82 + index / Math.max(1, rows.length - 1) * 572;
   const y = value => 18 + (yHigh - value) / Math.max(0.0001, yHigh - yLow) * 174;
+  currentPortfolioPerformanceSeries = rows.map((row, index) => ({
+    ...row,
+    chartX: x(index),
+    portfolioY: y(row.portfolio),
+    benchmarkY: Number.isFinite(row.benchmark) ? y(row.benchmark) : null,
+  }));
   const path = field => {
     let started = false;
     return rows.map((row, index) => {
@@ -1431,7 +1481,8 @@ function portfolioPerformanceCard() {
   const signed = value => `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
   const period = `${chartDate(rows[0].date)}－${chartDate(last.date)}`;
   const coverageNote = data.coverage?.missing ? ` · ${formatNumber(data.coverage.missing)} 檔歷史行情缺漏` : '';
-  return `<section class="portfolioPerformance"><div class="portfolioPerformanceHead"><div><span>投資績效趨勢</span><h2>我的投資組合 vs ${escapeHtml(benchmarkLabel)}</h2></div><b>起始＝100</b></div>${periodControls}<div class="portfolioPerformanceStats"><div><span>我的報酬</span><b class="${portfolioTone(portfolioReturn)}">${signed(portfolioReturn)}</b></div><div><span>${escapeHtml(benchmarkLabel)}</span><b class="${portfolioTone(benchmarkReturn)}">${benchmarkReturn === null ? '—' : signed(benchmarkReturn)}</b></div><div><span>超額報酬</span><b class="${portfolioTone(excess)}">${excess === null ? '—' : signed(excess)}</b></div></div><div class="portfolioPerformanceLegend"><span class="mine"><i></i>我的投資組合</span><span class="market"><i></i>${escapeHtml(benchmarkLabel)}</span><small>${period} · 已排除入金與提款${coverageNote}</small></div><svg class="portfolioPerformanceChart" viewBox="0 0 680 238" role="img" aria-label="投資組合與${escapeHtml(benchmarkLabel)}累積報酬趨勢，起始為100"><g class="portfolioPerformanceAxis">${ticks}${dates}</g><path class="benchmark" d="${path('benchmark')}"/><path class="mine" d="${path('portfolio')}"/></svg><p>採每日時間加權報酬；全部頁的美股包含匯率，混合大盤會依每日期初的台美股比重調整。</p></section>`;
+  const selection = `<rect class="portfolioPerformanceHit" x="82" y="8" width="572" height="192"/><g class="portfolioPerformanceSelection" data-portfolio-performance-selection hidden><line data-portfolio-performance-guide y1="12" y2="192"/><circle class="mine" data-portfolio-performance-mine r="7"/><circle class="benchmark" data-portfolio-performance-benchmark r="7"/><g class="portfolioPerformanceTooltip" data-portfolio-performance-tooltip><rect x="-140" y="0" width="280" height="76" rx="13"/><text class="date" data-portfolio-performance-date x="0" y="19" text-anchor="middle"></text><text class="values" data-portfolio-performance-values x="0" y="43" text-anchor="middle"></text><text class="excess" data-portfolio-performance-excess x="0" y="64" text-anchor="middle"></text></g></g>`;
+  return `<section class="portfolioPerformance"><div class="portfolioPerformanceHead"><div><span>投資績效趨勢</span><h2>我的投資組合 vs 大盤</h2></div><b>起始＝100</b></div>${periodControls}<div class="portfolioPerformanceStats"><div><span>我的報酬</span><b class="${portfolioTone(portfolioReturn)}">${signed(portfolioReturn)}</b></div><div><span>大盤報酬</span><b class="${portfolioTone(benchmarkReturn)}">${benchmarkReturn === null ? '—' : signed(benchmarkReturn)}</b></div><div><span>超額報酬</span><b class="${portfolioTone(excess)}">${excess === null ? '—' : signed(excess)}</b></div></div><div class="portfolioPerformanceLegend"><span class="mine"><i></i>我的投資組合</span><span class="market"><i></i>${escapeHtml(benchmarkLabel)}</span><small>${period} · 已排除入金與提款${coverageNote}</small></div><svg class="portfolioPerformanceChart" data-trend-chart data-trend-kind="portfolio" viewBox="0 0 680 238" role="img" aria-label="投資組合與${escapeHtml(benchmarkLabel)}累積報酬趨勢，點選或左右滑動可查看每日數值，起始為100"><g class="portfolioPerformanceAxis">${ticks}${dates}</g><path class="benchmark" d="${path('benchmark')}"/><path class="mine" d="${path('portfolio')}"/>${selection}</svg><p>採每日時間加權報酬；全部頁的美股包含匯率，混合大盤會依每日期初的台美股比重調整。</p></section>`;
 }
 
 const shareFormat = value => new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 6 }).format(value);
