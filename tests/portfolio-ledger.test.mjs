@@ -159,8 +159,12 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     await page.click('[data-open-portfolio]');
     await page.waitForSelector('[data-portfolio-stock]');
     await page.waitForSelector('.portfolioPerformanceChart');
-    assert.match(await page.textContent('.portfolioPerformance'), /我的投資組合 vs 0050＋VOO 混合/);
+    assert.match(await page.textContent('.portfolioPerformance'), /我的投資組合 vs 0050＋VOO 動態混合/);
     assert.match(await page.textContent('.portfolioPerformanceStats'), /我的報酬.*\+3\.25%.*超額報酬/s);
+    await page.click('[data-performance-period="all"]');
+    assert.match(await page.textContent('.portfolioPerformanceLegend'), /10\/23－9\/16/);
+    assert.match(await page.textContent('.portfolioPerformanceStats'), /\+40\.00%/);
+    await page.click('[data-performance-period="ytd"]');
     await page.click('[data-portfolio-market="台股"]');
     assert.match(await page.textContent('.portfolioPerformance'), /我的投資組合 vs 0050/);
     await page.click('[data-portfolio-market="all"]');

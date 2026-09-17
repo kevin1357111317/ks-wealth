@@ -10,12 +10,12 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.30.0';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.30.0';
-import { calculateUsd } from './usd-core.js?v=V3.30.0';
-import { calculateGold } from './gold-core.js?v=V3.30.0';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.30.0';
-import { buildPersonalTrendRows } from './trend-core.js?v=V3.30.0';
+} from './financial-core.js?v=V3.31.0';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.31.0';
+import { calculateUsd } from './usd-core.js?v=V3.31.0';
+import { calculateGold } from './gold-core.js?v=V3.31.0';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.31.0';
+import { buildPersonalTrendRows } from './trend-core.js?v=V3.31.0';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -24,7 +24,7 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.30.0';
+} from './health-core.js?v=V3.31.0';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -151,6 +151,7 @@ let portfolioShowExited = false;
 let portfolioSort = 'marketValue-desc';
 let portfolioPerformance = new Map();
 let portfolioPerformanceFlights = new Map();
+let portfolioPerformancePeriod = 'ytd';
 let openGroups = new Set();
 let trendMode = 'value';
 let currentTrendSeries = [];
@@ -1390,11 +1391,13 @@ function portfolioPerformanceCard() {
   const data = portfolioPerformance.get(analysisOwner);
   if (!data) return `<section class="portfolioPerformance"><div class="portfolioPerformanceHead"><div><span>投資績效趨勢</span><h2>我的投資組合 vs 大盤</h2></div><b>起始＝100</b></div><div class="portfolioPerformanceLoading"><i></i><span>正在整理可比較的每日績效…</span></div></section>`;
   const key = portfolioMarket === '台股' ? 'tw' : portfolioMarket === '美股' ? 'us' : 'all';
-  const rows = data[key] ?? [];
+  const periodData = data.periods?.[portfolioPerformancePeriod] ?? data;
+  const rows = periodData[key] ?? [];
   const benchmarkLabel = data.benchmarkLabels?.[key] ?? (key === 'tw' ? '0050' : key === 'us' ? 'VOO' : '混合大盤');
+  const periodControls = `<div class="portfolioPerformancePeriods"><button data-performance-period="ytd" class="${portfolioPerformancePeriod === 'ytd' ? 'on' : ''}">今年以來</button><button data-performance-period="year" class="${portfolioPerformancePeriod === 'year' ? 'on' : ''}">近一年</button><button data-performance-period="all" class="${portfolioPerformancePeriod === 'all' ? 'on' : ''}">全部</button></div>`;
   if (rows.length < 2) {
     const copy = data.status === 'error' ? '績效資料暫時載入失敗，稍後重新進入再試。' : '每日績效從現在開始累積，有兩個以上交易日後就會顯示折線。';
-    return `<section class="portfolioPerformance"><div class="portfolioPerformanceHead"><div><span>投資績效趨勢</span><h2>我的投資組合 vs ${escapeHtml(benchmarkLabel)}</h2></div><b>起始＝100</b></div><div class="portfolioPerformanceEmpty">${copy}</div></section>`;
+    return `<section class="portfolioPerformance"><div class="portfolioPerformanceHead"><div><span>投資績效趨勢</span><h2>我的投資組合 vs ${escapeHtml(benchmarkLabel)}</h2></div><b>起始＝100</b></div>${periodControls}<div class="portfolioPerformanceEmpty">${copy}</div></section>`;
   }
 
   const values = rows.flatMap(row => [row.portfolio, row.benchmark]).filter(Number.isFinite);
@@ -1427,7 +1430,8 @@ function portfolioPerformanceCard() {
   const excess = benchmarkReturn === null ? null : portfolioReturn - benchmarkReturn;
   const signed = value => `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
   const period = `${chartDate(rows[0].date)}－${chartDate(last.date)}`;
-  return `<section class="portfolioPerformance"><div class="portfolioPerformanceHead"><div><span>投資績效趨勢</span><h2>我的投資組合 vs ${escapeHtml(benchmarkLabel)}</h2></div><b>起始＝100</b></div><div class="portfolioPerformanceStats"><div><span>我的報酬</span><b class="${portfolioTone(portfolioReturn)}">${signed(portfolioReturn)}</b></div><div><span>${escapeHtml(benchmarkLabel)}</span><b class="${portfolioTone(benchmarkReturn)}">${benchmarkReturn === null ? '—' : signed(benchmarkReturn)}</b></div><div><span>超額報酬</span><b class="${portfolioTone(excess)}">${excess === null ? '—' : signed(excess)}</b></div></div><div class="portfolioPerformanceLegend"><span class="mine"><i></i>我的投資組合</span><span class="market"><i></i>${escapeHtml(benchmarkLabel)}</span><small>${period} · 已排除入金與提款</small></div><svg class="portfolioPerformanceChart" viewBox="0 0 680 238" role="img" aria-label="投資組合與${escapeHtml(benchmarkLabel)}累積報酬趨勢，起始為100"><g class="portfolioPerformanceAxis">${ticks}${dates}</g><path class="benchmark" d="${path('benchmark')}"/><path class="mine" d="${path('portfolio')}"/></svg><p>採每日時間加權報酬；全部頁的美股包含美元匯率，混合大盤依比較起始日的台美股權重計算。</p></section>`;
+  const coverageNote = data.coverage?.missing ? ` · ${formatNumber(data.coverage.missing)} 檔歷史行情缺漏` : '';
+  return `<section class="portfolioPerformance"><div class="portfolioPerformanceHead"><div><span>投資績效趨勢</span><h2>我的投資組合 vs ${escapeHtml(benchmarkLabel)}</h2></div><b>起始＝100</b></div>${periodControls}<div class="portfolioPerformanceStats"><div><span>我的報酬</span><b class="${portfolioTone(portfolioReturn)}">${signed(portfolioReturn)}</b></div><div><span>${escapeHtml(benchmarkLabel)}</span><b class="${portfolioTone(benchmarkReturn)}">${benchmarkReturn === null ? '—' : signed(benchmarkReturn)}</b></div><div><span>超額報酬</span><b class="${portfolioTone(excess)}">${excess === null ? '—' : signed(excess)}</b></div></div><div class="portfolioPerformanceLegend"><span class="mine"><i></i>我的投資組合</span><span class="market"><i></i>${escapeHtml(benchmarkLabel)}</span><small>${period} · 已排除入金與提款${coverageNote}</small></div><svg class="portfolioPerformanceChart" viewBox="0 0 680 238" role="img" aria-label="投資組合與${escapeHtml(benchmarkLabel)}累積報酬趨勢，起始為100"><g class="portfolioPerformanceAxis">${ticks}${dates}</g><path class="benchmark" d="${path('benchmark')}"/><path class="mine" d="${path('portfolio')}"/></svg><p>採每日時間加權報酬；全部頁的美股包含匯率，混合大盤會依每日期初的台美股比重調整。</p></section>`;
 }
 
 const shareFormat = value => new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 6 }).format(value);
@@ -1500,6 +1504,7 @@ function portfolioListPage() {
   const sortArrow = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><g class="sortAsc"><path d="M8 19V5"/><path d="m4 9 4-4 4 4"/></g><g class="sortDesc"><path d="M16 5v14"/><path d="m20 15-4 4-4-4"/></g></svg>';
   shell(`<div class="portfolioView"><div class="seg"><button data-portfolio-market="all" class="${portfolioMarket === 'all' ? 'on' : ''}">全部</button><button data-portfolio-market="台股" class="${portfolioMarket === '台股' ? 'on' : ''}">台股</button><button data-portfolio-market="美股" class="${portfolioMarket === '美股' ? 'on' : ''}">美股</button></div>${portfolioSummaryCards(bucket, portfolioMarket)}${portfolioPerformanceCard()}<div class="portfolioToolbar"><div class="portfolioFilters"><span class="portfolioCount">${rows.length} 檔標的</span><label class="portfolioExited"><input type="checkbox" data-show-exited ${portfolioShowExited ? 'checked' : ''}> 顯示已出清</label></div><div class="portfolioSort"><select data-portfolio-sort aria-label="排序依據">${sortOptions}</select><button type="button" class="portfolioSortDir" data-sort-direction="${sortDirection}" aria-label="切換排序方向，目前${directionLabel}" title="${directionLabel}">${sortArrow}</button></div></div><div class="portfolioList">${rows.length ? rows.map(stock => portfolioStockCard(stock, stock.key === expandedStock)).join('') : '<div class="portfolioEmpty">這個篩選條件目前沒有標的。</div>'}</div></div>`, `${ownerName(analysisOwner)}股票分析`);
   root.querySelectorAll('[data-portfolio-market]').forEach(button => { button.onclick = () => { portfolioMarket = button.dataset.portfolioMarket; render(); }; });
+  root.querySelectorAll('[data-performance-period]').forEach(button => { button.onclick = () => { portfolioPerformancePeriod = button.dataset.performancePeriod; render(); }; });
   root.querySelector('[data-portfolio-sort]').onchange = event => { portfolioSort = `${event.target.value}-${sortDirection}`; render(); };
   root.querySelector('[data-sort-direction]').onclick = () => { portfolioSort = `${sortCriterion}-${ascending ? 'desc' : 'asc'}`; render(); };
   root.querySelector('[data-show-exited]').onchange = event => { portfolioShowExited = event.target.checked; render(); };

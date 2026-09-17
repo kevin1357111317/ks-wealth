@@ -28,15 +28,10 @@ export function buildPerformanceSeries({ snapshots, flows, twBenchmark, usBenchm
 
   const first = ordered.find(row => valueOf(row) > 0);
   if (!first) return [];
-  const firstTw = latestOnOrBefore(twBenchmark, first.date);
-  const firstUs = latestOnOrBefore(usBenchmark, first.date);
-  const firstFx = latestOnOrBefore(fxHistory, first.date, 'rate');
-  const firstTotal = n(first.twTwd) + n(first.usTwd);
-  const twWeight = firstTotal > 0 ? n(first.twTwd) / firstTotal : 0;
-  const usWeight = firstTotal > 0 ? n(first.usTwd) / firstTotal : 0;
-
   let portfolioIndex = 100;
+  let benchmarkIndex = 100;
   let previousValue = valueOf(first);
+  let previousRow = first;
   const output = [];
   for (const row of ordered.filter(item => item.date >= first.date)) {
     const value = valueOf(row);
@@ -50,26 +45,128 @@ export function buildPerformanceSeries({ snapshots, flows, twBenchmark, usBenchm
     }
     previousValue = value;
 
-    const tw = latestOnOrBefore(twBenchmark, row.date);
-    const us = latestOnOrBefore(usBenchmark, row.date);
-    const fx = latestOnOrBefore(fxHistory, row.date, 'rate');
-    let benchmarkIndex = null;
-    if (market === 'tw' && firstTw && tw) benchmarkIndex = 100 * tw / firstTw;
-    if (market === 'us' && firstUs && us) benchmarkIndex = 100 * us / firstUs;
-    if (market === 'all') {
-      const twRelative = firstTw && tw ? tw / firstTw : null;
-      const usRelative = firstUs && firstFx && us && fx ? (us * fx) / (firstUs * firstFx) : null;
-      if ((twWeight === 0 || twRelative) && (usWeight === 0 || usRelative)) {
-        benchmarkIndex = 100 * (twWeight * (twRelative ?? 0) + usWeight * (usRelative ?? 0));
+    let comparable = true;
+    if (row !== first) {
+      const tw = latestOnOrBefore(twBenchmark, row.date);
+      const previousTw = latestOnOrBefore(twBenchmark, previousRow.date);
+      const us = latestOnOrBefore(usBenchmark, row.date);
+      const previousUs = latestOnOrBefore(usBenchmark, previousRow.date);
+      const fx = latestOnOrBefore(fxHistory, row.date, 'rate');
+      const previousFx = latestOnOrBefore(fxHistory, previousRow.date, 'rate');
+      let benchmarkReturn = 0;
+      if (market === 'tw') {
+        comparable = Boolean(tw && previousTw);
+        if (comparable) benchmarkReturn = tw / previousTw - 1;
+      } else if (market === 'us') {
+        comparable = Boolean(us && previousUs);
+        if (comparable) benchmarkReturn = us / previousUs - 1;
+      } else {
+        const previousTotal = n(previousRow.twTwd) + n(previousRow.usTwd);
+        const twWeight = previousTotal > 0 ? n(previousRow.twTwd) / previousTotal : 0;
+        const usWeight = previousTotal > 0 ? n(previousRow.usTwd) / previousTotal : 0;
+        const twReturn = tw && previousTw ? tw / previousTw - 1 : null;
+        const usReturn = us && previousUs && fx && previousFx ? (us * fx) / (previousUs * previousFx) - 1 : null;
+        comparable = (twWeight === 0 || twReturn !== null) && (usWeight === 0 || usReturn !== null);
+        if (comparable) benchmarkReturn = twWeight * (twReturn ?? 0) + usWeight * (usReturn ?? 0);
       }
+      if (comparable) benchmarkIndex *= 1 + benchmarkReturn;
     }
     output.push({
       date: row.date,
       portfolio: Math.round(portfolioIndex * 100) / 100,
-      benchmark: benchmarkIndex === null ? null : Math.round(benchmarkIndex * 100) / 100,
+      benchmark: comparable ? Math.round(benchmarkIndex * 100) / 100 : null,
     });
+    previousRow = row;
   }
   return output;
+}
+
+const recognizedScale = ratio => {
+  if (!Number.isFinite(ratio) || ratio <= 0) return 1;
+  const candidates = [1, 2, 3, 4, 5, 10, 20, 50, 100];
+  const closest = candidates.reduce((best, candidate) =>
+    Math.abs(Math.log(ratio / candidate)) < Math.abs(Math.log(ratio / best)) ? candidate : best, 1);
+  return Math.abs(Math.log(ratio / closest)) <= Math.log(1.18) ? closest : 1;
+};
+
+// Yahoo 的 close 會回溯調整拆股、但不調整現金股息。台帳有些舊交易已手動換算成
+// 拆股後股數（NVDA），有些維持成交當時股數（0050），所以逐筆用成交單價判斷倍率。
+export function transactionShareScale(transaction, stock, prices) {
+  if (!transaction?.shares || !transaction?.amount || stock?.market === '美股' && stock?.currency !== 'USD') return 1;
+  const close = latestOnOrBefore(prices, transaction.tx_date);
+  if (!close) return 1;
+  return recognizedScale(Math.abs(n(transaction.amount) / n(transaction.shares)) / close);
+}
+
+export function buildHistoricalSnapshots({ stocks, transactions, priceHistory, fxHistory }) {
+  const stockByKey = new Map((stocks ?? []).map(stock => [stock.key, stock]));
+  const adjusted = (transactions ?? []).map(transaction => {
+    const stock = stockByKey.get(transaction.stock_key);
+    const scale = transactionShareScale(transaction, stock, priceHistory.get(transaction.stock_key) ?? []);
+    return { ...transaction, adjustedShares: n(transaction.shares) * scale };
+  });
+  const txByDate = new Map();
+  for (const transaction of adjusted) {
+    const rows = txByDate.get(transaction.tx_date) ?? [];
+    rows.push(transaction);
+    txByDate.set(transaction.tx_date, rows);
+  }
+  const dates = new Set(adjusted.map(row => row.tx_date));
+  for (const rows of priceHistory.values()) for (const row of rows) dates.add(row.date);
+  for (const row of fxHistory ?? []) dates.add(row.date);
+
+  const pricesByDate = new Map();
+  for (const [key, rows] of priceHistory) {
+    for (const row of rows) {
+      const day = pricesByDate.get(row.date) ?? [];
+      day.push([key, n(row.value)]);
+      pricesByDate.set(row.date, day);
+    }
+  }
+  const fxByDate = new Map((fxHistory ?? []).map(row => [row.date, n(row.rate)]));
+  const shares = new Map();
+  const currentPrices = new Map();
+  let currentFx = 0;
+  const snapshots = [];
+  for (const date of [...dates].filter(Boolean).sort()) {
+    for (const [key, value] of pricesByDate.get(date) ?? []) if (value > 0) currentPrices.set(key, value);
+    if (fxByDate.get(date) > 0) currentFx = fxByDate.get(date);
+    for (const transaction of txByDate.get(date) ?? []) {
+      if (transaction.kind === 'dividend') continue;
+      const next = n(shares.get(transaction.stock_key)) + n(transaction.adjustedShares);
+      shares.set(transaction.stock_key, Math.abs(next) < 0.000001 ? 0 : next);
+    }
+    let twTwd = 0;
+    let usTwd = 0;
+    let usUsd = 0;
+    let complete = true;
+    for (const [key, quantity] of shares) {
+      if (Math.abs(quantity) < 0.000001) continue;
+      const stock = stockByKey.get(key);
+      const price = currentPrices.get(key);
+      if (!stock || !price) { complete = false; break; }
+      const quoteIsUsd = stock.market === '美股';
+      if (stock.currency === 'USD') {
+        if (!currentFx) { complete = false; break; }
+        usUsd += quantity * price;
+        usTwd += quantity * price * currentFx;
+      } else if (quoteIsUsd) {
+        if (!currentFx) { complete = false; break; }
+        twTwd += quantity * price * currentFx;
+      } else twTwd += quantity * price;
+    }
+    if (complete && twTwd + usTwd > 0) snapshots.push({ date, twTwd, usTwd, usUsd });
+  }
+  return snapshots;
+}
+
+export function downsampleSeries(rows, maximum = 280) {
+  if ((rows?.length ?? 0) <= maximum) return rows ?? [];
+  const selected = new Set([0, rows.length - 1]);
+  for (let index = 1; index < maximum - 1; index += 1) {
+    selected.add(Math.round(index * (rows.length - 1) / (maximum - 1)));
+  }
+  return [...selected].sort((a, b) => a - b).map(index => rows[index]);
 }
 
 export function transactionFlows(transactions, stockByKey) {

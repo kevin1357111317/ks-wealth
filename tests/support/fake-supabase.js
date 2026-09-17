@@ -132,7 +132,25 @@ export function makeClient() {
     functions: { invoke: async (name, options) => {
       if (name === 'portfolio-performance') return { data: {
         status: 'ok',
-        benchmarkLabels: { all: '0050＋VOO 混合', tw: '0050', us: 'VOO' },
+        benchmarkLabels: { all: '0050＋VOO 動態混合', tw: '0050', us: 'VOO' },
+        coverage: { requested: 6, missing: 0 },
+        periods: {
+          ytd: {
+            all: [{ date: '2026-01-02', portfolio: 100, benchmark: 100 }, { date: '2026-09-16', portfolio: 103.25, benchmark: 101.1 }],
+            tw: [{ date: '2026-01-02', portfolio: 100, benchmark: 100 }, { date: '2026-09-16', portfolio: 104, benchmark: 102 }],
+            us: [{ date: '2026-01-02', portfolio: 100, benchmark: 100 }, { date: '2026-09-16', portfolio: 102, benchmark: 100.5 }],
+          },
+          year: {
+            all: [{ date: '2025-09-17', portfolio: 100, benchmark: 100 }, { date: '2026-09-16', portfolio: 106, benchmark: 103 }],
+            tw: [{ date: '2025-09-17', portfolio: 100, benchmark: 100 }, { date: '2026-09-16', portfolio: 107, benchmark: 104 }],
+            us: [{ date: '2025-09-17', portfolio: 100, benchmark: 100 }, { date: '2026-09-16', portfolio: 105, benchmark: 102 }],
+          },
+          all: {
+            all: [{ date: '2019-10-23', portfolio: 100, benchmark: 100 }, { date: '2026-09-16', portfolio: 140, benchmark: 130 }],
+            tw: [{ date: '2019-10-23', portfolio: 100, benchmark: 100 }, { date: '2026-09-16', portfolio: 135, benchmark: 128 }],
+            us: [{ date: '2024-05-23', portfolio: 100, benchmark: 100 }, { date: '2026-09-16', portfolio: 145, benchmark: 132 }],
+          },
+        },
         all: [
           { date: '2026-09-04', portfolio: 100, benchmark: 100 },
           { date: '2026-09-16', portfolio: 103.25, benchmark: 101.1 },
