@@ -166,7 +166,28 @@ db.loan_schedule.push(...${JSON.stringify(schedule)});`;
         top: Math.round(card.getBoundingClientRect().top * 100) / 100,
         h: Math.round(card.getBoundingClientRect().height * 100) / 100,
       })),
+      scrolls: globalThis.__scrollLog.slice(-14),
     });
+  });
+  // 診斷用：把每一次 scrollTo 與每一個 scroll 事件記下來，位置不對時才知道是「誰把它捲走的」
+  // —— 是 pinLoanCard 補到一半停住、是整頁重繪把捲動量打回頂端，還是瀏覽器自己夾掉的。
+  await page.addInitScript(() => {
+    globalThis.__scrollLog = [];
+    globalThis.__scrollMark = label => globalThis.__scrollLog.push({ mark: label });
+    const round = value => Math.round(value * 100) / 100;
+    const native = window.scrollTo.bind(window);
+    window.scrollTo = (...args) => {
+      const to = typeof args[0] === 'object' ? args[0]?.top : args[1];
+      const at = (new Error().stack ?? '').split('\n').slice(2, 4)
+        .map(line => line.trim().replace(/^at\s+/, '').replace(/https?:\/\/[^/]+\//, '')).join(' < ');
+      globalThis.__scrollLog.push({ call: round(Number(to)), from: round(scrollY), at });
+      return native(...args);
+    };
+    addEventListener('scroll', () => {
+      const last = globalThis.__scrollLog[globalThis.__scrollLog.length - 1];
+      if (last?.event !== undefined && last.event === round(scrollY)) return;
+      globalThis.__scrollLog.push({ event: round(scrollY) });
+    }, { passive: true });
   });
   await page.route('**/cdn.jsdelivr.net/**', route =>
     route.fulfill({ status: 200, contentType: 'text/javascript', body: stub }));
@@ -272,12 +293,21 @@ db.loan_schedule.push(...${JSON.stringify(schedule)});`;
     // 用 DOM 的 click()，不要用 Playwright 的 —— 它會先把元素捲進畫面，量出來的
     // 起始位置就不是真的了。
     await page.evaluate(index => {
+      globalThis.__scrollMark('click');
       document.querySelectorAll('.loanCard')[index].querySelector('[data-loan-account]').click();
     }, picked.index);
     await page.waitForFunction(index =>
       document.querySelectorAll('.loanCard')[index].classList.contains('open'), picked.index);
     const topAfter = await waitForStableTop(page, '.loanCard', picked.index);
     const after = await page.evaluate(() => globalThis.__loanGeometry());
+    // 點下去到 pinLoanCard 開始補正之間，捲動量不該自己變。變了就是瀏覽器的捲動錨定
+    // （scroll anchoring）也在動捲動量 —— 兩個機制搶同一件事，補正就是在追一個會自己跑的
+    // 目標，最後停在哪裡跟當下的 layout 時機有關。`.loanList{overflow-anchor:none}` 把
+    // 錨定關掉之後這裡才會相等（沒關的話實測差了 331px）。
+    const firstPin = after.scrolls.find(entry => entry.at?.includes('pinLoanCard'));
+    assert.equal(firstPin?.from, picked.target,
+      `補正開始前捲動量就被改過了（${picked.target} → ${firstPin?.from}）—— 捲動錨定在跟 pinLoanCard 搶\n`
+      + `trace=${JSON.stringify(after.scrolls)}`);
     assert.ok(Math.abs(topAfter - picked.top) <= 2,
       `被點的卡片應該留在原地，卻從 ${picked.top} 移到 ${topAfter}\n`
       + `picked=${JSON.stringify({ index: picked.index, openIndex: picked.openIndex })}\n`
