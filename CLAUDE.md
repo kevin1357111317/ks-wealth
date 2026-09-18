@@ -143,6 +143,25 @@ Vercel 直接部署靜態檔。
 改到會動錢的邏輯，測試要先確認「拿掉修正就會紅」再算數 —— 這個 repo 裡已經有兩次
 測試對著沒修好的程式碼變綠的紀錄。
 
+### Edge Function 要自己部署
+
+`supabase/functions/` 底下的 Edge Function **不在 Vercel 的部署範圍**。推 `main` 只會部署前端靜態檔；
+`portfolio-performance` 這種真正在算 TWR／XIRR 的程式必須另外部署，否則會出現「畫面版號是新的、
+數字卻是舊的」這種半套狀態。
+
+2026-09-18 就踩過一次：前端 V3.34.1 已上線、圖表日期也帶年份了，但累積 TWR 還是 205%、2020 年那根
+假尖峰還在，因為 Edge Function 停在舊版。當時只驗了 `app-version.js` 回新版號就宣布上線，而那只證明
+前端上線了。
+
+改到 `supabase/functions/` 的出貨步驟：
+
+1. squash merge 進 `main`。
+2. 部署那支 function（`supabase functions deploy <name>`，或 Supabase MCP 的 deploy 工具）。
+3. 撈回線上原始碼跟 repo 逐字比對，確認部署到的是合併後的版本。
+4. **驗數字，不是驗版號** —— 打開實際頁面，確認預期會變的指標真的變了。
+
+目前的 function：`portfolio-performance`（TWR／XIRR）、`daily-wealth-snapshot`、`refresh-tw-quotes`。
+
 ## 資料
 
 貸款、股票台帳、美金這幾塊的數字都跟 KLFAN 試算表或銀行 App 核對過，`README.md` 裡有
