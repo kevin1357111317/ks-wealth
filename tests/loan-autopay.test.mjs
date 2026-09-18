@@ -257,6 +257,9 @@ db.loan_schedule.push(...${JSON.stringify(schedule)});`;
     await page.click('[data-loan-account]');
     await page.waitForSelector('.loanCard.open');
     assert.equal(await page.locator('.loanDetail').count(), 1);
+    // pinLoanCard 點完之後還會用 rAF 補正好幾個 frame。不等它收工就進下一個 subtest，
+    // 那個還在跑的補正會把下一段自己設的捲動位置拉回這裡的值（CI 上實測 1426 被拉回 120）。
+    await waitForStableTop(page, '.loanCard', 0);
   });
 
   await t.test('開著上面那張再點下面看得到的那張，被點的那張留在原地', async () => {
@@ -300,13 +303,14 @@ db.loan_schedule.push(...${JSON.stringify(schedule)});`;
       document.querySelectorAll('.loanCard')[index].classList.contains('open'), picked.index);
     const topAfter = await waitForStableTop(page, '.loanCard', picked.index);
     const after = await page.evaluate(() => globalThis.__loanGeometry());
-    // 點下去到 pinLoanCard 開始補正之間，捲動量不該自己變。變了就是瀏覽器的捲動錨定
-    // （scroll anchoring）也在動捲動量 —— 兩個機制搶同一件事，補正就是在追一個會自己跑的
-    // 目標，最後停在哪裡跟當下的 layout 時機有關。`.loanList{overflow-anchor:none}` 把
-    // 錨定關掉之後這裡才會相等（沒關的話實測差了 331px）。
+    // 點下去到 pinLoanCard 開始補正之間，捲動量不該被別的東西改掉。實際踩過兩種：
+    // 一是瀏覽器的捲動錨定（scroll anchoring）也在調 scrollY，跟補正搶同一件事
+    //（`.loanList{overflow-anchor:none}` 關掉之前實測差 331px）；
+    // 二是上一個 subtest 的補正還沒收工，把這裡設的捲動位置拉回去（1426 被拉回 120）。
+    // 兩種都會讓補正在追一個會自己跑的目標，最後停在哪裡跟 layout 時機有關。
     const firstPin = after.scrolls.find(entry => entry.at?.includes('pinLoanCard'));
     assert.equal(firstPin?.from, picked.target,
-      `補正開始前捲動量就被改過了（${picked.target} → ${firstPin?.from}）—— 捲動錨定在跟 pinLoanCard 搶\n`
+      `補正開始前捲動量就被改過了（${picked.target} → ${firstPin?.from}）\n`
       + `trace=${JSON.stringify(after.scrolls)}`);
     assert.ok(Math.abs(topAfter - picked.top) <= 2,
       `被點的卡片應該留在原地，卻從 ${picked.top} 移到 ${topAfter}\n`
