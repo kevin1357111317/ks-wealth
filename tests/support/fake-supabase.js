@@ -173,6 +173,12 @@ export function makeClient() {
             all: [{ date: '2025-09-17', portfolio: 100, benchmark: 100 }, { date: '2026-09-16', portfolio: 106, benchmark: 103 }],
             tw: [{ date: '2025-09-17', portfolio: 100, benchmark: 100 }, { date: '2026-09-16', portfolio: 107, benchmark: 104 }],
             us: [{ date: '2025-09-17', portfolio: 100, benchmark: 100 }, { date: '2026-09-16', portfolio: 105, benchmark: 102 }],
+            // 近一年剛好 365 天，年化值必然等於累積值。
+            metrics: {
+              all: { mixed: { days: 365, portfolioCumulativeTwr: .06, portfolioAnnualizedTwr: .06, benchmarkAnnualizedTwr: .03, annualizedExcess: .03, portfolioXirr: .07, benchmarkXirr: .04, xirrGap: .03 } },
+              tw: { '0050': { days: 365, portfolioCumulativeTwr: .07, portfolioAnnualizedTwr: .07, benchmarkAnnualizedTwr: .04, annualizedExcess: .03, portfolioXirr: .08, benchmarkXirr: .05, xirrGap: .03 } },
+              us: { VOO: { days: 365, portfolioCumulativeTwr: .05, portfolioAnnualizedTwr: .05, benchmarkAnnualizedTwr: .02, annualizedExcess: .03, portfolioXirr: .06, benchmarkXirr: .03, xirrGap: .03 } },
+            },
           },
           all: {
             all: [{ date: '2019-10-23', portfolio: 100, benchmark: 100 }, { date: '2026-09-16', portfolio: 140, benchmark: 130 }],

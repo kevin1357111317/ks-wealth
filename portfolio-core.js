@@ -1,4 +1,4 @@
-import { xirr } from './supabase/functions/portfolio-performance/return-math.js?v=V3.34.0';
+import { xirr } from './supabase/functions/portfolio-performance/return-math.js?v=V3.34.1';
 
 export { xirr };
 
