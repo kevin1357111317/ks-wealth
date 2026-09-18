@@ -38,6 +38,28 @@ const addMonths = (iso, months) => {
 };
 const daysBetween = (from, to) => Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000);
 
+// pinLoanCard／loan-ui-fix.js 靠 requestAnimationFrame 補正卡片位置，要幾個 frame 才穩
+// 跟主機當下有多忙有關，固定等 400ms 是用「本機通常夠快」猜的。改成跟 pinLoanCard 同一種
+// 邏輯直接問瀏覽器「連兩個 frame 都沒再動」，時間預算 5 秒。
+// （註：2026-09-18 CI 紅的那次不是等太短 —— 給到 5 秒、等到不再動了位置還是一樣錯，
+// 真正的原因寫在下面挑捲動位置那段。）
+const waitForStableTop = (page, selector, index = 0, timeoutMs = 5000) =>
+  page.evaluate(({ selector, index, timeoutMs }) => new Promise(resolve => {
+    const start = performance.now();
+    let last = null;
+    let steady = 0;
+    const check = () => {
+      const el = document.querySelectorAll(selector)[index];
+      const top = el ? el.getBoundingClientRect().top : null;
+      if (top !== null && last !== null && Math.abs(top - last) <= 0.5) steady += 1;
+      else steady = 0;
+      last = top;
+      if (steady >= 2 || performance.now() - start > timeoutMs) return resolve(top);
+      requestAnimationFrame(check);
+    };
+    requestAnimationFrame(check);
+  }), { selector, index, timeoutMs });
+
 test('繳款日到了自己扣款，卡片收合不重繪整頁', { skip }, async t => {
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei' }).format(new Date());
   const start = addMonths(today, -1);          // 一個月前撥款，所以第一期就是今天
@@ -129,6 +151,23 @@ db.loan_schedule.push(...${JSON.stringify(schedule)});`;
   const failures = [];
   page.on('pageerror', error => failures.push(String(error)));
   page.on('console', entry => { if (entry.type() === 'error') failures.push(entry.text()); });
+  // 診斷用：卡片位置對不上時把當下的版面量測一起印出來，才知道是補正沒跑完、還是
+  // 捲動量被夾住（頁面不夠長就捲不回去，卡片再怎麼補都回不到原位）。
+  await page.addInitScript(() => {
+    globalThis.__loanGeometry = () => ({
+      ua: navigator.userAgent,
+      dpr: devicePixelRatio,
+      inner: [innerWidth, innerHeight],
+      scrollY: Math.round(scrollY * 100) / 100,
+      maxScroll: Math.round((document.documentElement.scrollHeight - innerHeight) * 100) / 100,
+      scrollHeight: document.documentElement.scrollHeight,
+      cards: [...document.querySelectorAll('.loanCard')].map(card => ({
+        open: card.classList.contains('open'),
+        top: Math.round(card.getBoundingClientRect().top * 100) / 100,
+        h: Math.round(card.getBoundingClientRect().height * 100) / 100,
+      })),
+    });
+  });
   await page.route('**/cdn.jsdelivr.net/**', route =>
     route.fulfill({ status: 200, contentType: 'text/javascript', body: stub }));
   await page.route('**fonts.g**', route => route.abort());
@@ -184,7 +223,7 @@ db.loan_schedule.push(...${JSON.stringify(schedule)});`;
       return top;
     });
     await page.waitForFunction(() => document.querySelector('.loanCard.open') === null);
-    await page.waitForTimeout(400);
+    await waitForStableTop(page, '.loanCard', 0);
     assert.equal(await page.evaluate(() => document.querySelector('.loanList').dataset.probe), 'kept',
       '收合只該換那一張卡片 —— 重繪整頁的話這個記號會不見');
     const topAfter = await page.evaluate(() => document.querySelector('.loanCard').getBoundingClientRect().top);
@@ -204,16 +243,32 @@ db.loan_schedule.push(...${JSON.stringify(schedule)});`;
     // 內容整個往上拉 —— 這就是「偶爾點開卻跳走」的來源。
     // 挑一張現在畫面上看得到、而且在展開那張下面的卡片，就是屋主實際會點的情況。
     const picked = await page.evaluate(() => {
-      window.scrollTo(0, 1200);
       const cards = [...document.querySelectorAll('.loanCard')];
       const openIndex = cards.findIndex(card => card.classList.contains('open'));
+      // 補正是往回捲，而捲動量不能是負的：上面那張收起來少掉多少高度，就得有多少捲動量
+      // 可以退。所以起始位置要從實際量到的高度差推，不能寫死一個數字 —— 展開後的高度
+      // 跟字體換行有關，不同 Chromium build 差了快 200px，寫死 1200 在 CI 的版本上就不夠，
+      // 捲到 0 還差 25px，看起來就像「補正修到錯的位置」（2026-09-18 CI 紅的就是這個）。
+      const shrink = cards[openIndex].getBoundingClientRect().height
+        - cards[openIndex + 1].getBoundingClientRect().height;
+      const target = Math.ceil(shrink) + 200;    // 多留 200px 餘裕，確定不是捲不動造成的
+      window.scrollTo(0, target);
       const index = cards.findIndex((card, i) => {
         const top = card.getBoundingClientRect().top;
         return i > openIndex && top > 0 && top < window.innerHeight - 120;
       });
-      return { index, top: index < 0 ? null : cards[index].getBoundingClientRect().top };
+      return {
+        index,
+        openIndex,
+        target,
+        top: index < 0 ? null : cards[index].getBoundingClientRect().top,
+        geometry: globalThis.__loanGeometry(),
+      };
     });
     assert.ok(picked.index > 0, '應該要有一張在展開那張下面、又看得到的卡片');
+    assert.ok(picked.geometry.scrollY >= picked.target - 1,
+      `頁面要夠長才捲得到 ${picked.target}，不然測到的是捲不動、不是補正`
+      + `（實際只到 ${picked.geometry.scrollY}，maxScroll ${picked.geometry.maxScroll}）`);
     // 用 DOM 的 click()，不要用 Playwright 的 —— 它會先把元素捲進畫面，量出來的
     // 起始位置就不是真的了。
     await page.evaluate(index => {
@@ -221,11 +276,38 @@ db.loan_schedule.push(...${JSON.stringify(schedule)});`;
     }, picked.index);
     await page.waitForFunction(index =>
       document.querySelectorAll('.loanCard')[index].classList.contains('open'), picked.index);
-    await page.waitForTimeout(400);   // 等 loan-ui-fix.js 後面幾個 frame 的 DOM 調整
-    const topAfter = await page.evaluate(index =>
-      document.querySelectorAll('.loanCard')[index].getBoundingClientRect().top, picked.index);
+    const topAfter = await waitForStableTop(page, '.loanCard', picked.index);
+    const after = await page.evaluate(() => globalThis.__loanGeometry());
     assert.ok(Math.abs(topAfter - picked.top) <= 2,
-      `被點的卡片應該留在原地，卻從 ${picked.top} 移到 ${topAfter}`);
+      `被點的卡片應該留在原地，卻從 ${picked.top} 移到 ${topAfter}\n`
+      + `picked=${JSON.stringify({ index: picked.index, openIndex: picked.openIndex })}\n`
+      + `before=${JSON.stringify(picked.geometry)}\nafter=${JSON.stringify(after)}`);
+  });
+
+  await t.test('捲動量本來就不夠時，只差在捲不回去，不是補正亂跳', async () => {
+    // 上面那張收起來少掉的高度比目前的捲動量還多時，捲到 0 就沒得退了，剩下的差距是
+    // 物理上補不回來的 —— 這裡確認它就只差那麼多：能用的捲動量全部用掉、停在頁首，
+    // 而不是整張飛走。CI 之前紅的就是落到這個情境，不是補正沒跑完。
+    const short = 60;                            // 故意少給 60px 的捲動量
+    const picked = await page.evaluate(gap => {
+      const cards = [...document.querySelectorAll('.loanCard')];
+      const openIndex = cards.findIndex(card => card.classList.contains('open'));
+      const shrink = cards[openIndex].getBoundingClientRect().height
+        - cards[openIndex + 1].getBoundingClientRect().height;
+      window.scrollTo(0, Math.round(shrink) - gap);
+      return { index: openIndex + 1, top: cards[openIndex + 1].getBoundingClientRect().top };
+    }, short);
+    await page.evaluate(index => {
+      document.querySelectorAll('.loanCard')[index].querySelector('[data-loan-account]').click();
+    }, picked.index);
+    await page.waitForFunction(index =>
+      document.querySelectorAll('.loanCard')[index].classList.contains('open'), picked.index);
+    const topAfter = await waitForStableTop(page, '.loanCard', picked.index);
+    const after = await page.evaluate(() => globalThis.__loanGeometry());
+    assert.equal(after.scrollY, 0, '捲不回去的時候要把捲動量用到見底');
+    assert.ok(Math.abs((picked.top - topAfter) - short) <= 2,
+      `差距應該剛好是少掉的那 ${short}px，卻差了 ${picked.top - topAfter}\n`
+      + `after=${JSON.stringify(after)}`);
   });
 
   await t.test('進貸款分析停在這個人真的有貸款的那一頁', async () => {
