@@ -8,6 +8,7 @@ import {
   summarizePerformance,
   transactionFlows,
   transactionShareScale,
+  yahooEventRows,
   yahooPriceRows,
 } from '../supabase/functions/portfolio-performance/core.js';
 import {
@@ -318,6 +319,142 @@ test('部位很小時加碼，成交價與收盤價的價差不會被當成單�
   });
   // 當天真正的報酬只有既有部位的 0050 +1%；用成交金額扣會變成 +101%。
   assert.equal(rows.at(-1).portfolio, 101);
+});
+
+// 台帳的股息記入帳日，價格卻是在除息日掉的。算在入帳日等於除息日先跌一次、入帳日再漲一次，
+// 期間內大致抵銷，但除息與入帳落在不同期間時就會少算或多算。
+test('股息對齊除息日，不會在除息日先跌一次、入帳日再漲一次', () => {
+  const stocks = [{ key: '0050', market: '台股', currency: 'TWD' }];
+  const priceHistory = new Map([['0050', [
+    { date: '2020-01-30', value: 100 },
+    { date: '2020-01-31', value: 95 },
+    { date: '2020-03-26', value: 95 },
+  ]]]);
+  const transactions = [
+    { stock_key: '0050', tx_date: '2020-01-30', amount: -100000, shares: 1000, kind: 'trade' },
+    { stock_key: '0050', tx_date: '2020-03-26', amount: 5000, shares: 0, kind: 'dividend' },
+  ];
+  const dividendEvents = new Map([['0050', [{ date: '2020-01-31', ratio: 5 }]]]);
+  const snapshots = buildHistoricalSnapshots({ stocks, transactions, priceHistory, fxHistory: [], dividendEvents });
+  assert.equal(snapshots[1].date, '2020-01-31');
+  assert.equal(snapshots[1].flow.twTwd, -5000, '股息要落在除息日');
+  assert.equal(snapshots[2].flow.twTwd, 0, '入帳日不該再算一次');
+  const rows = buildPerformanceSeries({
+    market: 'tw', benchmarkMode: 'tw', snapshots, flows: {},
+    twBenchmark: [], usBenchmark: [], fxHistory: [],
+  });
+  // 除息只是把錢從股價換成現金，TWR 在除息當天就不該掉。
+  assert.equal(rows[1].portfolio, 100);
+  assert.equal(rows.at(-1).portfolio, 100);
+});
+
+test('抓不到價格的日子不產生快照，當天的金流要留到下一天而不是消失', () => {
+  const stocks = [
+    { key: 'A', market: '台股', currency: 'TWD' },
+    { key: 'B', market: '台股', currency: 'TWD' },
+  ];
+  // B 到 01-05 才有第一筆報價，但 01-02 就買了：那天整天不完整，不會產生快照。
+  const priceHistory = new Map([
+    ['A', [{ date: '2026-01-01', value: 10 }, { date: '2026-01-02', value: 10 }, { date: '2026-01-05', value: 10 }]],
+    ['B', [{ date: '2026-01-05', value: 50 }]],
+  ]);
+  const transactions = [
+    { stock_key: 'A', tx_date: '2026-01-01', amount: -1000, shares: 100, kind: 'trade' },
+    { stock_key: 'B', tx_date: '2026-01-02', amount: -5000, shares: 100, kind: 'trade' },
+  ];
+  const snapshots = buildHistoricalSnapshots({ stocks, transactions, priceHistory, fxHistory: [] });
+  assert.deepEqual(snapshots.map(row => row.date), ['2026-01-01', '2026-01-05'], '01-02 不完整不產生快照');
+  assert.equal(snapshots[1].flow.twTwd, 5000, '買進 B 的金流要補在它第一次有市值的那天');
+  const rows = buildPerformanceSeries({
+    market: 'tw', benchmarkMode: 'tw', snapshots, flows: {},
+    twBenchmark: [{ date: '2026-01-01', value: 1 }, { date: '2026-01-05', value: 1 }],
+    usBenchmark: [], fxHistory: [],
+  });
+  assert.equal(rows.at(-1).portfolio, 100, '沒有漲跌，只是加碼，TWR 不該動');
+});
+
+test('不完整那幾天裡的買賣，金流要一路累到下一個有快照的日子', () => {
+  const stocks = [
+    { key: 'A', market: '台股', currency: 'TWD' },
+    { key: 'B', market: '台股', currency: 'TWD' },
+  ];
+  const priceHistory = new Map([
+    ['A', ['2026-01-01', '2026-01-02', '2026-01-03', '2026-01-06'].map(date => ({ date, value: 10 }))],
+    ['B', [{ date: '2026-01-06', value: 50 }]],
+  ]);
+  const transactions = [
+    { stock_key: 'A', tx_date: '2026-01-01', amount: -1000, shares: 100, kind: 'trade' },
+    { stock_key: 'B', tx_date: '2026-01-02', amount: -5000, shares: 100, kind: 'trade' },
+    // 01-03 賣掉一半 A：當天 A 有價格，但 B 還沒有，整天不會產生快照。
+    { stock_key: 'A', tx_date: '2026-01-03', amount: 500, shares: -50, kind: 'trade' },
+  ];
+  const snapshots = buildHistoricalSnapshots({ stocks, transactions, priceHistory, fxHistory: [] });
+  assert.deepEqual(snapshots.map(row => row.date), ['2026-01-01', '2026-01-06']);
+  // B 買進 +5000、A 賣出 -500，兩筆都要出現在 01-06。
+  assert.equal(snapshots[1].flow.twTwd, 4500);
+  const rows = buildPerformanceSeries({
+    market: 'tw', benchmarkMode: 'tw', snapshots, flows: {},
+    twBenchmark: [{ date: '2026-01-01', value: 1 }, { date: '2026-01-06', value: 1 }],
+    usBenchmark: [], fxHistory: [],
+  });
+  assert.equal(rows.at(-1).portfolio, 100, '價格都沒動，只有進出，TWR 不該動');
+});
+
+test('這個 market 當天沒有市值時，金流留到下一個有市值的日子', () => {
+  const rows = buildPerformanceSeries({
+    market: 'us', benchmarkMode: 'us', flows: {},
+    snapshots: [
+      { date: '2026-01-01', twTwd: 0, usTwd: 0, usUsd: 100, flow: { twTwd: 0, usTwd: 0, usUsd: 0 } },
+      { date: '2026-01-02', twTwd: 0, usTwd: 0, usUsd: 0, flow: { twTwd: 0, usTwd: 0, usUsd: -110 } },
+      { date: '2026-01-05', twTwd: 0, usTwd: 0, usUsd: 50, flow: { twTwd: 0, usTwd: 0, usUsd: 50 } },
+    ],
+    twBenchmark: [], usBenchmark: [], fxHistory: [],
+  });
+  // 賣光拿回 110（+10%）再買回 50。舊寫法會把賣出那天整筆丟掉，變成 -100%。
+  assert.equal(rows.at(-1).portfolio, 110);
+});
+
+test('有 Yahoo 拆股事件時，股數倍率只在 1 與該倍率之間二選一', () => {
+  const nvda = { key: 'NVDA', market: '美股', currency: 'USD' };
+  const prices = [{ date: '2024-05-23', value: 103.5 }];
+  const splits = [{ date: '2024-06-10', ratio: 10 }];
+  // 台帳已換算成拆股後股數
+  assert.equal(transactionShareScale({ tx_date: '2024-05-23', amount: -1035, shares: 10 }, nvda, prices, splits), 1);
+  // 台帳是成交當時股數
+  assert.equal(transactionShareScale({ tx_date: '2024-05-23', amount: -1035, shares: 1 }, nvda, prices, splits), 10);
+  // 成交單價剛好是收盤價三倍：沒有拆股事件時會被猜成 3 倍，有事件時 3 根本不是候選
+  assert.equal(transactionShareScale({ tx_date: '2024-05-23', amount: -310.5, shares: 1 }, nvda, prices), 3);
+  assert.equal(transactionShareScale({ tx_date: '2024-05-23', amount: -310.5, shares: 1 }, nvda, prices, splits), 1);
+});
+
+test('Yahoo events 解析成除息日與拆股倍率', () => {
+  const result = {
+    events: {
+      dividends: { a: { amount: 2.5, date: Date.UTC(2020, 8, 17) / 1000 } },
+      splits: { b: { numerator: 10, denominator: 1, date: Date.UTC(2024, 5, 10) / 1000 } },
+    },
+  };
+  assert.deepEqual(yahooEventRows(result, 'dividends'), [{ date: '2020-09-17', ratio: 2.5 }]);
+  assert.deepEqual(yahooEventRows(result, 'splits'), [{ date: '2024-06-10', ratio: 10 }]);
+  assert.deepEqual(yahooEventRows({}, 'splits'), []);
+});
+
+test('抽樣保留單日極值，不會把 +10% 那根整根跳過', () => {
+  const rows = Array.from({ length: 1000 }, (_, index) => ({ date: String(index), portfolio: 100 + index * 0.01 }));
+  for (let index = 500; index < rows.length; index += 1) rows[index].portfolio = rows[499].portfolio * 1.1;
+  const sampled = downsampleSeries(rows, 280);
+  assert.ok(sampled.some(row => row.date === '500'), '極值那天要留著');
+  assert.ok(sampled.some(row => row.date === '499'), '前一天也要留著，圖上才看得出那一根');
+  assert.ok(sampled.length <= 280 + 24, '補回來的點數要有上限');
+});
+
+test('期間基準點取起算日當天或之前最後一個交易日的收盤', () => {
+  const source = readFileSync(new URL('../supabase/functions/portfolio-performance/index.ts', import.meta.url), 'utf8');
+  assert.match(source, /rows\[from\]\.date === start \? rows\.slice\(from\) : rows\.slice\(Math\.max\(0, from - 1\)\)/);
+  assert.match(source, /const periodSnapshots = fromPeriodStart\(snapshots, start\)/);
+  assert.match(source, /splits: yahooEventRows\(result, "splits"\)/);
+  assert.match(source, /dividends: yahooEventRows\(result, "dividends"\)/);
+  assert.match(source, /buildHistoricalSnapshots\(\{ stocks, transactions, priceHistory, fxHistory, splitEvents, dividendEvents \}\)/);
 });
 
 test('長期間只抽樣顯示，不改起點與終點', () => {

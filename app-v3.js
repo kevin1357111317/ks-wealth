@@ -1503,9 +1503,14 @@ function portfolioPerformanceCard() {
   // 未滿一年本來就不年化（annualizeReturn 回 null，畫面顯示「—」），把這件事寫在標題上。
   // 期間剛好一年時年化＝累積，兩個數字一樣不是壞掉；加註說明比整塊藏起來動得更少。
   const annualUnavailable = metrics?.days < 365;
-  const annualIsCumulative = metrics?.days >= 365 && metrics?.days <= 366;
+  // 期間接近一年時年化必然等於累積。看實際值差不差得出來，比用天數硬切可靠：
+  // 期間基準點落在週年日前一個交易日時天數會是 366，兩個數字就真的不一樣了。
+  const annualGap = Number.isFinite(metrics?.portfolioAnnualizedTwr) && Number.isFinite(metrics?.portfolioCumulativeTwr)
+    ? Math.abs(metrics.portfolioAnnualizedTwr - metrics.portfolioCumulativeTwr) : null;
   const annualNote = annualUnavailable ? '<small>期間未滿一年，不年化</small>'
-    : annualIsCumulative ? '<small>期間為一年，年化＝累積</small>' : '';
+    // 小於 0.005pp 就連顯示值都一樣（兩位小數）；週年日碰到假日時期間會多一兩天，差一點點。
+    : annualGap !== null && annualGap < 0.00005 ? '<small>期間為一年，年化＝累積</small>'
+      : annualGap !== null && metrics?.days <= 370 ? '<small>期間約一年，年化≈累積</small>' : '';
   const annualComparison = `<div class="portfolioPerformanceSubhead"><b>年化比較</b>${annualNote}</div><div class="portfolioPerformanceMetrics"><div><span>我的年化 TWR</span><b class="${metricTone(metrics?.portfolioAnnualizedTwr)}">${signedRate(metrics?.portfolioAnnualizedTwr)}</b></div><div><span>大盤年化 TWR</span><b class="${metricTone(metrics?.benchmarkAnnualizedTwr)}">${signedRate(metrics?.benchmarkAnnualizedTwr)}</b></div><div><span>年化超額報酬</span><b class="${metricTone(metrics?.annualizedExcess)}">${signedPoints(metrics?.annualizedExcess)}</b></div></div>`;
   const moneyWeightedComparison = `<div class="portfolioPerformanceSubhead"><b>實際資金績效</b></div><div class="portfolioPerformanceMetrics"><div><span>我的 XIRR</span><b class="${metricTone(metrics?.portfolioXirr)}">${signedRate(metrics?.portfolioXirr)}</b></div><div><span>Benchmark XIRR</span><b class="${metricTone(metrics?.benchmarkXirr)}">${signedRate(metrics?.benchmarkXirr)}</b></div><div><span>XIRR 差距</span><b class="${metricTone(metrics?.xirrGap)}">${signedPoints(metrics?.xirrGap)}</b></div></div><small class="portfolioPerformanceMetricNote">我的 XIRR 考慮實際投入金額與時間；Benchmark XIRR 以相同資金時點改投比較基準。</small>`;
   const period = `${chartFullDate(rows[0].date)}－${chartFullDate(last.date)}`;

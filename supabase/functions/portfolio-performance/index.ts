@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.95.0";
-import { buildHistoricalSnapshots, buildPerformanceSeries, downsampleSeries, summarizePerformance, transactionFlows, yahooPriceRows } from "./core.js";
+import { buildHistoricalSnapshots, buildPerformanceSeries, downsampleSeries, summarizePerformance, transactionFlows, yahooEventRows, yahooPriceRows } from "./core.js";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -24,8 +24,9 @@ const dateShift = (date: string, { years = 0, days = 0 }) => {
 };
 
 type PriceRow = { date: string; value: number };
+type EventRow = { date: string; ratio: number };
 type StockRow = { key: string; symbol: string; market: string; currency: string; owner_scope: string };
-type YahooHistory = { close: PriceRow[]; adjusted: PriceRow[] };
+type YahooHistory = { close: PriceRow[]; adjusted: PriceRow[]; splits: EventRow[]; dividends: EventRow[] };
 
 async function yahooHistory(symbol: string, start: string, end: string): Promise<YahooHistory> {
   const period1 = Math.floor(Date.parse(`${dateShift(start, { days: -7 })}T00:00:00Z`) / 1000);
@@ -33,13 +34,19 @@ async function yahooHistory(symbol: string, start: string, end: string): Promise
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${period1}&period2=${period2}&interval=1d&events=div%2Csplits&includeAdjustedClose=true`;
   try {
     const response = await fetch(url, { headers: { "Accept": "application/json", "User-Agent": "KS-Wealth/1.0" } });
-    if (!response.ok) return { close: [], adjusted: [] };
+    if (!response.ok) return { close: [], adjusted: [], splits: [], dividends: [] };
     const payload = await response.json();
     const result = payload?.chart?.result?.[0];
     // 持股市值用 close，因為台帳已另外記錄股息；Benchmark 用 adjusted close，
     // 才能把現金股息再投入納入總報酬，且不會和個人台帳重複計息。
-    return { close: yahooPriceRows(result, "close"), adjusted: yahooPriceRows(result, "adjusted") };
-  } catch { return { close: [], adjusted: [] }; }
+    // splits 用來確定台帳股數是不是成交當時的口徑，dividends 用來對齊除息日。
+    return {
+      close: yahooPriceRows(result, "close"),
+      adjusted: yahooPriceRows(result, "adjusted"),
+      splits: yahooEventRows(result, "splits"),
+      dividends: yahooEventRows(result, "dividends"),
+    };
+  } catch { return { close: [], adjusted: [], splits: [], dividends: [] }; }
 }
 
 async function fetchHistories(symbols: string[], start: string, end: string) {
@@ -114,8 +121,10 @@ Deno.serve(async (req: Request) => {
   const histories = await fetchHistories(requested, earliest, today);
   const fxHistory = (histories.get("TWD=X")?.close ?? []).map(row => ({ date: row.date, rate: row.value }));
   const priceHistory = new Map(stocks.map((stock: StockRow) => [stock.key, histories.get(yahooByKey.get(stock.key) ?? "")?.close ?? []]));
+  const splitEvents = new Map(stocks.map((stock: StockRow) => [stock.key, histories.get(yahooByKey.get(stock.key) ?? "")?.splits ?? []]));
+  const dividendEvents = new Map(stocks.map((stock: StockRow) => [stock.key, histories.get(yahooByKey.get(stock.key) ?? "")?.dividends ?? []]));
   const missing = stocks.filter((stock: StockRow) => !(priceHistory.get(stock.key)?.length)).map((stock: StockRow) => stock.key);
-  const snapshots = buildHistoricalSnapshots({ stocks, transactions, priceHistory, fxHistory });
+  const snapshots = buildHistoricalSnapshots({ stocks, transactions, priceHistory, fxHistory, splitEvents, dividendEvents });
   const stockByKey = new Map(stocks.map((stock: StockRow) => [stock.key, stock]));
   const txWithTwd = (transactions ?? []).map((transaction: Record<string, unknown>) => {
     const stock = stockByKey.get(String(transaction.stock_key));
@@ -127,9 +136,17 @@ Deno.serve(async (req: Request) => {
   const usBenchmarks = new Map(["VOO", "QQQ", "SOXX"].map(symbol => [symbol, histories.get(symbol)?.adjusted ?? []]));
   const usBenchmark = usBenchmarks.get("VOO") ?? [];
   const periods: Record<string, unknown> = {};
+  // 期間的基準點取「起算日當天，或起算日之前最後一個交易日」的收盤。今年以來因此從去年
+  // 最後一個交易日算起（標準 YTD 口徑），近一年的週年日碰到假日時也不會只剩 364 天、
+  // 讓年化整排顯示「—」；週年日本身有交易時仍維持剛好 365 天。
+  const fromPeriodStart = (rows: { date: string }[], start: string) => {
+    const from = rows.findIndex(row => row.date >= start);
+    if (from < 0) return [];
+    return rows[from].date === start ? rows.slice(from) : rows.slice(Math.max(0, from - 1));
+  };
   for (const period of ["ytd", "year", "all"]) {
     const start = periodStart(period, today, earliest);
-    const periodSnapshots = snapshots.filter(row => row.date >= start);
+    const periodSnapshots = fromPeriodStart(snapshots, start);
     const portfolioXirrByMarket = new Map<string, number | null>();
     const comparison = (market: string, benchmarkMode: string, benchmark: PriceRow[]) => {
       const fullSeries = buildPerformanceSeries({
