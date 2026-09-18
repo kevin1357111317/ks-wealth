@@ -10,12 +10,12 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.34.1';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.34.1';
-import { calculateUsd } from './usd-core.js?v=V3.34.1';
-import { calculateGold } from './gold-core.js?v=V3.34.1';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.34.1';
-import { buildPersonalTrendRows } from './trend-core.js?v=V3.34.1';
+} from './financial-core.js?v=V3.34.2';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.34.2';
+import { calculateUsd } from './usd-core.js?v=V3.34.2';
+import { calculateGold } from './gold-core.js?v=V3.34.2';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.34.2';
+import { buildPersonalTrendRows } from './trend-core.js?v=V3.34.2';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -24,7 +24,7 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.34.1';
+} from './health-core.js?v=V3.34.2';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -2539,7 +2539,8 @@ async function editItem(item, defaultOwner, defaultKind) {
       if (error) throw error;
     } else {
       const bare = symbol.replace(QUOTE_PREFIXES, '');
-      const existing = portfolioStocks.find(stock => stock.market === marketLabel
+      const existing = portfolioStocks.find(stock => stock.ownerScope === ownerScope
+        && stock.market === marketLabel
         && String(stock.symbol || stock.key).replace(QUOTE_PREFIXES, '').toUpperCase() === bare);
       if (existing) {
         key = existing.key;
