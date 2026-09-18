@@ -300,10 +300,14 @@ db.loan_schedule.push(...${JSON.stringify(schedule)});`;
       document.querySelectorAll('.loanCard')[index].classList.contains('open'), picked.index);
     const topAfter = await waitForStableTop(page, '.loanCard', picked.index);
     const after = await page.evaluate(() => globalThis.__loanGeometry());
-    // 暫時：綠的時候也把捲動軌跡印出來，用來比對 CI 與本機的補正過程。查完就拿掉。
-    console.log('SCROLLTRACE', JSON.stringify({
-      target: picked.target, top: picked.top, topAfter, scrollY: after.scrollY, trace: after.scrolls,
-    }));
+    // 點下去到 pinLoanCard 開始補正之間，捲動量不該自己變。變了就是瀏覽器的捲動錨定
+    // （scroll anchoring）也在動捲動量 —— 兩個機制搶同一件事，補正就是在追一個會自己跑的
+    // 目標，最後停在哪裡跟當下的 layout 時機有關。`.loanList{overflow-anchor:none}` 把
+    // 錨定關掉之後這裡才會相等（沒關的話實測差了 331px）。
+    const firstPin = after.scrolls.find(entry => entry.at?.includes('pinLoanCard'));
+    assert.equal(firstPin?.from, picked.target,
+      `補正開始前捲動量就被改過了（${picked.target} → ${firstPin?.from}）—— 捲動錨定在跟 pinLoanCard 搶\n`
+      + `trace=${JSON.stringify(after.scrolls)}`);
     assert.ok(Math.abs(topAfter - picked.top) <= 2,
       `被點的卡片應該留在原地，卻從 ${picked.top} 移到 ${topAfter}\n`
       + `picked=${JSON.stringify({ index: picked.index, openIndex: picked.openIndex })}\n`
