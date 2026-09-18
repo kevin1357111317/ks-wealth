@@ -743,7 +743,16 @@ App 開著的時候會用 Screen Wake Lock 讓螢幕不要自己關掉，行情�
 | | 間隔 | 來源 | 成本 | 寫資料庫 |
 |---|---|---|---|---|
 | 台股 | 5 秒 | Fugle | 免費、沒有 credit | **不寫** |
-| 美股／匯率／黃金 | 60 秒 | Twelve Data | 一輪 7 credits，上限每分鐘 8 | 寫 |
+| 美股 | 60 秒 | Finnhub（備援 Twelve Data） | Finnhub 免費 60 次／分 | 寫 |
+| 匯率／黃金 | 60 秒 | Twelve Data | 一輪 2 credits，上限每分鐘 8 | 寫 |
+
+美股改走 Finnhub 之後，`klfan_quotes` 的快取 TTL 分成兩段：美股 14 秒、匯率與黃金 59 秒。
+**14 秒是靠 Finnhub 的額度撐的**，所以沒有 `FINNHUB_API_KEY` 時美股要退回 59 秒 ——
+不退的話會退回 Twelve Data 並且每輪重抓，把共用的 credit 燒成四倍。
+
+`financial_items.quote_source` 有 CHECK 約束，只收 `manual/fugle/twelve_data`。Finnhub 的價
+寫進去會讓整筆 update 被資料庫擋掉、金額停在舊值，所以寫的時候收斂成允許值，真正的上游
+來源留在 `klfan_quotes.source`。要讓 `finnhub` 直接入庫就得先改約束（提案放 `supabase/proposals/`）。
 
 台股那一條走 Edge Function 的 `scope='tw'`：只打 Fugle、只把價格回傳，**完全不碰資料庫**。
 碰了的話 `financial_items` 的 realtime 訂閱會被自己觸發，每 5 秒重載整本台帳（一千多筆交易）

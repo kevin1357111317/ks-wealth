@@ -58,11 +58,11 @@ const ENV = {
 // 仍持有的標的，預設就是快取裡那幾檔
 const LIVE = Object.keys(KLFAN_KEYS);
 
-async function refresh({ cache, gold = null, twelveBudget = 8, live = LIVE, requestBody = {} }) {
+async function refresh({ cache, gold = null, twelveBudget = 8, live = LIVE, requestBody = {}, env = ENV }) {
   let stored = cache;
   const pruned = [];
   let storedGold = gold;   // ks_quote_cache 裡的 XAU/USD，null = 沒有或已過期
-  const used = { fugle: 0, twelve: 0 };
+  const used = { fugle: 0, twelve: 0, finnhub: 0 };
   const written = [];      // 這一輪往 financial_items 寫進去的每一筆
   let fxDaily = null;      // 寫進 klfan_fx_daily 的那一列
 
@@ -113,6 +113,11 @@ async function refresh({ cache, gold = null, twelveBudget = 8, live = LIVE, requ
       const code = decodeURIComponent(u.split('/').pop());
       return Response.json({ lastPrice: FUGLE_PRICE[code], change: 1, changePercent: 1, date: '2026-09-04' });
     }
+    if (u.includes('finnhub.io')) {
+      used.finnhub += 1;
+      const code = /symbol=([^&]*)/.exec(u)[1];
+      return Response.json({ c: US_PRICE[code], d: 1, dp: 0.2, t: 1 });
+    }
     if (u.includes('twelvedata.com')) {
       used.twelve += 1;
       if (used.twelve > twelveBudget) return Response.json({ status: 'error', code: 429, message: 'run out of API credits' });
@@ -124,7 +129,7 @@ async function refresh({ cache, gold = null, twelveBudget = 8, live = LIVE, requ
   };
 
   try {
-    fn.__stub(factory, ENV);
+    fn.__stub(factory, env);
     const body = await (await fn.handler(new Request('https://x/fn', { method: 'POST', headers: { Authorization: 'Bearer tok' }, body: JSON.stringify(requestBody) }))).json();
     return { body, used, stored, storedGold, written, fxDaily, pruned };
   } finally {
@@ -252,4 +257,37 @@ test('只要台股那一輪完全不碰 Twelve Data，也不寫資料庫', async
   const prices = body.results.filter(r => r.status === 'quote_only');
   assert.equal(prices.length, 4);
   assert.equal(prices.find(r => r.symbol === '2330').price, FUGLE_PRICE['2330']);
+});
+
+// ---- Finnhub 當美股主來源 ----
+//
+// Twelve Data 那把 key 跟 KLFAN 共用、每分鐘只有 8 credits，所以美股改走 Finnhub，
+// Twelve Data 只留給匯率與黃金。這三條測的就是這個切換不能把兩件事弄壞：
+// 省 credit 的保證，以及 financial_items.quote_source 的 CHECK 約束。
+const ENV_FINNHUB = { ...ENV, FINNHUB_API_KEY: 'FINNHUB' };
+
+test('有 Finnhub 時美股走 Finnhub，Twelve Data 只剩匯率與黃金', async () => {
+  const { body, used } = await refresh({ cache: cacheRows(28 * 60_000), env: ENV_FINNHUB });
+  assert.equal(used.finnhub, 3, '三檔美股都該問 Finnhub');
+  assert.equal(used.twelve, 2, '只剩匯率 + XAU/USD');
+  assert.equal(body.failed, 0);
+  assert.equal(body.results.find(r => r.symbol === 'VOO').price, US_PRICE.VOO);
+});
+
+test('Finnhub 的價不能原樣寫進 quote_source，那個欄位有 CHECK 約束', async () => {
+  // financial_items_quote_source_check 只收 manual/fugle/twelve_data。
+  // 寫 'finnhub' 進去整筆 update 會被資料庫擋掉，那一檔的金額就停在舊值。
+  const { written } = await refresh({ cache: cacheRows(28 * 60_000), env: ENV_FINNHUB });
+  const sources = [...new Set(written.map(row => row.quote_source).filter(Boolean))];
+  assert.deepEqual(sources.sort(), ['fugle', 'twelve_data'], `quote_source 只能是允許值，實際是 ${sources}`);
+});
+
+test('沒有 Finnhub 就退回 59 秒快取，不能把 Twelve Data 的 credit 燒成四倍', async () => {
+  // 14 秒的短快取是靠 Finnhub 的額度撐的。少了它還照 14 秒跑，30 秒前的快取會被
+  // 判成過期，三檔美股全部回頭打 Twelve Data。
+  const withKey = await refresh({ cache: cacheRows(30_000), env: ENV_FINNHUB });
+  assert.equal(withKey.used.finnhub, 3, '有 Finnhub 時 14 秒就算過期，該重抓');
+
+  const withoutKey = await refresh({ cache: cacheRows(30_000) });
+  assert.equal(withoutKey.used.twelve, 1, '沒有 Finnhub 時只該為 XAU/USD 花 1 個 credit');
 });
