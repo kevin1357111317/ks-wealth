@@ -2539,7 +2539,8 @@ async function editItem(item, defaultOwner, defaultKind) {
       if (error) throw error;
     } else {
       const bare = symbol.replace(QUOTE_PREFIXES, '');
-      const existing = portfolioStocks.find(stock => stock.market === marketLabel
+      const existing = portfolioStocks.find(stock => stock.ownerScope === ownerScope
+        && stock.market === marketLabel
         && String(stock.symbol || stock.key).replace(QUOTE_PREFIXES, '').toUpperCase() === bare);
       if (existing) {
         key = existing.key;
