@@ -25,6 +25,7 @@
 - [ ] 已跑 `node --test --test-concurrency=1 tests/*.test.mjs`，或在下方說明無法執行的原因。
 - [ ] 若 Version impact 不是 `none`，已同步 `app-version.js`、`VERSIONING.md` 與 `index.html` 三處正式版號。
 - [ ] 若動到前端 runtime，已更新必要的 `?v=` cache-bust。
+- [ ] 若動到 `supabase/functions/`，合併後已部署對應 Edge Function（Vercel 不含它），並比對線上原始碼、確認畫面數字已更新 —— 不只看 App 版號。
 - [ ] 若動到金額／計算邏輯，已重新核對原始資料且確認 regression test 能抓到錯誤。
 
 ## 驗證結果
