@@ -369,6 +369,38 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     assert.equal(data.financial_items.filter(i => i.portfolio_stock_key === tsmc[0].key).length, 1);
   });
 
+  await t.test('夫妻持有同一檔股票要分開台帳，不互相改歸屬', async () => {
+    // 老公已經有 2330；老婆再從自己的頁面新增同一檔，必須建立另一個 owner-scoped 標的。
+    await page.click('[data-tab="wife"]');
+    await page.waitForSelector('.fab');
+    await page.click('.fab');
+    await page.waitForSelector('#editform');
+    await page.selectOption('#cat', 'stock-tw');
+    await page.fill('#symbol', '2330');
+    await page.waitForFunction(() => document.querySelector('#stockHint')?.textContent.includes('台積電'), null, { timeout: 5000 });
+    await page.fill('#txAmount', '96343');
+    await page.fill('#txShares', '100');
+    await save();
+
+    const data = await db();
+    const tsmc = data.klfan_stocks.filter(row => String(row.symbol).endsWith('2330'));
+    assert.equal(tsmc.length, 2, '夫妻各自持有同一檔時要有兩個獨立台帳標的');
+    const husband = tsmc.find(row => row.owner_scope === 'husband');
+    const wife = tsmc.find(row => row.owner_scope === 'wife');
+    assert.ok(husband, '老公原本的台積電標的不能被搬走');
+    assert.ok(wife, '老婆要建立自己的台積電標的');
+    assert.notEqual(husband.key, wife.key, '夫妻同股不可共用同一個 stock key');
+    assert.equal(data.klfan_transactions.filter(row => row.stock_key === husband.key).length, 3,
+      '老婆新增交易不能混進老公原本的三筆交易');
+    assert.equal(data.klfan_transactions.filter(row => row.stock_key === wife.key).length, 1,
+      '老婆的新交易只掛在自己的標的');
+    assert.equal(data.financial_items.filter(row => row.portfolio_stock_key === husband.key && row.owner_scope === 'husband').length, 1);
+    assert.equal(data.financial_items.filter(row => row.portfolio_stock_key === wife.key && row.owner_scope === 'wife').length, 1);
+
+    await page.click('[data-tab="husband"]');
+    await page.waitForSelector('.fab');
+  });
+
   await t.test('分類展開後照金額由大到小排', async () => {
     // 刻意由小到大建立：照 sort_order（建立先後）與照金額會給出相反的結果
     for (const [name, amount] of [['小額', '10000'], ['中額', '500000'], ['大額', '9000000']]) {
