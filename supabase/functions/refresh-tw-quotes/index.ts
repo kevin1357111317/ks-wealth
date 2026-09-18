@@ -13,7 +13,12 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 });
 
 const TROY_OUNCE_GRAMS = 31.1034768;
-const FULL_QUOTE_TTL_MS = 59 * 1000;
+// 美股走 Finnhub，額度夠，所以快取只留 14 秒，多台裝置看到的價格才不會差一整分鐘。
+// 匯率與黃金走 Twelve Data（免費額度較緊），維持 59 秒。
+const US_QUOTE_TTL_MS = 14 * 1000;
+const AUX_QUOTE_TTL_MS = 59 * 1000;
+// 對應 financial_items_quote_source_check；新增上游來源時要先改資料庫約束再加進來。
+const ALLOWED_QUOTE_SOURCES = ["manual", "fugle", "twelve_data"];
 const goldAmountTwd = (grams: number, xauUsd: number, usdTwd: number) =>
   Math.round((grams / TROY_OUNCE_GRAMS) * xauUsd * usdTwd);
 
@@ -28,9 +33,10 @@ Deno.serve(async (req: Request) => {
   const publishableKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
   const fugleKey = Deno.env.get("FUGLE_MARKETDATA_API_KEY") ?? "";
+  const finnhubKey = Deno.env.get("FINNHUB_API_KEY") ?? "";
   const twelveKey = Deno.env.get("TWELVE_DATA_API_KEY") ?? "";
   if (!supabaseUrl || !publishableKey) return json({ error: "supabase_config_missing" }, 500);
-  if (!fugleKey && !twelveKey) return json({ error: "market_keys_missing" }, 503);
+  if (!fugleKey && !finnhubKey && !twelveKey) return json({ error: "market_keys_missing" }, 503);
 
   const client = createClient(supabaseUrl, publishableKey, {
     global: { headers: { Authorization: authHeader } },
@@ -117,32 +123,42 @@ Deno.serve(async (req: Request) => {
     changePercent: number;
     quotedAt: string | null;
     updatedAt: string | null;
+    provider: string;
   };
 
   const cachedUsFresh = new Map<string, CachedQuote>();
   const cachedUsStale = new Map<string, CachedQuote>();
   let cachedFxFresh: number | null = null;
   let cachedFxStale: number | null = null;
+  let cachedFxRow: Record<string, unknown> | null = null;
   let cachedGoldFresh: number | null = null;
   let cachedGoldStale: number | null = null;
   let cacheError: string | null = null;
 
   if (cache) {
     const [quotesResult, goldResult] = await Promise.all([
-      cache.from("klfan_quotes").select("symbol,price,change,change_percent,quoted_at,updated_at"),
+      cache.from("klfan_quotes").select("symbol,price,change,change_percent,source,quoted_at,updated_at"),
       cache.from("ks_quote_cache").select("price,updated_at").eq("symbol", "XAU/USD").maybeSingle(),
     ]);
     if (quotesResult.error) cacheError = quotesResult.error.message;
-    const freshFloor = Date.now() - FULL_QUOTE_TTL_MS;
+    // 14 秒的短快取是靠 Finnhub 的額度撐的。沒有 Finnhub 就會退回 Twelve Data，
+    // 那把 key 跟 KLFAN 共用、額度很緊，這時要維持 59 秒，不能把 credit 燒成四倍。
+    const usFreshFloor = Date.now() - (finnhubKey ? US_QUOTE_TTL_MS : AUX_QUOTE_TTL_MS);
+    const auxFreshFloor = Date.now() - AUX_QUOTE_TTL_MS;
     for (const row of quotesResult.data ?? []) {
       const raw = String(row.symbol ?? "").trim();
       const price = Number(row.price);
       if (!raw || !Number.isFinite(price) || price <= 0) continue;
       const updatedAt = String(row.updated_at ?? "");
-      const fresh = Date.parse(updatedAt) >= freshFloor;
       if (raw === "USD/TWD") {
         cachedFxStale = price;
-        if (fresh) cachedFxFresh = price;
+        // 沿用快取的匯率重寫回去時要保留原本的時間戳，不能假裝匯率也剛更新。
+        cachedFxRow = {
+          symbol: "USD/TWD", price, currency: "TWD", change: row.change ?? null,
+          change_percent: row.change_percent ?? null, source: row.source ?? "twelve_data",
+          quoted_at: row.quoted_at ?? null, updated_at: row.updated_at ?? null,
+        };
+        if (Date.parse(updatedAt) >= auxFreshFloor) cachedFxFresh = price;
         continue;
       }
       if (raw.startsWith("TPE:") || raw.startsWith("TWO:")) continue;
@@ -154,14 +170,15 @@ Deno.serve(async (req: Request) => {
         changePercent: Number(row.change_percent ?? 0),
         quotedAt: row.quoted_at ?? null,
         updatedAt: row.updated_at ?? null,
+        provider: String(row.source ?? "twelve_data"),
       };
       cachedUsStale.set(code, hit);
-      if (fresh) cachedUsFresh.set(code, hit);
+      if (Date.parse(updatedAt) >= usFreshFloor) cachedUsFresh.set(code, hit);
     }
     const goldPrice = Number(goldResult.data?.price);
     if (Number.isFinite(goldPrice) && goldPrice > 0) {
       cachedGoldStale = goldPrice;
-      if (Date.parse(String(goldResult.data?.updated_at ?? "")) >= freshFloor) cachedGoldFresh = goldPrice;
+      if (Date.parse(String(goldResult.data?.updated_at ?? "")) >= auxFreshFloor) cachedGoldFresh = goldPrice;
     }
   }
 
@@ -190,12 +207,35 @@ Deno.serve(async (req: Request) => {
 
   const fetchUs = async (symbol: string) => {
     const fresh = cachedUsFresh.get(symbol);
-    if (fresh) return [`US:${symbol}`, { provider: "twelve_data", currency: "USD", ...fresh, cached: true }] as const;
+    if (fresh) return [`US:${symbol}`, { currency: "USD", ...fresh, cached: true }] as const;
+    // Finnhub 為主、Twelve Data 為備援：Finnhub 的免費額度高很多，撐得起 14 秒的快取。
+    if (finnhubKey) {
+      try {
+        const response = await fetch(
+          `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(symbol)}&token=${encodeURIComponent(finnhubKey)}`,
+          { headers: { "Accept": "application/json" } },
+        );
+        const quote = await response.json();
+        const price = Number(quote.c);
+        if (response.ok && Number.isFinite(price) && price > 0) {
+          return [`US:${symbol}`, {
+            provider: "finnhub",
+            currency: "USD",
+            price,
+            change: Number(quote.d ?? 0),
+            changePercent: Number(quote.dp ?? 0),
+            quotedAt: quote.t ? new Date(Number(quote.t) * 1000).toISOString() : null,
+            updatedAt: new Date().toISOString(),
+            cached: false,
+          }] as const;
+        }
+      } catch { /* 改走 Twelve Data 備援 */ }
+    }
     if (!twelveKey) {
       const stale = cachedUsStale.get(symbol);
       return stale
-        ? [`US:${symbol}`, { provider: "twelve_data", currency: "USD", ...stale, cached: true, stale: true }] as const
-        : [`US:${symbol}`, { error: "twelve_key_missing" }] as const;
+        ? [`US:${symbol}`, { currency: "USD", ...stale, cached: true, stale: true }] as const
+        : [`US:${symbol}`, { error: finnhubKey ? "finnhub_unavailable" : "market_key_missing" }] as const;
     }
     try {
       const response = await fetch(
@@ -296,7 +336,12 @@ Deno.serve(async (req: Request) => {
       const { error } = await quoteWriter.from("financial_items").update({
         amount_twd: amountTwd,
         fx_rate_twd: item.market === "US" ? conversion : 1,
-        quote_source: item.market === "US" ? "twelve_data" : "fugle",
+        // financial_items.quote_source 有 CHECK 約束，只收 manual/fugle/twelve_data。
+        // Finnhub 這類新來源寫進去會讓整筆 update 失敗，所以收斂成允許值；
+        // 真正的上游來源留在 klfan_quotes.source。
+        quote_source: item.market === "US"
+          ? (ALLOWED_QUOTE_SOURCES.includes(String(quote.provider)) ? String(quote.provider) : "twelve_data")
+          : "fugle",
       }).eq("id", item.id);
       return error
         ? { id: item.id, name: item.name, symbol, market: item.market, status: "error", error: error.message, ...quote }
@@ -345,13 +390,13 @@ Deno.serve(async (req: Request) => {
 
   const results = await Promise.all(pendingUpdates);
 
-  // KLFAN 共用行情表只在這輪真的拿到新 Twelve Data 匯率時更新，避免快取值被重新蓋上新時間戳。
+  // 美股每 14 秒更新；匯率沿用較長快取時要保留原時間戳，不能假裝匯率也剛更新。
   let cacheWrite: string | null = null;
-  if (cache && fxFetched && fxRate !== null) {
-    const freshUs = new Map<string, { price: number; change: number; changePercent: number }>();
+  if (cache && fxRate !== null) {
+    const freshUs = new Map<string, { price: number; change: number; changePercent: number; provider: string }>();
     for (const [key, quote] of usEntries) {
       if ("error" in quote || quote.cached) continue;
-      freshUs.set(key.slice(3), { price: Number(quote.price), change: Number(quote.change ?? 0), changePercent: Number(quote.changePercent ?? 0) });
+      freshUs.set(key.slice(3), { price: Number(quote.price), change: Number(quote.change ?? 0), changePercent: Number(quote.changePercent ?? 0), provider: String(quote.provider) });
     }
     const freshTw = new Map<string, { price: number; change: number; changePercent: number }>();
     for (const [key, quote] of twEntries) {
@@ -359,6 +404,12 @@ Deno.serve(async (req: Request) => {
       freshTw.set(key.slice(3), { price: Number(quote.price), change: Number(quote.change ?? 0), changePercent: Number(quote.changePercent ?? 0) });
     }
 
+    // 全部命中快取代表這一輪根本沒抓到新價，本來就沒東西好寫（cacheWrite 維持 null）。
+    // 只有一部分是新的才是真的被擋下來 —— 那要留個字串，不然回應上看不出差別。
+    const staleUs = usSymbols.filter((symbol) => !freshUs.has(symbol));
+    if (staleUs.length) {
+      cacheWrite = staleUs.length === usSymbols.length ? null : "skipped_stale_us";
+    } else {
     const { data: liveRows, error: liveError } = await cache.from("klfan_live_symbols").select("symbol");
     if (liveError) {
       cacheWrite = liveError.message;
@@ -374,9 +425,9 @@ Deno.serve(async (req: Request) => {
         cacheWrite = "skipped_partial_coverage";
       } else {
         const now = new Date().toISOString();
-        const rows: Record<string, unknown>[] = [
-          { symbol: "USD/TWD", price: fxRate, currency: "TWD", change: null, change_percent: null, source: "twelve_data", quoted_at: now, updated_at: now },
-        ];
+        const rows: Record<string, unknown>[] = [fxFetched || cachedFxRow === null
+          ? { symbol: "USD/TWD", price: fxRate, currency: "TWD", change: null, change_percent: null, source: "twelve_data", quoted_at: now, updated_at: now }
+          : cachedFxRow];
         for (const [code, key] of live) {
           const tw = freshTw.has(code);
           const quote = quoteOf(code)!;
@@ -386,7 +437,7 @@ Deno.serve(async (req: Request) => {
             currency: tw ? "TWD" : "USD",
             change: quote.change,
             change_percent: quote.changePercent,
-            source: tw ? "fugle" : "twelve_data",
+            source: tw ? "fugle" : freshUs.get(code)?.provider ?? "twelve_data",
             quoted_at: now,
             updated_at: now,
           });
@@ -401,12 +452,13 @@ Deno.serve(async (req: Request) => {
         }
       }
     }
+    }
   }
 
   return json({
-    source: "fugle+twelve_data",
+    source: finnhubKey ? "fugle+finnhub+twelve_data" : "fugle+twelve_data",
     requestedAt: new Date().toISOString(),
-    cache: { read: cachedUsFresh.size + (cachedFxFresh === null ? 0 : 1) + (cachedGoldFresh === null ? 0 : 1), write: cacheWrite, error: cacheError, ttlMs: FULL_QUOTE_TTL_MS },
+    cache: { read: cachedUsFresh.size + (cachedFxFresh === null ? 0 : 1) + (cachedGoldFresh === null ? 0 : 1), write: cacheWrite, error: cacheError, usTtlMs: US_QUOTE_TTL_MS, auxTtlMs: AUX_QUOTE_TTL_MS },
     fx: { symbol: "USD/TWD", rate: fxRate, error: fxError, dailyError: fxDailyError, cached: !fxFetched && fxRate !== null },
     gold: { symbol: "XAU/USD", price: xauUsd, error: goldError, cached: goldResult.cached },
     updated: results.filter((x) => x.status === "updated").length,
