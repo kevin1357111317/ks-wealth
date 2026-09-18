@@ -378,7 +378,7 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     await page.selectOption('#cat', 'stock-tw');
     await page.fill('#symbol', '2330');
     await page.waitForFunction(() => document.querySelector('#stockHint')?.textContent.includes('台積電'), null, { timeout: 5000 });
-    await page.fill('#txAmount', '96343');
+    await page.fill('#txAmount', '123456');
     await page.fill('#txShares', '100');
     await save();
 
