@@ -38,6 +38,29 @@ const addMonths = (iso, months) => {
 };
 const daysBetween = (from, to) => Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000);
 
+// pinLoanCard／loan-ui-fix.js 靠 requestAnimationFrame 補正卡片位置，需要幾個 frame 才穩
+// 跟主機當下有多忙有關；固定等 400ms 是用「本機通常夠快」猜的，CI 忙的時候 frame 間隔
+// 被拉長，猜的時間就不夠，會把還沒補完的中間值誤判成「跳走」（2026-09-18 CI 就這樣
+// 間歇性紅過，本機重跑、CI 重跑都沒再紅——時間到了就過，不是位置真的沒修正）。
+// 改成跟 pinLoanCard 同一種邏輯直接問瀏覽器「連兩個 frame 都沒再動」，多給時間預算
+// （5 秒，遠比正常情況需要的幾個 frame 寬裕）而不是猜一個固定數字。
+const waitForStableTop = (page, selector, index = 0, timeoutMs = 5000) =>
+  page.evaluate(({ selector, index, timeoutMs }) => new Promise(resolve => {
+    const start = performance.now();
+    let last = null;
+    let steady = 0;
+    const check = () => {
+      const el = document.querySelectorAll(selector)[index];
+      const top = el ? el.getBoundingClientRect().top : null;
+      if (top !== null && last !== null && Math.abs(top - last) <= 0.5) steady += 1;
+      else steady = 0;
+      last = top;
+      if (steady >= 2 || performance.now() - start > timeoutMs) return resolve(top);
+      requestAnimationFrame(check);
+    };
+    requestAnimationFrame(check);
+  }), { selector, index, timeoutMs });
+
 test('繳款日到了自己扣款，卡片收合不重繪整頁', { skip }, async t => {
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei' }).format(new Date());
   const start = addMonths(today, -1);          // 一個月前撥款，所以第一期就是今天
@@ -184,7 +207,7 @@ db.loan_schedule.push(...${JSON.stringify(schedule)});`;
       return top;
     });
     await page.waitForFunction(() => document.querySelector('.loanCard.open') === null);
-    await page.waitForTimeout(400);
+    await waitForStableTop(page, '.loanCard', 0);
     assert.equal(await page.evaluate(() => document.querySelector('.loanList').dataset.probe), 'kept',
       '收合只該換那一張卡片 —— 重繪整頁的話這個記號會不見');
     const topAfter = await page.evaluate(() => document.querySelector('.loanCard').getBoundingClientRect().top);
@@ -221,9 +244,7 @@ db.loan_schedule.push(...${JSON.stringify(schedule)});`;
     }, picked.index);
     await page.waitForFunction(index =>
       document.querySelectorAll('.loanCard')[index].classList.contains('open'), picked.index);
-    await page.waitForTimeout(400);   // 等 loan-ui-fix.js 後面幾個 frame 的 DOM 調整
-    const topAfter = await page.evaluate(index =>
-      document.querySelectorAll('.loanCard')[index].getBoundingClientRect().top, picked.index);
+    const topAfter = await waitForStableTop(page, '.loanCard', picked.index);
     assert.ok(Math.abs(topAfter - picked.top) <= 2,
       `被點的卡片應該留在原地，卻從 ${picked.top} 移到 ${topAfter}`);
   });
