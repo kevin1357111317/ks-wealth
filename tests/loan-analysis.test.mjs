@@ -12,7 +12,7 @@ const clearedClosedRates = await readFile(new URL('../supabase/migrations/202609
 const runlongMortgage = await readFile(new URL('../supabase/migrations/20260908220000_add_runlong_mortgage.sql', import.meta.url), 'utf8');
 const runlongMortgageFee = await readFile(new URL('../supabase/migrations/20260908230000_add_runlong_mortgage_fee.sql', import.meta.url), 'utf8');
 
-test('loan analysis is a third per-owner analysis destination', () => {
+test('loan analysis remains available among per-owner analysis destinations', () => {
   assert.match(app, /data-open-loans/);
   assert.match(app, /data-open-loans>貸款分析/);
   assert.match(app, /目前貸款餘額/);
@@ -24,7 +24,7 @@ test('loan analysis is a third per-owner analysis destination', () => {
   assert.match(app, /\.sort\(\(a, b\) => a\.currentBalance - b\.currentBalance/);
   assert.match(app, /openAnalysis\('loans', ownerScope\)/);
   assert.match(app, /analysisScreen === 'loans'/);
-  assert.match(css, /grid-template-columns:repeat\(4,1fr\)/);
+  assert.match(css, /grid-template-columns:repeat\(5,1fr\)/);
   assert.doesNotMatch(css, /\.loanSummary \.portfolioMetric:first-child\{grid-column:1\/-1\}/);
 });
 

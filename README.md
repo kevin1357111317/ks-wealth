@@ -21,6 +21,7 @@
 - `v3.css`：主要手機優先 UI
 - `v3-trends.css`：趨勢、分類卡片與目前「布布一二的家」主題樣式
 - `health-core.js`、`health.css`：夫妻健檢年度資料整理、重點建議與重要指標趨勢
+- `insurance-core.js`、`insurance.css`：保單明細解析、保費／現金價值彙總與保障盤點
 - 影像健檢會保留結構化發現；首頁只優先顯示報告明確建議就醫確認或會影響後續決策的項目
 - 不同院所的同義檢驗會沿用同一指標鍵，讓跨年度趨勢保持連續
 - `supabase/functions/`：市場行情與每日快照等後端 Edge Functions
@@ -28,6 +29,16 @@
 - `supabase/proposals/`：不可直接執行的歷史提案與研究筆記
 
 `app.js` 與 `style.css` 是舊版保留檔案，目前沒有被正式 `index.html` 引用。
+
+## 保險分析
+
+保險分析沿用 `financial_items` 的保險資產列，不另外建立一套會重複計價的資產資料。保單明細以
+`KS_INSURANCE_V1:` 開頭的 JSON 存在該列 `notes`；同一家公司的多張主約可以共用一列，畫面再拆成
+逐張保單。這是為了在 migration history 尚未完成 reconciliation 前，不新增正式 schema。
+
+`financial_items.amount_twd` 只保存解約金／保單現金價值，並繼續進入家庭淨資產；身故、癌症、
+醫療、失能與長照保額只在保險分析裡顯示，不能加總進資產。不同事故情境的身故給付也不互加。
+缺少保額、保費或附約額度時顯示「待補」，不以 0 代替未知資料。
 
 ## 夫妻健康報告
 
