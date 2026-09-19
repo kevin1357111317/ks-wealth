@@ -10,12 +10,12 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.34.3';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.34.3';
-import { calculateUsd } from './usd-core.js?v=V3.34.3';
-import { calculateGold } from './gold-core.js?v=V3.34.3';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.34.3';
-import { buildPersonalTrendRows } from './trend-core.js?v=V3.34.3';
+} from './financial-core.js?v=V3.35.0';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.35.0';
+import { calculateUsd } from './usd-core.js?v=V3.35.0';
+import { calculateGold } from './gold-core.js?v=V3.35.0';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.35.0';
+import { buildPersonalTrendRows } from './trend-core.js?v=V3.35.0';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -24,7 +24,7 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.34.3';
+} from './health-core.js?v=V3.35.0';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -93,14 +93,18 @@ let quoteFlight = null;
 let quoteStatus = 'idle';
 let quoteFailureNote = '';
 let quoteLastAt = 0;
-// 兩條更新路徑，快慢差很多是因為成本差很多：
+// 三條更新路徑，快慢差很多是因為成本差很多：
 //   台股：Fugle，免費、沒有 credit 的概念，所以可以每幾秒抓一次。走輕量路徑
 //         （scope='tw'）—— 只拿價格、不寫資料庫，畫面直接套用。
-//   其餘：美股 + 匯率 + 黃金走 Twelve Data，一輪 7 credits、上限每分鐘 8，
+//   美股：Finnhub，免費方案每分鐘 60 次。9 檔標的 ÷ 15 秒 = 每分鐘 36 次，留有餘裕；
+//         10 秒會變 54 次就太貼邊了。一樣走輕量路徑（scope='us'）。
+//   匯率＋黃金：Twelve Data，那把 key 跟 KLFAN 共用、上限每分鐘 8 credits，一輪吃 2 個，
 //         所以一分鐘一次就是極限，而且這一輪才是寫進資料庫的權威值。
 const QUOTE_TW_INTERVAL_MS = 5 * 1000;
+const QUOTE_US_INTERVAL_MS = 15 * 1000;
 const QUOTE_FULL_INTERVAL_MS = 60 * 1000;
 let quoteTwTimer = null;
+let quoteUsTimer = null;
 let quoteTimer = null;
 let wakeLock = null;
 let quoteLastUpdatedAt = null;
@@ -489,6 +493,10 @@ function startQuoteAutoRefresh() {
     if (document.visibilityState !== 'visible') return;
     void refreshTwQuotes();
   }, QUOTE_TW_INTERVAL_MS);
+  quoteUsTimer = setInterval(() => {
+    if (document.visibilityState !== 'visible') return;
+    void refreshUsQuotes();
+  }, QUOTE_US_INTERVAL_MS);
   quoteTimer = setInterval(() => {
     if (document.visibilityState !== 'visible') return;
     void refreshQuotes({ reason: 'auto' });
@@ -497,8 +505,10 @@ function startQuoteAutoRefresh() {
 
 function stopQuoteAutoRefresh() {
   if (quoteTwTimer !== null) clearInterval(quoteTwTimer);
+  if (quoteUsTimer !== null) clearInterval(quoteUsTimer);
   if (quoteTimer !== null) clearInterval(quoteTimer);
   quoteTwTimer = null;
+  quoteUsTimer = null;
   quoteTimer = null;
 }
 
@@ -552,6 +562,34 @@ async function refreshTwQuotes() {
     return data;
   })().catch(() => null).finally(() => { twFlight = null; });
   return twFlight;
+}
+
+// 美股的輕量路徑。跟台股那條唯一的差別是要換匯：Finnhub 回的是美元價，畫面上是台幣。
+// 匯率沿用手上這份（60 秒那輪寫的）—— 會動的是股價，匯率一分鐘只動 0.01 上下。
+// 還沒有匯率就先不要動畫面，寧可停在舊數字，也不要拿 0 去乘出一排歸零的市值。
+let usFlight = null;
+async function refreshUsQuotes() {
+  if (!session || !member || usFlight || quoteFlight) return null;
+  if (!(toFiniteNumber(fxRate) > 0)) return null;
+  usFlight = (async () => {
+    const { data, error } = await sb.functions.invoke('refresh-tw-quotes', { body: { scope: 'us' } });
+    if (error || !data) return null;
+    const rate = toFiniteNumber(fxRate);
+    let changed = false;
+    for (const result of data.results ?? []) {
+      const price = toFiniteNumber(result.price);
+      const item = price > 0 ? items.find(row => row.id === result.id) : null;
+      const quantity = toFiniteNumber(item?.quantity);
+      if (!item || !(quantity > 0) || !(rate > 0)) continue;
+      const amountTwd = Math.round(price * quantity * rate);
+      if (amountTwd === item.amount_twd) continue;
+      item.amount_twd = amountTwd;
+      changed = true;
+    }
+    if (changed) render();
+    return data;
+  })().catch(() => null).finally(() => { usFlight = null; });
+  return usFlight;
 }
 
 document.addEventListener('visibilitychange', () => {
