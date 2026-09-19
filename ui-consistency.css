@@ -85,8 +85,8 @@ html .appVersionFooter{font-size:var(--type-meta)}
 .legendRow b{font-size:.8125rem;font-variant-numeric:tabular-nums}
 
 /* Home cards and grouped lists */
-.analysisEntry{gap:.625rem;margin-bottom:1rem}
-.analysisEntry button{min-height:4rem;padding:0 .9375rem;font-size:.9375rem;line-height:1.3}
+.analysisEntry{gap:0;margin-bottom:1rem}
+.analysisEntry button{min-height:3rem;padding:0 .25rem;font-size:.875rem;line-height:1.3}
 .categoryHead span{font-size:var(--type-card-title);line-height:1.3}
 .categoryHead small{font-size:var(--type-meta)}
 .categoryHead>div,.categoryTotal{min-width:0}
@@ -273,7 +273,7 @@ button,select{font-size:var(--type-control)}
 @media(max-width:420px){
   .portfolioMetric{padding:.875rem}
   .loanFacts{gap:.875rem .625rem}
-  .analysisEntry button{font-size:.9375rem}
+  .analysisEntry button{font-size:.875rem}
 }
 
 @media(max-width:370px){
