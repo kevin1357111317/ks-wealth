@@ -447,7 +447,7 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     await page.setViewportSize({ width: 390, height: 900 });
   });
 
-  await t.test('兩個分析入口排在資產／負債切換的上面', async () => {
+  await t.test('分析入口排在資產／負債切換的上面', async () => {
     const order = await page.evaluate(() => {
       const entry = document.querySelector('.analysisEntry');
       const seg = document.querySelector('#personSeg');
@@ -469,7 +469,7 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     assert.match(await page.textContent('[data-open-usd]'), /^\s*美金分析/);
     // 入口只留按鈕，數字都收進分析頁裡
     const entry = (await page.textContent('.analysisEntry')).replace(/[\s›]+/g, '');
-    assert.equal(entry, '股票分析貸款分析黃金分析美金分析');
+    assert.equal(entry, '股票分析貸款分析黃金分析美金分析保險分析');
 
     await page.click('[data-open-usd]');
     await page.waitForSelector('.portfolioSummary');
@@ -569,12 +569,13 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
   });
 
 
-  await t.test('老婆頁也有三個分析入口，而且看到的是自己的部位', async () => {
+  await t.test('老婆頁也有各項分析入口，而且看到的是自己的部位', async () => {
     await page.click('[data-tab="wife"]');
     await page.waitForSelector('.fab');
     assert.equal(await page.locator('[data-open-portfolio]').count(), 1, '老婆頁也要有股票分析');
     assert.equal(await page.locator('[data-open-usd]').count(), 1, '老婆頁也要有美金分析');
     assert.equal(await page.locator('[data-open-loans]').count(), 1, '老婆頁也要有貸款分析');
+    assert.equal(await page.locator('[data-open-insurance]').count(), 1, '老婆頁也要有保險分析');
 
     // 目前所有標的都掛在老公名下，老婆進去應該是空的、不是看到老公的
     await page.click('[data-open-portfolio]');
