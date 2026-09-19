@@ -10,12 +10,12 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.35.0';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.35.0';
-import { calculateUsd } from './usd-core.js?v=V3.35.0';
-import { calculateGold } from './gold-core.js?v=V3.35.0';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.35.0';
-import { buildPersonalTrendRows } from './trend-core.js?v=V3.35.0';
+} from './financial-core.js?v=V3.36.0';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.36.0';
+import { calculateUsd } from './usd-core.js?v=V3.36.0';
+import { calculateGold } from './gold-core.js?v=V3.36.0';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.36.0';
+import { buildPersonalTrendRows } from './trend-core.js?v=V3.36.0';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -24,7 +24,8 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.35.0';
+} from './health-core.js?v=V3.36.0';
+import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.36.0';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -140,7 +141,7 @@ let expandedLoan = null;   // 就地展開的那一筆，一次只開一個
 let loanNextDue = {};
 let autopayCheckedOn = null;
 let loanTypeFilter = 'personal';   // 貸款分析預設先看信貸，可切換增貸／房貸
-let analysisScreen = null;   // 'stocks'｜'usd'｜'gold'｜'loans'｜'health'，null 就是一般的資產頁
+let analysisScreen = null;   // 'stocks'｜'usd'｜'gold'｜'loans'｜'insurance'｜'health'，null 就是一般的資產頁
 let analysisOwner = 'husband';   // 分析頁看的是誰的部位
 let expandedStock = null;   // 台帳清單裡就地展開的那一檔，一次只開一個
 // 分析頁是狀態切換不是換頁，返回手勢預設不會有反應。進去時推一筆歷史，
@@ -1142,7 +1143,7 @@ function groupedCards(list, ownerScope, kind) {
 
 // 資產頁上只放入口，數字留在分析頁裡面講。
 function analysisEntry() {
-  return `<div class="analysisEntry"><button data-open-portfolio>股票分析<i>›</i></button><button data-open-loans>貸款分析<i>›</i></button><button data-open-gold>黃金分析<i>›</i></button><button data-open-usd>美金分析<i>›</i></button></div>`;
+  return `<div class="analysisEntry"><button data-open-portfolio>股票分析<i>›</i></button><button data-open-loans>貸款分析<i>›</i></button><button data-open-gold>黃金分析<i>›</i></button><button data-open-usd>美金分析<i>›</i></button><button data-open-insurance>保險分析<i>›</i></button></div>`;
 }
 
 // 分析頁只看單一個人的部位。兩個人合起來的那份也還是要留著 ——
@@ -1698,6 +1699,7 @@ async function syncPortfolioFinancialItem(stockKey, { ownerScope, notes } = {}) 
 
 function analysisPage() {
   if (analysisScreen === 'health') return healthPage();
+  if (analysisScreen === 'insurance') return insurancePage();
   if (analysisScreen === 'usd') return usdPage();
   if (analysisScreen === 'gold') return goldPage();
   if (analysisScreen === 'loans') return loanPage();
@@ -1707,6 +1709,37 @@ function analysisPage() {
       `${ownerName(analysisOwner)}股票分析`);
   }
   portfolioListPage();
+}
+
+const insuranceMoney = (value, currency = 'TWD') => {
+  if (value === null || value === undefined) return '待補';
+  if (masked) return currency === 'USD' ? 'US$ ••••••' : 'NT$ ••••••';
+  const formatted = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: currency === 'USD' ? 2 : 0 }).format(value);
+  return currency === 'USD' ? `US$ ${formatted}` : `NT$ ${formatted}`;
+};
+
+function insurancePage() {
+  const model = calculateInsuranceSummary(items, analysisOwner);
+  const coverageLabels = [
+    ['cancer', '癌症'], ['medical', '住院／實支'], ['surgery', '手術醫療'],
+    ['disability_care', '失能／長照'], ['life', '身故壽險'], ['annuity', '生存／年金'],
+  ];
+  const premiumNote = model.unknownPremiumPolicies
+    ? `另有 ${model.unknownPremiumPolicies} 張保費待補`
+    : '目前需繳保單皆有金額';
+  const missingNotice = model.missingFields
+    ? `<div class="insuranceNotice"><b>還有 ${model.missingFields} 項資料待補</b><span>缺少的保額、保費或附約額度不會用 0 冒充；補齊後保障盤點會自動更新。</span></div>`
+    : '';
+  const policyCards = model.policies.map(policy => {
+    const premium = policy.status === 'active_paid_up'
+      ? '已繳清／無須繳費'
+      : policy.annualPremium === null
+        ? '待補'
+        : insuranceMoney(policy.annualPremium + (policy.riderAnnualPremium ?? 0));
+    const nextDue = policy.status === 'active_paid_up' ? '—' : (policy.nextDue ?? '待補');
+    return `<article class="insurancePolicy"><div class="insurancePolicyHead"><div><span>${escapeHtml(policy.insurer)} · ${escapeHtml(policy.type)}</span><b>${escapeHtml(policy.name)}</b><small>${policy.policyNo ? `保單 ${escapeHtml(policy.policyNo)}` : '保單號待補'}</small></div><span class="insuranceStatus ${policy.status === 'active_paying' ? 'paying' : ''}">${policy.status === 'active_paying' ? '持續繳費' : '已繳清'}</span></div><div class="insuranceFacts"><div><span>保額</span><b>${insuranceMoney(policy.faceAmount, policy.currency)}</b></div><div><span>目前年繳</span><b>${premium}</b></div><div><span>現金價值</span><b>${insuranceMoney(policy.cashValue, policy.cashValueCurrency)}</b></div><div><span>下次繳費</span><b>${escapeHtml(nextDue)}</b></div></div>${policy.coverageSummary ? `<p class="insuranceCoverageCopy">${escapeHtml(policy.coverageSummary)}</p>` : ''}${policy.missing.length ? `<div class="insuranceMissing">待補：${escapeHtml(policy.missing.join('、'))}</div>` : ''}</article>`;
+  }).join('');
+  shell(`<div class="insuranceView"><div class="insuranceSummary"><div class="insuranceMetric"><span>有效主約</span><b>${model.activePolicies} 張</b><small>${model.payingPolicies} 張持續繳費 · ${model.paidUpPolicies} 張已繳清</small></div><div class="insuranceMetric"><span>已知年繳保費</span><b>${insuranceMoney(model.knownAnnualPremium)}</b><small>${premiumNote}</small></div><div class="insuranceMetric"><span>計入淨資產</span><b>${insuranceMoney(model.cashValueTwd)}</b><small>只算解約金／現金價值</small></div><div class="insuranceMetric"><span>保障資料</span><b>${model.missingFields ? `${model.missingFields} 項待補` : '已完整'}</b><small>保額不計入資產</small></div></div>${missingNotice}<div class="sectionHead"><span>保障盤點</span><b>不同事故不重複相加</b></div><div class="insuranceCoverage">${coverageLabels.map(([key, label]) => `<div class="${model.coverage.has(key) ? 'covered' : ''}"><span>${label}</span><b>${model.coverage.has(key) ? '已有' : '未確認'}</b></div>`).join('')}</div><div class="sectionHead"><span>有效保單</span><b>${model.activePolicies} 張</b></div><div class="insurancePolicyList">${policyCards || '<div class="portfolioEmpty">尚未匯入保單明細。</div>'}</div></div>`, `${ownerName(analysisOwner)}保險分析`);
 }
 
 const gramFormat = value => masked
@@ -2006,6 +2039,8 @@ function personPage(ownerScope) {
   if (goldButton) goldButton.onclick = () => openAnalysis('gold', ownerScope);
   const loanButton = root.querySelector('[data-open-loans]');
   if (loanButton) loanButton.onclick = () => openAnalysis('loans', ownerScope);
+  const insuranceButton = root.querySelector('[data-open-insurance]');
+  if (insuranceButton) insuranceButton.onclick = () => openAnalysis('insurance', ownerScope);
   root.querySelector('.categoryList').onclick = event => {
     const group = event.target.closest('[data-group]');
     if (group) {
@@ -2016,9 +2051,14 @@ function personPage(ownerScope) {
     }
     const item = event.target.closest('[data-id]');
     if (item) {
+      const selected = items.find(row => row.id === item.dataset.id);
+      if (decodeInsuranceNote(selected?.notes)) {
+        openAnalysis('insurance', ownerScope);
+        return;
+      }
       // 台股／美股以前會跳到「股票投資」的明細頁，現在交易就記在編輯表單裡，
       // 所以一律開表單；完整的交易歷史還是從上面的台帳卡片進去看。
-      void editItem(items.find(row => row.id === item.dataset.id), ownerScope, kind);
+      void editItem(selected, ownerScope, kind);
     }
   };
 }
@@ -2048,8 +2088,9 @@ function itemCard(item, total) {
   const dueLine = due
     ? `<span>下次 ${escapeHtml(due.date.slice(5).replace('-', '/'))} NT$ ${formatNumber(due.amount)}</span>`
     : '';
+  const insurancePolicies = decodeInsuranceNote(item.notes)?.policies ?? [];
   const meta = item.kind === 'asset'
-    ? (item.market === 'GOLD' ? `<span>重量 ${quantity} g</span>${quoteLine}` : item.symbol ? `<span>持有 ${quantity} 股</span>${quoteLine}` : '')
+    ? (insurancePolicies.length ? `<span>${insurancePolicies.length} 張有效主約</span><span>查看保障分析</span>` : item.market === 'GOLD' ? `<span>重量 ${quantity} g</span>${quoteLine}` : item.symbol ? `<span>持有 ${quantity} 股</span>${quoteLine}` : '')
     : `<span>利率 ${item.interest_rate !== null ? item.interest_rate.toFixed(2) + '%' : '待設定'}</span>${dueLine || `<span>月付 ${item.monthly_payment_twd !== null ? 'NT$ ' + formatNumber(item.monthly_payment_twd) : '待設定'}</span>`}`;
   const original = isNativeUsd
     ? `<span>US$ ${masked ? '••••••' : new Intl.NumberFormat('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(item.native_amount)}</span>`
