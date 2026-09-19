@@ -10,12 +10,12 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.36.2';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.36.2';
-import { calculateUsd } from './usd-core.js?v=V3.36.2';
-import { calculateGold } from './gold-core.js?v=V3.36.2';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.36.2';
-import { buildPersonalTrendRows } from './trend-core.js?v=V3.36.2';
+} from './financial-core.js?v=V3.36.3';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.36.3';
+import { calculateUsd } from './usd-core.js?v=V3.36.3';
+import { calculateGold } from './gold-core.js?v=V3.36.3';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.36.3';
+import { buildPersonalTrendRows } from './trend-core.js?v=V3.36.3';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -24,8 +24,8 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.36.2';
-import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.36.2';
+} from './health-core.js?v=V3.36.3';
+import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.36.3';
 
 // App / Supabase -------------------------------------------------------------
 

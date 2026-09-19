@@ -126,19 +126,86 @@ const recognizedScale = (ratio, candidates = GUESSED_SCALES) => {
   return Math.abs(Math.log(ratio / closest)) <= Math.log(1.18) ? closest : 1;
 };
 
-// Yahoo 的 close 會回溯調整拆股、但不調整現金股息。台帳有些舊交易已手動換算成
-// 拆股後股數（NVDA），有些維持成交當時股數（0050），所以逐筆用成交單價判斷倍率。
+// Yahoo 的 chart API 不回報台灣 ETF 的受益權單位分割 —— 它把歷史價格調整了，卻不告訴你
+// 調了幾倍（0050 的 2019 收盤直接從 87 變成 22，events 裡完全沒有 splits 欄位）。
+// 美股與台灣個股都有回報（NVDA、TSLA、SOXX、長榮的現金減資都查得到），所以只有台灣 ETF
+// 需要自己維護。日期用「分割後恢復交易日」，也就是第一個用新單位成交的日子。
 //
-// 有 Yahoo 的 splits 事件時，成交日之後的累計倍率就是唯一可能的答案，候選只留
-// 「1（台帳已換算）」和「該倍率（台帳是成交當時股數）」，不必在十幾個倍率裡猜。
+// 新增一檔時去查投信公告，把價格對照一起寫進註解，之後才對得起來。
+const TW_ETF_SPLITS = {
+  // 元大投信公告：1 拆 4，分割前 188.65 元 → 恢復交易參考價 47.16 元
+  '0050': [{ date: '2025-06-18', ratio: 4 }],
+  // 元大投信公告：1 拆 22，分割前 443.15 元／張 → 恢復交易 20.14 元
+  '00631L': [{ date: '2026-03-31', ratio: 22 }],
+};
+
+const splitsFor = (stock, splits) => {
+  const yahoo = (splits ?? []).filter(split => n(split.ratio) > 0);
+  if (yahoo.length) return yahoo;
+  const code = String(stock?.symbol ?? stock?.key ?? '').replace(/^(TPE:|TWO:)/i, '').toUpperCase();
+  return TW_ETF_SPLITS[code] ?? null;
+};
+
+// 台帳記的是成交當時的股數，Yahoo 的 close 卻回溯調整過，所以要知道兩者差幾倍。
+//
+// 有拆股資料（Yahoo 或上面那張表）就直接用：成交日之後的累計倍率就是答案，沒有就是 1。
+// 以前這裡在「累計倍率剛好是 1」時會退回去猜十幾個候選，等於把已經確定的答案丟掉 ——
+// TSLA 2025-11-13 被猜成 0.5、SOXX 2026-05-13 被猜成 0.4 都是這樣來的。
+//
+// 完全沒有拆股資料時才用成交單價反推，而且只在台股：Yahoo 對美股的拆股回報是可靠的，
+// 沒回報就代表真的沒拆過，不該讓一筆對不上市價的零股交易（手續費、拆單）冒充成拆股證據。
 export function transactionShareScale(transaction, stock, prices, splits) {
   if (!transaction?.shares || !transaction?.amount || stock?.market === '美股' && stock?.currency !== 'USD') return 1;
+  const known = splitsFor(stock, splits);
+  if (known) {
+    const applied = appliedSplit(known, transaction.tx_date);
+    // 成交日之後沒有拆股，倍率就確定是 1。以前這裡會退回去猜十幾個候選，
+    // 等於把已經確定的答案丟掉。
+    if (applied === 1) return 1;
+    const close = latestOnOrBefore(prices, transaction.tx_date);
+    if (!close) return 1;
+    // 只剩兩種可能：台帳是成交當時股數（該倍率），或已經換算過（1）。用成交單價決定。
+    return recognizedScale(Math.abs(n(transaction.amount) / n(transaction.shares)) / close, [1, applied]);
+  }
+  // Yahoo 對美股的拆股回報是可靠的，沒回報就是真的沒拆過 —— 不該讓一筆對不上市價的
+  // 零股交易（手續費、拆單）冒充成拆股證據。只有台股沒資料時才反推。
+  if (stock?.market === '美股') return 1;
   const close = latestOnOrBefore(prices, transaction.tx_date);
   if (!close) return 1;
-  const applied = (splits ?? []).filter(split => split.date > transaction.tx_date)
-    .reduce((total, split) => total * (n(split.ratio) > 0 ? n(split.ratio) : 1), 1);
-  const candidates = Number.isFinite(applied) && applied > 0 && applied !== 1 ? [1, applied] : GUESSED_SCALES;
-  return recognizedScale(Math.abs(n(transaction.amount) / n(transaction.shares)) / close, candidates);
+  return recognizedScale(Math.abs(n(transaction.amount) / n(transaction.shares)) / close);
+}
+
+const appliedSplit = (splits, date) => {
+  const total = (splits ?? []).filter(split => split.date > date)
+    .reduce((product, split) => product * (n(split.ratio) > 0 ? n(split.ratio) : 1), 1);
+  return Number.isFinite(total) && total > 0 ? total : 1;
+};
+
+// 同一檔、同一個拆股期間，台帳的單位只會有一種慣例：要嘛整段都是成交當時股數，要嘛整段
+// 都已經換算成拆股後股數。逐筆各自判斷會被一筆壞資料帶走 —— 0050 的 2023-01-30 那筆金額
+// 只記了一半，單價比值算出來剛好是 2，自己跑出一個不存在的倍率，整體股數就少了 120 股。
+// 所以同一段期間只決定一次，少數服從多數。
+function scalesByTransaction({ stocks, transactions, priceHistory, splitEvents }) {
+  const stockByKey = new Map((stocks ?? []).map(stock => [stock.key, stock]));
+  const eras = new Map();
+  for (const transaction of transactions ?? []) {
+    const stock = stockByKey.get(transaction.stock_key);
+    if (!stock) continue;
+    const prices = priceHistory.get(transaction.stock_key) ?? [];
+    const splits = splitsFor(stock, splitEvents?.get(transaction.stock_key));
+    const era = `${transaction.stock_key}|${splits ? appliedSplit(splits, transaction.tx_date) : 'guess'}`;
+    const scale = transactionShareScale(transaction, stock, prices, splitEvents?.get(transaction.stock_key));
+    if (!eras.has(era)) eras.set(era, { rows: [], tally: new Map() });
+    const bucket = eras.get(era);
+    bucket.rows.push(transaction);
+    bucket.tally.set(scale, (bucket.tally.get(scale) ?? 0) + 1);
+  }
+  const output = new Map();
+  for (const { rows, tally } of eras.values()) {
+    const winner = [...tally].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0][0];
+    for (const transaction of rows) output.set(transaction, winner);
+  }
+  return output;
 }
 
 const DAY_MS = 86_400_000;
@@ -160,10 +227,10 @@ const dividendFlowDate = (transaction, events) => {
 
 export function buildHistoricalSnapshots({ stocks, transactions, priceHistory, fxHistory, splitEvents, dividendEvents }) {
   const stockByKey = new Map((stocks ?? []).map(stock => [stock.key, stock]));
+  const scales = scalesByTransaction({ stocks, transactions, priceHistory, splitEvents });
   const adjusted = (transactions ?? []).map(transaction => {
     const stock = stockByKey.get(transaction.stock_key);
-    const scale = transactionShareScale(transaction, stock, priceHistory.get(transaction.stock_key) ?? [],
-      splitEvents?.get(transaction.stock_key));
+    const scale = scales.get(transaction) ?? 1;
     return {
       ...transaction,
       adjustedShares: n(transaction.shares) * scale,

@@ -14,12 +14,17 @@ const note = policies => `${INSURANCE_NOTE_PREFIX}${JSON.stringify({ v: 1, polic
 
 const app = await readFile(new URL('../app-v3.js', import.meta.url), 'utf8');
 const index = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+// 版號從 app-version.js 讀，不要寫死 —— 寫死的話每次升版都要記得改這裡，
+// 而且它是寫在正規表示式裡（V3\.36\.2），連搜尋取代都會漏掉。
+const appVersion = (await readFile(new URL('../app-version.js', import.meta.url), 'utf8'))
+  .match(/APP_VERSION = '([^']+)'/)[1];
 
 test('保險分析入口、畫面與獨立樣式已接進正式 App', () => {
   assert.match(app, /data-open-insurance aria-label="保險分析">保險/);
   assert.match(app, /analysisScreen === 'insurance'/);
   assert.match(app, /calculateInsuranceSummary\(items, analysisOwner\)/);
-  assert.match(index, /insurance\.css\?v=V3\.36\.2/);
+  assert.ok(index.includes(`/insurance.css?v=${appVersion}`),
+    `index.html 的 insurance.css 快取字串要跟 APP_VERSION（${appVersion}）一致`);
 });
 
 test('只解析有版本標記的保單 notes，壞資料不拖垮資產頁', () => {
