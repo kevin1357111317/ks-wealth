@@ -291,3 +291,32 @@ test('沒有 Finnhub 就退回 59 秒快取，不能把 Twelve Data 的 credit �
   const withoutKey = await refresh({ cache: cacheRows(30_000) });
   assert.equal(withoutKey.used.twelve, 1, '沒有 Finnhub 時只該為 XAU/USD 花 1 個 credit');
 });
+
+test('美股快車道只打 Finnhub，不花 credit 也不寫資料庫', async () => {
+  // 跟台股那條同一個理由：寫了 financial_items，realtime 訂閱會被自己觸發，
+  // 每 15 秒把整本台帳重載一次。這條只負責把價格送到畫面上。
+  const { body, used, written, stored, fxDaily } = await refresh({
+    cache: cacheRows(28 * 60_000),   // 快取過期，完整那一輪本來會全部重抓
+    env: ENV_FINNHUB,
+    requestBody: { scope: 'us' },
+  });
+  assert.equal(used.twelve, 0, '一個 credit 都不該花');
+  assert.equal(used.fugle, 0, '這條不碰台股');
+  assert.equal(used.finnhub, 3, '三檔美股照抓');
+  assert.equal(body.scope, 'us');
+  assert.deepEqual(written, [], '不該寫 financial_items');
+  assert.equal(fxDaily, null, '也不該動匯率表');
+  assert.deepEqual(stored.map(r => r.symbol).sort(), [...LIVE, 'USD/TWD'].sort(), 'klfan_quotes 原封不動');
+
+  const prices = body.results.filter(r => r.status === 'quote_only');
+  assert.equal(prices.length, 3);
+  assert.equal(prices.find(r => r.symbol === 'VOO').price, US_PRICE.VOO);
+});
+
+test('沒有 Finnhub 時美股快車道要明講抓不到，不要回舊價', async () => {
+  // 備援是 Twelve Data，但那把 key 的額度要留給匯率與黃金，所以快車道不走備援。
+  const { body, used } = await refresh({ cache: cacheRows(30_000), requestBody: { scope: 'us' } });
+  assert.equal(used.twelve, 0, '快車道不該去吃 Twelve Data 的 credit');
+  assert.deepEqual([...new Set(body.results.map(r => r.status))], ['error']);
+  assert.deepEqual([...new Set(body.results.map(r => r.error))], ['finnhub_key_missing']);
+});

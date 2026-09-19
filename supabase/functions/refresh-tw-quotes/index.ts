@@ -57,7 +57,7 @@ Deno.serve(async (req: Request) => {
   let scope = "all";
   try {
     const body = await req.json();
-    if (body?.scope === "tw") scope = "tw";
+    if (body?.scope === "tw" || body?.scope === "us") scope = body.scope;
   } catch { /* no body => all */ }
 
   const { data: items, error: itemError } = await client
@@ -100,6 +100,32 @@ Deno.serve(async (req: Request) => {
     }
   };
 
+  // Finnhub 的美股報價。快車道與完整那一輪共用同一段，差別只在快車道不讀快取、不寫資料庫。
+  const finnhubQuote = async (symbol: string) => {
+    if (!finnhubKey) return null;
+    try {
+      const response = await fetch(
+        `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(symbol)}&token=${encodeURIComponent(finnhubKey)}`,
+        { headers: { "Accept": "application/json" } },
+      );
+      const quote = await response.json();
+      const price = Number(quote.c);
+      if (!response.ok || !Number.isFinite(price) || price <= 0) return null;
+      return {
+        provider: "finnhub",
+        currency: "USD",
+        price,
+        change: Number(quote.d ?? 0),
+        changePercent: Number(quote.dp ?? 0),
+        quotedAt: quote.t ? new Date(Number(quote.t) * 1000).toISOString() : null,
+        updatedAt: new Date().toISOString(),
+        cached: false,
+      } as const;
+    } catch {
+      return null;   // 改走 Twelve Data 備援
+    }
+  };
+
   // 台股走獨立快車道：前端每 5 秒呼叫，只回價格、不寫資料庫。
   if (scope === "tw") {
     const entries = await Promise.all(twSymbols.map(fetchTw));
@@ -113,6 +139,27 @@ Deno.serve(async (req: Request) => {
         return !quote || "error" in quote
           ? { id: item.id, name: item.name, symbol: item.symbol, market: "TW", status: "error", error: quote?.error ?? "invalid_symbol" }
           : { id: item.id, name: item.name, symbol: item.symbol, market: "TW", status: "quote_only", ...quote };
+      }),
+    });
+  }
+
+  // 美股快車道：前端每 15 秒呼叫，只打 Finnhub、只回價格、不寫資料庫。理由跟台股同一條 ——
+  // 寫 financial_items 會觸發 realtime 訂閱，每 15 秒把整本台帳重載一次。
+  // 也不讀 klfan_quotes 的快取：快車道要的就是當下的價，讀快取反而拿到最多 14 秒前的值。
+  // 台幣市值由前端用手上的匯率換算；匯率是慢變數，沿用 60 秒那輪的值就夠。
+  if (scope === "us") {
+    const entries = await Promise.all(usSymbols.map(async (symbol) =>
+      [symbol, await finnhubQuote(symbol)] as const));
+    const bySymbol = new Map(entries);
+    return json({
+      scope: "us",
+      source: "finnhub",
+      requestedAt: new Date().toISOString(),
+      results: marketItems.filter((item) => item.market === "US").map((item) => {
+        const quote = bySymbol.get(String(item.symbol).toUpperCase());
+        return quote
+          ? { id: item.id, name: item.name, symbol: item.symbol, market: "US", status: "quote_only", ...quote }
+          : { id: item.id, name: item.name, symbol: item.symbol, market: "US", status: "error", error: finnhubKey ? "finnhub_unavailable" : "finnhub_key_missing" };
       }),
     });
   }
@@ -209,27 +256,11 @@ Deno.serve(async (req: Request) => {
     const fresh = cachedUsFresh.get(symbol);
     if (fresh) return [`US:${symbol}`, { currency: "USD", ...fresh, cached: true }] as const;
     // Finnhub 為主、Twelve Data 為備援：Finnhub 的免費額度高很多，撐得起 14 秒的快取。
+    // 沒有 Finnhub key 時不要 await —— 多一個 microtask 會讓 Twelve Data 的請求晚一拍發出，
+    // 額度用完時被餓死的就從黃金變成美股，那是既有行為，不該被這次重構改掉。
     if (finnhubKey) {
-      try {
-        const response = await fetch(
-          `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(symbol)}&token=${encodeURIComponent(finnhubKey)}`,
-          { headers: { "Accept": "application/json" } },
-        );
-        const quote = await response.json();
-        const price = Number(quote.c);
-        if (response.ok && Number.isFinite(price) && price > 0) {
-          return [`US:${symbol}`, {
-            provider: "finnhub",
-            currency: "USD",
-            price,
-            change: Number(quote.d ?? 0),
-            changePercent: Number(quote.dp ?? 0),
-            quotedAt: quote.t ? new Date(Number(quote.t) * 1000).toISOString() : null,
-            updatedAt: new Date().toISOString(),
-            cached: false,
-          }] as const;
-        }
-      } catch { /* 改走 Twelve Data 備援 */ }
+      const live = await finnhubQuote(symbol);
+      if (live) return [`US:${symbol}`, live] as const;
     }
     if (!twelveKey) {
       const stale = cachedUsStale.get(symbol);
