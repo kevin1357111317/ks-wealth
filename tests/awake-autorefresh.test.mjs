@@ -29,6 +29,7 @@ const skip = !chromium ? 'playwright 未安裝'
   : !BROWSER || !existsSync(BROWSER) ? '找不到 Chromium'
   : false;
 const TW_TICK = 5 * 1000;
+const US_TICK = 15 * 1000;
 const FULL_TICK = 60 * 1000;
 
 test('開著就恆亮，台股每 5 秒、其餘每分鐘自己更新', { skip }, async t => {
@@ -90,7 +91,7 @@ Object.defineProperty(navigator, 'wakeLock', { configurable: true, value: {
   await page.clock.runFor(1000);
 
   // 兩條路徑都叫同一支函式，靠 body 的 scope 分：'tw' 是只打 Fugle 的輕量路徑
-  const counts = () => page.evaluate(() => globalThis.__scopes ?? { tw: 0, all: 0 });
+  const counts = () => page.evaluate(() => globalThis.__scopes ?? { tw: 0, us: 0, all: 0 });
   const lock = () => page.evaluate(() => globalThis.__wakeLock);
 
   await t.test('首頁不等待台帳，閒置預載最多一次', async () => {
@@ -129,6 +130,15 @@ Object.defineProperty(navigator, 'wakeLock', { configurable: true, value: {
     assert.equal(after.all, before.all, '這 30 秒內不該動到吃 credit 的那一輪');
   });
 
+  await t.test('美股每 15 秒抓一次，也是不寫資料庫的輕量路徑', async () => {
+    // Finnhub 免費每分鐘 60 次，9 檔標的 15 秒一輪是 36 次／分；10 秒會變 54 次太貼邊。
+    const before = await counts();
+    await page.clock.runFor(US_TICK * 4);
+    const after = await counts();
+    assert.equal(after.us - before.us, 4, `4 個 15 秒要抓 4 次，實際 ${after.us - before.us} 次`);
+    // 這一段剛好一分鐘，完整那一輪本來就會跑到，所以它的次數交給下一個 subtest 管。
+  });
+
   await t.test('美股與匯率每分鐘一次，那一輪才吃 Twelve Data 的額度', async () => {
     // 一輪 7 credits、上限每分鐘 8，一分鐘超過一次就會爆。
     const before = await counts();
@@ -136,6 +146,7 @@ Object.defineProperty(navigator, 'wakeLock', { configurable: true, value: {
     const after = await counts();
     assert.equal(after.all - before.all, 5, `五分鐘要剛好跑五次，實際 ${after.all - before.all} 次`);
     assert.equal(after.tw - before.tw, 60, `同一段時間台股要跑 60 次，實際 ${after.tw - before.tw} 次`);
+    assert.equal(after.us - before.us, 20, `同一段時間美股要跑 20 次，實際 ${after.us - before.us} 次`);
   });
 
   await t.test('更新報價不該重載整本台帳', async () => {

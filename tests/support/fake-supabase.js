@@ -204,13 +204,14 @@ export function makeClient() {
           { date: '2026-09-16', portfolio: 102, benchmark: 100.5 },
         ],
       }, error: null };
-      // 自動更新的測試靠這個計數。台股走 scope='tw' 的輕量路徑，跟完整那一輪分開記。
-      const scope = options?.body?.scope === 'tw' ? 'tw' : 'all';
+      // 自動更新的測試靠這個計數。台股 scope='tw'、美股 scope='us' 都是只拿價格的輕量
+      // 路徑，跟完整那一輪（會寫資料庫、會吃 Twelve Data credit）分開記。
+      const scope = ['tw', 'us'].includes(options?.body?.scope) ? options.body.scope : 'all';
       globalThis.__invokes = globalThis.__invokes ?? {};
       globalThis.__invokes[name] = (globalThis.__invokes[name] ?? 0) + 1;
-      globalThis.__scopes = globalThis.__scopes ?? { tw: 0, all: 0 };
+      globalThis.__scopes = globalThis.__scopes ?? { tw: 0, us: 0, all: 0 };
       globalThis.__scopes[scope] += 1;
-      if (scope === 'tw') return { data: { scope: 'tw', results: [] }, error: null };
+      if (scope !== 'all') return { data: { scope, results: [] }, error: null };
       return { data: { results: [], updated: 1, priceOnly: 0, failed: 0, fx: { symbol: 'USD/TWD', rate: FX }, gold: {} }, error: null };
     } },
     rpc: async name => {

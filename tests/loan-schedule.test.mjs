@@ -125,6 +125,9 @@ db.loan_schedule.push(...${JSON.stringify(schedule)});`;
   await t.test('點開看得到貸款條件、已繳期數與未來排程', async () => {
     await page.click('[data-loan-account]');
     await page.waitForSelector('.loanDetail');
+    // loan-ui-fix.js 要再過幾個 frame 才把卡片上的欄位搬進明細，搬完會順手拿掉 .loanFoot。
+    // 等那個信號再讀，不然 CI 慢的時候會讀到搬到一半的中間狀態（實測少了「原貸款」）。
+    await page.waitForFunction(() => !document.querySelector('.loanCard.open .loanCardTap > .loanFoot'));
     const detail = await page.textContent('.loanDetail');
     // 下次繳款、金額、剩餘應還這幾格由 loan-ui-fix.js 從明細裡拿掉了（下次繳款改在
     // 資產負債頁的負債列上顯示），這裡對的是實際留下來的欄位。
