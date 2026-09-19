@@ -242,7 +242,7 @@ test('匯率抓不到就不要動 klfan_fx_daily', async () => {
 
 test('只要台股那一輪完全不碰 Twelve Data，也不寫資料庫', async () => {
   // 台股每 5 秒抓一次，走的是這條路。Fugle 免費、沒有 credit；但要是順手寫了
-  // financial_items，realtime 訂閱會被自己觸發，每 5 秒重載整本台帳（一千多筆交易）。
+  // financial_items，realtime 訂閱會被自己觸發，每 5 秒重載整本 Kevin 私帳（一千多筆交易）。
   const { body, used, written, stored, fxDaily } = await refresh({
     cache: cacheRows(28 * 60_000),   // 快取過期，完整那一輪本來會全部重抓
     requestBody: { scope: 'tw' },
@@ -294,7 +294,7 @@ test('沒有 Finnhub 就退回 59 秒快取，不能把 Twelve Data 的 credit �
 
 test('美股快車道只打 Finnhub，不花 credit 也不寫資料庫', async () => {
   // 跟台股那條同一個理由：寫了 financial_items，realtime 訂閱會被自己觸發，
-  // 每 15 秒把整本台帳重載一次。這條只負責把價格送到畫面上。
+  // 每 15 秒把整本 Kevin 私帳重載一次。這條只負責把價格送到畫面上。
   const { body, used, written, stored, fxDaily } = await refresh({
     cache: cacheRows(28 * 60_000),   // 快取過期，完整那一輪本來會全部重抓
     env: ENV_FINNHUB,

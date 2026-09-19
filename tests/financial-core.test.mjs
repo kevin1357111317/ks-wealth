@@ -68,7 +68,7 @@ test('asset allocation uses each scope total and hides zero categories', () => {
   ]);
 });
 
-test('出清的台帳部位不出現在列表與統計裡', () => {
+test('出清的 Kevin 私帳部位不出現在列表與統計裡', () => {
   // 觸發器在股數歸零時是把那一列更新成 0，不是刪掉 —— 再買回來要接回同一列。
   // 但 0 股的部位不是資產。
   const items = [
@@ -85,7 +85,7 @@ test('出清的台帳部位不出現在列表與統計裡', () => {
 });
 
 test('手動建立的 0 元項目不受影響', () => {
-  // 只擋台帳連動的部位，手動輸入 0 是使用者自己的選擇
+  // 只擋 Kevin 私帳連動的部位，手動輸入 0 是使用者自己的選擇
   const items = [{ id: 1, owner_scope: 'wife', kind: 'asset', amount_twd: 0, category: '現金及存款' }];
   assert.equal(calculateSummary(items, 'wife').assets.length, 1);
 });

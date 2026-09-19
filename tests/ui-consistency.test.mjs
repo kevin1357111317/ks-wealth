@@ -109,7 +109,7 @@ test('健康報告是第四個底部分頁，不再佔用家庭頁第一屏', as
   assert.match(navIcons, /stroke-width="1\.9"/);
 });
 
-test('股票分析先切畫面，台帳在背景預載且不重複重繪', () => {
+test('股票分析先切畫面，Kevin 私帳在背景預載且不重複重繪', () => {
   assert.match(app, /scheduleLedgerWarmup\(\);/);
   assert.match(app, /requestIdleCallback' in window/);
   const start = app.indexOf('function openAnalysis(screen, ownerScope)');
@@ -151,13 +151,13 @@ test('股票模型有快取，報價重繪不會重算年化', () => {
   // 台股報價每 5 秒 render() 一次，在股票分析頁就是每 5 秒卡 0.3 秒。
   assert.match(app, /let portfolioRevision = 0;/);
   assert.match(app, /let portfolioModelCache = \{ revision: -1, fxRate: null, byOwner: new Map\(\) \};/);
-  // 快取鍵必須同時看版本號與匯率 —— 只看其中一個，換匯率或換台帳就會拿到舊數字。
+  // 快取鍵必須同時看版本號與匯率 —— 只看其中一個，換匯率或換 Kevin 私帳就會拿到舊數字。
   assert.match(app, /portfolioModelCache\.revision !== portfolioRevision \|\| portfolioModelCache\.fxRate !== fxRate/);
   // 畫面只准透過 portfolioModelFor\(\) 拿模型，不准自己再算一次。
   assert.equal(app.split('calculatePortfolio(').length - 1, 1,
     'calculatePortfolio() 只准在 portfolioModelFor() 裡呼叫一次，其他地方一律吃快取');
   assert.match(app, /const model = portfolioModelFor\(analysisOwner\);/);
-  // 台帳、報價、換帳號三個地方都要讓快取失效，漏掉任何一個就會顯示舊數字。
+  // Kevin 私帳、報價、換帳號三個地方都要讓快取失效，漏掉任何一個就會顯示舊數字。
   assert.equal(app.split('portfolioRevision += 1;').length - 1, 3,
-    '報價更新、台帳載入、換帳號三處都要 bump 版本號');
+    '報價更新、 Kevin 私帳載入、換帳號三處都要 bump 版本號');
 });

@@ -102,7 +102,7 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     await page.waitForFunction(() => document.querySelector('#stockHint')?.textContent.includes('台積電'), null, { timeout: 5000 });
   });
 
-  await t.test('第一筆交易寫進台帳，資產列由觸發器產生', async () => {
+  await t.test('第一筆交易寫進 Kevin 私帳，資產列由觸發器產生', async () => {
     await page.fill('#txAmount', '2400000');
     await page.fill('#txShares', '1000');
     await save();
@@ -151,11 +151,11 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     await save();
     const data = await db();
     assert.equal(data.klfan_transactions.length, 3, '留白不該多記一筆');
-    assert.equal(data.klfan_stocks[0].symbol, 'TPE:2317', '改代號要寫回台帳');
+    assert.equal(data.klfan_stocks[0].symbol, 'TPE:2317', '改代號要寫回 Kevin 私帳');
     assert.equal(data.klfan_stocks[0].display, '鴻海', '名稱跟著證交所走');
   });
 
-  await t.test('台帳卡片就地展開，不跳頁', async () => {
+  await t.test('Kevin 私帳卡片就地展開，不跳頁', async () => {
     await page.click('[data-open-portfolio]');
     await page.waitForSelector('[data-portfolio-stock]');
     await page.waitForSelector('.portfolioPerformanceChart');
@@ -246,20 +246,20 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     await page.waitForSelector('.fab');
   });
 
-  await t.test('台帳頁靠返回手勢離開，不再放返回按鈕', async () => {
+  await t.test('Kevin 私帳頁靠返回手勢離開，不再放返回按鈕', async () => {
     await page.click('[data-open-portfolio]');
     await page.waitForSelector('[data-portfolio-market]');
     assert.equal(await page.locator('[data-close-portfolio]').count(), 0, '返回按鈕已移除');
-    // 新增股票統一走財務項目表單，台帳頁不再放第二個入口
+    // 新增股票統一走財務項目表單，Kevin 私帳頁不再放第二個入口
     assert.equal(await page.locator('[data-add-portfolio-stock]').count(), 0, '新增標的按鈕已移除');
 
-    // 台帳是狀態切換不是換頁，沒有推歷史的話返回手勢不會有反應
+    // Kevin 私帳是狀態切換不是換頁，沒有推歷史的話返回手勢不會有反應
     await page.goBack();
     await page.waitForTimeout(300);
-    assert.equal(await page.locator('[data-portfolio-market]').count(), 0, '返回鍵要能離開台帳');
+    assert.equal(await page.locator('[data-portfolio-market]').count(), 0, '返回鍵要能離開 Kevin 私帳');
     assert.ok(await page.isVisible('.fab'), '回到的是個人資產頁');
 
-    // 底部導覽是拿掉按鈕後的另一條出口：render() 在台帳頁會直接回傳台帳畫面，
+    // 底部導覽是拿掉按鈕後的另一條出口：render() 在 Kevin 私帳頁會直接回傳 Kevin 私帳畫面，
     // 不先收掉就會被困住
     await page.click('[data-open-portfolio]');
     await page.waitForSelector('[data-portfolio-market]');
@@ -269,7 +269,7 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
 
     // 切分頁時是用 history.back() 收的，所以那一筆歷史要被消耗掉、不留在堆疊上
     assert.notEqual(await page.evaluate(() => window.history.state?.ks), 'portfolio',
-      '切分頁後不該還留著台帳那一筆歷史');
+      '切分頁後不該還留著 Kevin 私帳那一筆歷史');
     await page.click('[data-tab="husband"]');
     await page.waitForSelector('.fab');
   });
@@ -310,7 +310,7 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     await page.waitForSelector('.fab');
   });
 
-  await t.test('刪除要連台帳一起刪，否則觸發器會把它重建回來', async () => {
+  await t.test('刪除要連 Kevin 私帳一起刪，否則觸發器會把它重建回來', async () => {
     await openCard();
     await page.click('#del');
     await page.waitForTimeout(800);
@@ -332,7 +332,7 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     const data = await db();
     assert.equal(data.financial_items.length, 1);
     assert.equal(data.financial_items[0].amount_twd, 50000);
-    assert.equal(data.klfan_stocks.length, 0, '現金不該碰台帳');
+    assert.equal(data.klfan_stocks.length, 0, '現金不該碰 Kevin 私帳');
   });
 
   await t.test('同一檔再買一次要併回原本的標的，不是另開一筆', async () => {
@@ -369,7 +369,7 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     assert.equal(data.financial_items.filter(i => i.portfolio_stock_key === tsmc[0].key).length, 1);
   });
 
-  await t.test('夫妻持有同一檔股票要分開台帳，不互相改歸屬', async () => {
+  await t.test('夫妻持有同一檔股票要分開 Kevin 私帳，不互相改歸屬', async () => {
     // 老公已經有 2330；老婆再從自己的頁面新增同一檔，必須建立另一個 owner-scoped 標的。
     await page.click('[data-tab="wife"]');
     await page.waitForSelector('.fab');
@@ -384,7 +384,7 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
 
     const data = await db();
     const tsmc = data.klfan_stocks.filter(row => String(row.symbol).endsWith('2330'));
-    assert.equal(tsmc.length, 2, '夫妻各自持有同一檔時要有兩個獨立台帳標的');
+    assert.equal(tsmc.length, 2, '夫妻各自持有同一檔時要有兩個獨立 Kevin 私帳標的');
     const husband = tsmc.find(row => row.owner_scope === 'husband');
     const wife = tsmc.find(row => row.owner_scope === 'wife');
     assert.ok(husband, '老公原本的台積電標的不能被搬走');
@@ -419,7 +419,7 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     assert.deepEqual(mine, ['大額', '中額', '小額']);
   });
 
-  await t.test('進台帳從最上面開始，返回回到原本停的位置', async () => {
+  await t.test('進 Kevin 私帳從最上面開始，返回回到原本停的位置', async () => {
     await page.setViewportSize({ width: 390, height: 500 });
     // click() 會把視窗外的元素捲進來，先自己捲到定位再量，才不會量到 Playwright 捲過的位置
     await page.evaluate(() => document.querySelector('[data-open-portfolio]').scrollIntoView({ block: 'center' }));
@@ -430,7 +430,7 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
 
     await page.click('[data-open-portfolio]');
     await page.waitForSelector('[data-portfolio-market]');
-    assert.equal(await page.evaluate(() => window.scrollY), 0, '進台帳要從最上面開始，不是接著原本的位置顯示');
+    assert.equal(await page.evaluate(() => window.scrollY), 0, '進 Kevin 私帳要從最上面開始，不是接著原本的位置顯示');
 
     await page.goBack();
     await page.waitForSelector('.fab');
@@ -486,7 +486,7 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
 
     await page.click('[data-open-usd]');
     await page.waitForSelector('.portfolioSummary');
-    assert.equal(await page.locator('[data-portfolio-market]').count(), 0, '進的是美金分析，不是股票台帳');
+    assert.equal(await page.locator('[data-portfolio-market]').count(), 0, '進的是美金分析，不是股票 Kevin 私帳');
     assert.match(await page.textContent('.portfolioEmpty'), /還沒有美金交易/);
 
     const addUsd = async (kind, usd, rate) => {
