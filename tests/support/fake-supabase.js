@@ -219,7 +219,7 @@ export function makeClient() {
         const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei' }).format(new Date());
         return { data: applyDueLoanPayments(today), error: null };
       }
-      // 每次整包重載都會叫一次。 Kevin 私帳有一千多筆交易（92 KB），報價更新不該碰它。
+      // 每次整包重載都會叫一次。私帳有一千多筆交易（92 KB），報價更新不該碰它。
       globalThis.__bootstraps = (globalThis.__bootstraps ?? 0) + 1;
       if (name !== 'klfan_bootstrap') return { data: null, error: null };
       const stocks = db.klfan_stocks;

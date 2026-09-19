@@ -144,7 +144,7 @@ Deno.serve(async (req: Request) => {
   }
 
   // 美股快車道：前端每 15 秒呼叫，只打 Finnhub、只回價格、不寫資料庫。理由跟台股同一條 ——
-  // 寫 financial_items 會觸發 realtime 訂閱，每 15 秒把整本 Kevin 私帳重載一次。
+  // 寫 financial_items 會觸發 realtime 訂閱，每 15 秒把整本私帳重載一次。
   // 也不讀 klfan_quotes 的快取：快車道要的就是當下的價，讀快取反而拿到最多 14 秒前的值。
   // 台幣市值由前端用手上的匯率換算；匯率是慢變數，沿用 60 秒那輪的值就夠。
   if (scope === "us") {

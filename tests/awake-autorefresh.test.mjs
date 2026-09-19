@@ -94,8 +94,8 @@ Object.defineProperty(navigator, 'wakeLock', { configurable: true, value: {
   const counts = () => page.evaluate(() => globalThis.__scopes ?? { tw: 0, us: 0, all: 0 });
   const lock = () => page.evaluate(() => globalThis.__wakeLock);
 
-  await t.test('首頁不等待 Kevin 私帳，閒置預載最多一次', async () => {
-    // 首屏先完成，Kevin 私帳只在閒置時間背景預載。這兼顧股票分析一點就開，
+  await t.test('首頁不等待私帳，閒置預載最多一次', async () => {
+    // 首屏先完成，私帳只在閒置時間背景預載。這兼顧股票分析一點就開，
     // 也不能讓切換個人頁或重繪重複抓 92 KB。
     await page.clock.runFor(1500);
     await page.waitForTimeout(50);
@@ -103,7 +103,7 @@ Object.defineProperty(navigator, 'wakeLock', { configurable: true, value: {
     assert.equal(warmed, 1, `閒置時間應完成一次預載，實際 ${warmed} 次`);
     await page.click('[data-tab="husband"]');
     await page.clock.runFor(500);
-    assert.ok(await page.isVisible('[data-open-portfolio]'), 'Kevin 私帳預載與否都要先顯示入口');
+    assert.ok(await page.isVisible('[data-open-portfolio]'), '私帳預載與否都要先顯示入口');
     assert.equal(await page.evaluate(() => globalThis.__bootstraps ?? 0), warmed,
       '切到個人頁不能再啟動第二次預載');
   });
@@ -149,13 +149,13 @@ Object.defineProperty(navigator, 'wakeLock', { configurable: true, value: {
     assert.equal(after.us - before.us, 20, `同一段時間美股要跑 20 次，實際 ${after.us - before.us} 次`);
   });
 
-  await t.test('更新報價不該重載整本 Kevin 私帳', async () => {
-    // Kevin 私帳是 92 KB，其中 89 KB 是那 1489 筆交易。報價只改價格、交易一筆都沒動，
+  await t.test('更新報價不該重載整本私帳', async () => {
+    // 私帳是 92 KB，其中 89 KB 是那 1489 筆交易。報價只改價格、交易一筆都沒動，
     // 以前卻每分鐘整包重拉一次 —— 開著一小時就是 5.5 MB，只為了拿幾個股價。
     const before = await page.evaluate(() => globalThis.__bootstraps ?? 0);
     await page.clock.runFor(FULL_TICK * 3);
     const after = await page.evaluate(() => globalThis.__bootstraps ?? 0);
-    assert.equal(after, before, `三輪完整更新不該重載 Kevin 私帳，實際重載了 ${after - before} 次`);
+    assert.equal(after, before, `三輪完整更新不該重載私帳，實際重載了 ${after - before} 次`);
   });
 
   await t.test('切到背景就兩條都停手', async () => {

@@ -6,7 +6,7 @@ import { buildHistoricalSnapshots, buildPerformanceSeries, downsampleSeries, sum
 // 以前只能靠人工撈線上原始碼才知道有沒有漏，2026-09-18 就出現過「畫面版號是新的、
 // 數字卻是舊的」。把版號跟著回應送出去，前端一比就知道。
 // 這個常數必須跟 app-version.js 的 APP_VERSION 一致，tests/app-version.test.mjs 會擋。
-const FN_VERSION = "V3.37.1";
+const FN_VERSION = "V3.37.2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -43,9 +43,9 @@ async function yahooHistory(symbol: string, start: string, end: string): Promise
     if (!response.ok) return { close: [], adjusted: [], splits: [], dividends: [] };
     const payload = await response.json();
     const result = payload?.chart?.result?.[0];
-    // 持股市值用 close，因為 Kevin 私帳已另外記錄股息；Benchmark 用 adjusted close，
-    // 才能把現金股息再投入納入總報酬，且不會和個人 Kevin 私帳重複計息。
-    // splits 用來確定 Kevin 私帳股數是不是成交當時的口徑，dividends 用來對齊除息日。
+    // 持股市值用 close，因為私帳已另外記錄股息；Benchmark 用 adjusted close，
+    // 才能把現金股息再投入納入總報酬，且不會和個人私帳重複計息。
+    // splits 用來確定私帳股數是不是成交當時的口徑，dividends 用來對齊除息日。
     return {
       close: yahooPriceRows(result, "close"),
       adjusted: yahooPriceRows(result, "adjusted"),
