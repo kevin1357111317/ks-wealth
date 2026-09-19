@@ -341,6 +341,20 @@ FIFO 與加權平均會給出不同答案的案例，改回平均成本就會被
 美股可切 VOO／QQQ／SOXX；全部頁可切動態混合或上述三個美股基準。全部頁的單一美股基準換算成
 台幣，因此包含 USD/TWD 影響。
 
+### 績效卡會自己抓「前端新、引擎舊」
+
+Edge Function 不在 Vercel 的部署範圍，推 `main` 只更新前端，`portfolio-performance` 要另外
+`supabase functions deploy`。漏掉的時候畫面完全正常，只有數字是舊演算法算的 —— 2026-09-18 就
+這樣過一次，當時只能靠人工撈線上原始碼比對才發現。
+
+所以 `index.ts` 帶一個 `FN_VERSION` 常數並放進回應的 `fnVersion`，前端拿它跟 `APP_VERSION` 比：
+一致就什麼都不顯示，不一致（或線上還是沒有這個欄位的舊版）就在績效卡頁尾加一行
+「⚠ 計算引擎停在 X，畫面是 Y」。`tests/app-version.test.mjs` 會擋掉 `FN_VERSION` 忘了跟著升版、
+或忘了放進回應 —— 兩種都會讓警示永遠亮著或永遠不亮，等於沒有警示。
+
+注意 Supabase 自己的 function version（v9、v10 那個）是每次部署 +1 的自動序號，API 不給指定，
+所以只能用這個常數做對照，沒辦法讓兩個編號真的一致。
+
 `portfolio-performance` Edge Function 直接從完整交易台帳重建每日持股，配合 Yahoo Chart 的歷史
 收盤價與 USD/TWD；因此不再受 2026-09-03 才開始保存每日市值的限制。老公的完整期間會從第一筆
 交易 2019-10-23 開始，美股則從第一筆美元交易 2024-05-23 開始。畫面可切「今年以來／近一年／全部」，

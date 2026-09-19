@@ -51,6 +51,22 @@ test('正式版號只允許 legacy V3P26 或 SemVer', async () => {
   );
 });
 
+// portfolio-performance 不在 Vercel 的部署範圍，推 main 只會更新前端。它回的 fnVersion
+// 就是前端用來判斷「數字是不是舊引擎算的」的依據，所以這個常數一定要跟 APP_VERSION 同步；
+// 忘了改的話警示會永遠亮著，等於沒有警示。
+test('Edge Function 回的 fnVersion 要跟 APP_VERSION 一致', async () => {
+  const [versionScript, fn] = await Promise.all([
+    read('app-version.js'), read('supabase/functions/portfolio-performance/index.ts'),
+  ]);
+  const version = versionScript.match(/const APP_VERSION = '([^']+)'/)?.[1];
+  const fnVersion = fn.match(/const FN_VERSION = "([^"]+)"/)?.[1];
+
+  assert.ok(fnVersion, 'portfolio-performance/index.ts 找不到 FN_VERSION');
+  assert.equal(fnVersion, version,
+    `FN_VERSION 是 ${fnVersion}，APP_VERSION 是 ${version}；改版號時兩邊要一起動`);
+  assert.match(fn, /fnVersion: FN_VERSION/, 'FN_VERSION 沒有放進回應，前端拿不到');
+});
+
 test('舊制不得再往 V3P27 之後延伸', async () => {
   const source = (await read('app-version.js')).match(/const APP_VERSION = '([^']+)'/)?.[1];
   if (/^V\d+P\d+$/.test(source ?? '')) {
