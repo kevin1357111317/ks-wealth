@@ -426,7 +426,7 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     await page.waitForTimeout(100);
     const scrollBefore = await page.evaluate(() => window.scrollY);
     assert.ok(scrollBefore > 0, '測試前提：資產頁要是可捲的');
-    assert.match(await page.textContent('[data-open-portfolio]'), /^\s*股票分析/);
+    assert.match(await page.textContent('[data-open-portfolio]'), /^\s*股票/);
 
     await page.click('[data-open-portfolio]');
     await page.waitForSelector('[data-portfolio-market]');
@@ -457,6 +457,19 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     });
     assert.equal(order, 'entry-first');
 
+    const compactEntry = await page.evaluate(() => {
+      const entry = document.querySelector('.analysisEntry');
+      const buttons = [...entry.querySelectorAll('button')];
+      return {
+        labels: buttons.map(button => button.textContent.trim()),
+        rows: new Set(buttons.map(button => Math.round(button.getBoundingClientRect().top))).size,
+        height: entry.getBoundingClientRect().height,
+      };
+    });
+    assert.deepEqual(compactEntry.labels, ['股票', '貸款', '黃金', '美金', '保險']);
+    assert.equal(compactEntry.rows, 1, '五個入口要整合成同一列');
+    assert.ok(compactEntry.height <= 64, `入口列不應超過 64px，實際 ${compactEntry.height}px`);
+
     // 卡片講的是整體投資，不屬於資產或負債任何一邊，切到負債也要留著
     await page.click('#personSeg button[data-kind="liability"]');
     await page.waitForTimeout(200);
@@ -466,10 +479,10 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
   });
 
   await t.test('美金分析可以記買賣，數字跟著動，也退得回來', async () => {
-    assert.match(await page.textContent('[data-open-usd]'), /^\s*美金分析/);
+    assert.match(await page.textContent('[data-open-usd]'), /^\s*美金/);
     // 入口只留按鈕，數字都收進分析頁裡
     const entry = (await page.textContent('.analysisEntry')).replace(/[\s›]+/g, '');
-    assert.equal(entry, '股票分析貸款分析黃金分析美金分析保險分析');
+    assert.equal(entry, '股票貸款黃金美金保險');
 
     await page.click('[data-open-usd]');
     await page.waitForSelector('.portfolioSummary');

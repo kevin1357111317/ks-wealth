@@ -10,12 +10,12 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.36.1';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.36.1';
-import { calculateUsd } from './usd-core.js?v=V3.36.1';
-import { calculateGold } from './gold-core.js?v=V3.36.1';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.36.1';
-import { buildPersonalTrendRows } from './trend-core.js?v=V3.36.1';
+} from './financial-core.js?v=V3.36.2';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.36.2';
+import { calculateUsd } from './usd-core.js?v=V3.36.2';
+import { calculateGold } from './gold-core.js?v=V3.36.2';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.36.2';
+import { buildPersonalTrendRows } from './trend-core.js?v=V3.36.2';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -24,8 +24,8 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.36.1';
-import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.36.1';
+} from './health-core.js?v=V3.36.2';
+import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.36.2';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -1143,7 +1143,7 @@ function groupedCards(list, ownerScope, kind) {
 
 // 資產頁上只放入口，數字留在分析頁裡面講。
 function analysisEntry() {
-  return `<div class="analysisEntry"><button data-open-portfolio>股票分析<i>›</i></button><button data-open-loans>貸款分析<i>›</i></button><button data-open-gold>黃金分析<i>›</i></button><button data-open-usd>美金分析<i>›</i></button><button data-open-insurance>保險分析<i>›</i></button></div>`;
+  return `<nav class="analysisEntry" aria-label="功能捷徑"><button data-open-portfolio aria-label="股票分析">股票</button><button data-open-loans aria-label="貸款分析">貸款</button><button data-open-gold aria-label="黃金分析">黃金</button><button data-open-usd aria-label="美金分析">美金</button><button data-open-insurance aria-label="保險分析">保險</button></nav>`;
 }
 
 // 分析頁只看單一個人的部位。兩個人合起來的那份也還是要留著 ——

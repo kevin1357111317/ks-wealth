@@ -14,7 +14,7 @@ const runlongMortgageFee = await readFile(new URL('../supabase/migrations/202609
 
 test('loan analysis remains available among per-owner analysis destinations', () => {
   assert.match(app, /data-open-loans/);
-  assert.match(app, /data-open-loans>貸款分析/);
+  assert.match(app, /data-open-loans aria-label="貸款分析">貸款/);
   assert.match(app, /目前貸款餘額/);
   assert.match(app, /let loanTypeFilter = 'personal'/);
   assert.match(app, /data-loan-type="personal"/);
@@ -24,7 +24,8 @@ test('loan analysis remains available among per-owner analysis destinations', ()
   assert.match(app, /\.sort\(\(a, b\) => a\.currentBalance - b\.currentBalance/);
   assert.match(app, /openAnalysis\('loans', ownerScope\)/);
   assert.match(app, /analysisScreen === 'loans'/);
-  assert.match(css, /grid-template-columns:repeat\(5,1fr\)/);
+  assert.match(css, /grid-template-columns:repeat\(5,minmax\(0,1fr\)\)/);
+  assert.match(css, /\.analysisEntry\{[^}]*gap:0/);
   assert.doesNotMatch(css, /\.loanSummary \.portfolioMetric:first-child\{grid-column:1\/-1\}/);
 });
 

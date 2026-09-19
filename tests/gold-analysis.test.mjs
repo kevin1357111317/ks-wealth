@@ -64,7 +64,7 @@ test('黃金分析入口、資料表與頁面已接進 App', async () => {
   const app = await readFile(new URL('../app-v3.js', import.meta.url), 'utf8');
   const migration = await readFile(new URL('../supabase/migrations/20260909010000_gold_analysis.sql', import.meta.url), 'utf8');
   const given = await readFile(new URL('../supabase/migrations/20260909120000_gold_given_away.sql', import.meta.url), 'utf8');
-  assert.match(app, /data-open-gold>黃金分析/);
+  assert.match(app, /data-open-gold aria-label="黃金分析">黃金/);
   assert.match(app, /openAnalysis\('gold', ownerScope\)/);
   assert.match(app, /analysisScreen === 'gold'/);
   assert.match(app, /from\('gold_transactions'\)/);

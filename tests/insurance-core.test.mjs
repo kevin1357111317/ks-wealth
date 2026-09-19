@@ -16,10 +16,10 @@ const app = await readFile(new URL('../app-v3.js', import.meta.url), 'utf8');
 const index = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 
 test('保險分析入口、畫面與獨立樣式已接進正式 App', () => {
-  assert.match(app, /data-open-insurance>保險分析/);
+  assert.match(app, /data-open-insurance aria-label="保險分析">保險/);
   assert.match(app, /analysisScreen === 'insurance'/);
   assert.match(app, /calculateInsuranceSummary\(items, analysisOwner\)/);
-  assert.match(index, /insurance\.css\?v=V3\.36\.1/);
+  assert.match(index, /insurance\.css\?v=V3\.36\.2/);
 });
 
 test('只解析有版本標記的保單 notes，壞資料不拖垮資產頁', () => {
