@@ -422,9 +422,14 @@ test('有 Yahoo 拆股事件時，股數倍率只在 1 與該倍率之間二選�
   assert.equal(transactionShareScale({ tx_date: '2024-05-23', amount: -1035, shares: 10 }, nvda, prices, splits), 1);
   // 台帳是成交當時股數
   assert.equal(transactionShareScale({ tx_date: '2024-05-23', amount: -1035, shares: 1 }, nvda, prices, splits), 10);
-  // 成交單價剛好是收盤價三倍：沒有拆股事件時會被猜成 3 倍，有事件時 3 根本不是候選
-  assert.equal(transactionShareScale({ tx_date: '2024-05-23', amount: -310.5, shares: 1 }, nvda, prices), 3);
+  // 成交單價剛好是收盤價三倍。有拆股事件時 3 根本不是候選；沒有事件時美股也不該去猜 ——
+  // Yahoo 對美股的拆股回報是可靠的，沒回報就是真的沒拆過，單價對不上只是手續費或拆單。
+  assert.equal(transactionShareScale({ tx_date: '2024-05-23', amount: -310.5, shares: 1 }, nvda, prices), 1);
   assert.equal(transactionShareScale({ tx_date: '2024-05-23', amount: -310.5, shares: 1 }, nvda, prices, splits), 1);
+  // 成交日之後沒有拆股，倍率就確定是 1，不能退回去猜（TSLA 2025-11-13 曾被猜成 0.5）
+  assert.equal(transactionShareScale({ tx_date: '2024-06-20', amount: -200.4, shares: 1 },
+    { key: 'TSLA', market: '美股', currency: 'USD' },
+    [{ date: '2024-06-20', value: 401.99 }], [{ date: '2022-08-25', ratio: 3 }]), 1);
 });
 
 test('Yahoo events 解析成除息日與拆股倍率', () => {
@@ -472,4 +477,30 @@ test('完整期間會分頁抓完超過一千筆的交易台帳', () => {
   assert.match(source, /if \(\(page\?\.length \?\? 0\) < 1000\) break/);
   assert.match(source, /for \(const period of \["ytd", "year", "all"\]\)/);
   assert.match(source, /metrics: \{[\s\S]*?all:[\s\S]*?tw:[\s\S]*?us:/);
+});
+
+test('台灣 ETF 的分割查表，不靠成交單價反推', () => {
+  // Yahoo 的 chart API 不回報台灣 ETF 的受益權單位分割：0050 的 2019 收盤被調整成 1/4，
+  // events 裡卻沒有 splits 欄位。日期查投信公告寫死，才不會被一筆壞資料帶走。
+  const tw = { key: '0050', symbol: '0050', market: '台股', currency: 'TWD' };
+  const prices = [{ date: '2025-06-17', value: 47.16 }, { date: '2026-09-15', value: 106.25 }];
+  // 分割前成交（188.65 元／股，Yahoo 調整後 47.16）→ 台帳是成交當時股數，要乘 4
+  assert.equal(transactionShareScale({ tx_date: '2025-06-17', amount: -188650, shares: 1000 }, tw, prices), 4);
+  // 分割後成交 → 已經是新單位，倍率 1
+  assert.equal(transactionShareScale({ tx_date: '2026-09-15', amount: -106490, shares: 1000 }, tw, prices), 1);
+});
+
+test('同一段期間的股數倍率只決定一次，一筆壞資料不會改掉整檔持股', () => {
+  // 0050 台帳 2023-01-30 那筆金額只記了一半，單價比值算出來剛好是 2。逐筆各自判斷會讓
+  // 這一筆自己跑出一個不存在的倍率，整檔就少 120 股；同一段期間多數決就不會。
+  const tw = { key: '0050', symbol: '0050', market: '台股', currency: 'TWD' };
+  const priceHistory = new Map([['0050', [{ date: '2023-01-30', value: 30.175 }]]]);
+  const fxHistory = [{ date: '2023-01-30', rate: 30 }];
+  const good = { stock_key: '0050', tx_date: '2023-01-30', kind: 'trade', amount: -120700, shares: 1000 };
+  const bad = { stock_key: '0050', tx_date: '2023-01-30', kind: 'trade', amount: -3620, shares: 60 };
+  const rows = buildHistoricalSnapshots({
+    stocks: [tw], transactions: [good, good, good, bad], priceHistory, fxHistory,
+  });
+  // 四筆都該用多數決的 4 倍：(1000×3 + 60) × 4 = 12,240 股
+  assert.equal(Math.round(rows.at(-1).twTwd / 30.175), 12240);
 });
