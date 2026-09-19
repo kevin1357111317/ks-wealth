@@ -166,7 +166,7 @@ db.loan_schedule.push(...${JSON.stringify(schedule)});`;
         top: Math.round(card.getBoundingClientRect().top * 100) / 100,
         h: Math.round(card.getBoundingClientRect().height * 100) / 100,
       })),
-      scrolls: globalThis.__scrollLog.slice(-14),
+      scrolls: globalThis.__scrollLog.slice(-40),
     });
   });
   // 診斷用：把每一次 scrollTo 與每一個 scroll 事件記下來，位置不對時才知道是「誰把它捲走的」
@@ -266,6 +266,8 @@ db.loan_schedule.push(...${JSON.stringify(schedule)});`;
     // 一次只開一張，所以點下面那張時上面那張會同時收起來。收掉的高度差會把下面的
     // 內容整個往上拉 —— 這就是「偶爾點開卻跳走」的來源。
     // 挑一張現在畫面上看得到、而且在展開那張下面的卡片，就是屋主實際會點的情況。
+    // 先把前面殘留的補正排乾淨：還在跑的 rAF 迴圈會動到下面自己設的捲動位置。
+    await waitForStableTop(page, '.loanCard', 0);
     const picked = await page.evaluate(() => {
       const cards = [...document.querySelectorAll('.loanCard')];
       const openIndex = cards.findIndex(card => card.classList.contains('open'));
@@ -308,7 +310,9 @@ db.loan_schedule.push(...${JSON.stringify(schedule)});`;
     //（`.loanList{overflow-anchor:none}` 關掉之前實測差 331px）；
     // 二是上一個 subtest 的補正還沒收工，把這裡設的捲動位置拉回去（1426 被拉回 120）。
     // 兩種都會讓補正在追一個會自己跑的目標，最後停在哪裡跟 layout 時機有關。
-    const firstPin = after.scrolls.find(entry => entry.at?.includes('pinLoanCard'));
+    // 只看這次點擊之後的軌跡 —— 前面 subtest 留下的補正不算數。
+    const sinceClick = after.scrolls.slice(after.scrolls.findIndex(entry => entry.mark === 'click'));
+    const firstPin = sinceClick.find(entry => entry.at?.includes('pinLoanCard'));
     assert.equal(firstPin?.from, picked.target,
       `補正開始前捲動量就被改過了（${picked.target} → ${firstPin?.from}）\n`
       + `trace=${JSON.stringify(after.scrolls)}`);
