@@ -200,7 +200,7 @@ Deno.serve(async (req: Request) => {
     family: familyWrite.error?.message ?? null,
   }, 500);
 
-  // 股票績效圖只存每日三個彙總值，不複製交易 Kevin 私帳或個股資料。activity_log 本來就是
+  // 股票績效圖只存每日三個彙總值，不複製交易私帳或個股資料。activity_log 本來就是
   // 家庭事件流，沿用它可避免在 migration history 尚未 reconcile 前新增正式資料表。
   for (const householdId of households) {
     const { data: existing } = await client.from("activity_log").select("id")

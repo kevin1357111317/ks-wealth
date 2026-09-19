@@ -217,7 +217,7 @@ test('買進是外部投入、賣出與股息是提款', () => {
   assert.deepEqual(flows['2026-09-02'], { twTwd: 0, usTwd: -96, usUsd: -3 });
 });
 
-test('持股股息只由 Kevin 私帳現金流計入一次，不會再套 adjusted close', () => {
+test('持股股息只由私帳現金流計入一次，不會再套 adjusted close', () => {
   const flows = transactionFlows([
     { stock_key: 'TW', tx_date: '2026-06-02', amount: 5, twd: 5, kind: 'dividend' },
   ], new Map([['TW', { currency: 'TWD' }]]));
@@ -234,7 +234,7 @@ test('持股股息只由 Kevin 私帳現金流計入一次，不會再套 adjust
   assert.equal(rows.at(-1).benchmark, 100);
 });
 
-test('拆股調整依 Kevin 私帳成交單價判斷，不會把已換算的 NVDA 再乘十倍', () => {
+test('拆股調整依私帳成交單價判斷，不會把已換算的 NVDA 再乘十倍', () => {
   const tw = { key: '0050', market: '台股', currency: 'TWD' };
   const nvda = { key: 'NVDA', market: '美股', currency: 'USD' };
   assert.equal(transactionShareScale(
@@ -321,7 +321,7 @@ test('部位很小時加碼，成交價與收盤價的價差不會被當成單�
   assert.equal(rows.at(-1).portfolio, 101);
 });
 
-// Kevin 私帳的股息記入帳日，價格卻是在除息日掉的。算在入帳日等於除息日先跌一次、入帳日再漲一次，
+// 私帳的股息記入帳日，價格卻是在除息日掉的。算在入帳日等於除息日先跌一次、入帳日再漲一次，
 // 期間內大致抵銷，但除息與入帳落在不同期間時就會少算或多算。
 test('股息對齊除息日，不會在除息日先跌一次、入帳日再漲一次', () => {
   const stocks = [{ key: '0050', market: '台股', currency: 'TWD' }];
@@ -418,9 +418,9 @@ test('有 Yahoo 拆股事件時，股數倍率只在 1 與該倍率之間二選�
   const nvda = { key: 'NVDA', market: '美股', currency: 'USD' };
   const prices = [{ date: '2024-05-23', value: 103.5 }];
   const splits = [{ date: '2024-06-10', ratio: 10 }];
-  // Kevin 私帳已換算成拆股後股數
+  // 私帳已換算成拆股後股數
   assert.equal(transactionShareScale({ tx_date: '2024-05-23', amount: -1035, shares: 10 }, nvda, prices, splits), 1);
-  // Kevin 私帳是成交當時股數
+  // 私帳是成交當時股數
   assert.equal(transactionShareScale({ tx_date: '2024-05-23', amount: -1035, shares: 1 }, nvda, prices, splits), 10);
   // 成交單價剛好是收盤價三倍。有拆股事件時 3 根本不是候選；沒有事件時美股也不該去猜 ——
   // Yahoo 對美股的拆股回報是可靠的，沒回報就是真的沒拆過，單價對不上只是手續費或拆單。
@@ -470,7 +470,7 @@ test('長期間只抽樣顯示，不改起點與終點', () => {
   assert.deepEqual(sampled.at(-1), rows.at(-1));
 });
 
-test('完整期間會分頁抓完超過一千筆的交易 Kevin 私帳', () => {
+test('完整期間會分頁抓完超過一千筆的交易私帳', () => {
   const source = readFileSync(new URL('../supabase/functions/portfolio-performance/index.ts', import.meta.url), 'utf8');
   assert.match(source, /for \(let from = 0; ; from \+= 1000\)/);
   assert.match(source, /\.range\(from, from \+ 999\)/);
@@ -484,14 +484,14 @@ test('台灣 ETF 的分割查表，不靠成交單價反推', () => {
   // events 裡卻沒有 splits 欄位。日期查投信公告寫死，才不會被一筆壞資料帶走。
   const tw = { key: '0050', symbol: '0050', market: '台股', currency: 'TWD' };
   const prices = [{ date: '2025-06-17', value: 47.16 }, { date: '2026-09-15', value: 106.25 }];
-  // 分割前成交（188.65 元／股，Yahoo 調整後 47.16）→ Kevin 私帳是成交當時股數，要乘 4
+  // 分割前成交（188.65 元／股，Yahoo 調整後 47.16）→私帳是成交當時股數，要乘 4
   assert.equal(transactionShareScale({ tx_date: '2025-06-17', amount: -188650, shares: 1000 }, tw, prices), 4);
   // 分割後成交 → 已經是新單位，倍率 1
   assert.equal(transactionShareScale({ tx_date: '2026-09-15', amount: -106490, shares: 1000 }, tw, prices), 1);
 });
 
 test('同一段期間的股數倍率只決定一次，一筆壞資料不會改掉整檔持股', () => {
-  // 0050 Kevin 私帳 2023-01-30 那筆金額只記了一半，單價比值算出來剛好是 2。逐筆各自判斷會讓
+  // 0050 私帳 2023-01-30 那筆金額只記了一半，單價比值算出來剛好是 2。逐筆各自判斷會讓
   // 這一筆自己跑出一個不存在的倍率，整檔就少 120 股；同一段期間多數決就不會。
   const tw = { key: '0050', symbol: '0050', market: '台股', currency: 'TWD' };
   const priceHistory = new Map([['0050', [{ date: '2023-01-30', value: 30.175 }]]]);

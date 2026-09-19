@@ -221,7 +221,7 @@ export function calculatePortfolio(stocks, fxRate, today = localIsoDate()) {
   };
   return {
     positions,
-    // 分析口徑依結算幣別分組：AMSC 雖在美國市場交易，但 Kevin 私帳以 TWD 結算，歸到台股頁計算。
+    // 分析口徑依結算幣別分組：AMSC 雖在美國市場交易，但私帳以 TWD 結算，歸到台股頁計算。
     tw: summarize(positions.filter(row => row.currency === 'TWD')),
     us: summarize(positions.filter(row => row.currency === 'USD')),
     all: summarize(positions),

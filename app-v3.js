@@ -10,12 +10,12 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.37.1';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.37.1';
-import { calculateUsd } from './usd-core.js?v=V3.37.1';
-import { calculateGold } from './gold-core.js?v=V3.37.1';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.37.1';
-import { buildPersonalTrendRows } from './trend-core.js?v=V3.37.1';
+} from './financial-core.js?v=V3.37.2';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.37.2';
+import { calculateUsd } from './usd-core.js?v=V3.37.2';
+import { calculateGold } from './gold-core.js?v=V3.37.2';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.37.2';
+import { buildPersonalTrendRows } from './trend-core.js?v=V3.37.2';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -24,8 +24,8 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.37.1';
-import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.37.1';
+} from './health-core.js?v=V3.37.2';
+import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.37.2';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -111,11 +111,11 @@ let wakeLock = null;
 let quoteLastUpdatedAt = null;
 let quoteData = {};
 let fxRate = null;
-// Kevin 私帳（39 檔標的、1489 筆交易、92 KB）只有股票分析頁與編輯表單的交易紀錄要用。
-// 資產列的股數與市值是觸發器算好存在 financial_items 的，開 App 根本不需要 Kevin 私帳，
+// 私帳（39 檔標的、1489 筆交易、92 KB）只有股票分析頁與編輯表單的交易紀錄要用。
+// 資產列的股數與市值是觸發器算好存在 financial_items 的，開 App 根本不需要私帳，
 // 所以改成第一次真的要用時才載。
 let portfolioStocks = [];
-// Kevin 私帳或報價換過就 +1。calculatePortfolio 要跑每一檔的 XIRR 加三個彙總 XIRR，
+// 私帳或報價換過就 +1。calculatePortfolio 要跑每一檔的 XIRR 加三個彙總 XIRR，
 // 1496 筆交易實測 ~300ms；台股報價每 5 秒 render() 一次，但那條路只改
 // financial_items 的金額，portfolioStocks 一個字都沒動 —— 重算的輸入完全一樣。
 // 所以用「版本號 + 匯率」當快取鍵，只有真的變了才重算。
@@ -131,7 +131,7 @@ let healthMetrics = [];
 let healthSelectedYear = null;
 let healthViewMode = 'compare';
 let loanAccounts = [];
-// 還款排程有 837 列，只有貸款分析頁要用，跟 Kevin 私帳一樣點進去才載。
+// 還款排程有 837 列，只有貸款分析頁要用，跟私帳一樣點進去才載。
 let loanSchedule = [];
 let loanScheduleLoaded = false;
 let loanScheduleFlight = null;
@@ -143,7 +143,7 @@ let autopayCheckedOn = null;
 let loanTypeFilter = 'personal';   // 貸款分析預設先看信貸，可切換增貸／房貸
 let analysisScreen = null;   // 'stocks'｜'usd'｜'gold'｜'loans'｜'insurance'｜'health'，null 就是一般的資產頁
 let analysisOwner = 'husband';   // 分析頁看的是誰的部位
-let expandedStock = null;   // Kevin 私帳清單裡就地展開的那一檔，一次只開一個
+let expandedStock = null;   // 私帳清單裡就地展開的那一檔，一次只開一個
 // 分析頁是狀態切換不是換頁，返回手勢預設不會有反應。進去時推一筆歷史，
 // 手勢／返回鍵就有東西可以退，popstate 再把畫面收回來。
 let analysisPushed = false;
@@ -471,7 +471,7 @@ async function resolveMembership() {
   void applyDueLoanPayments();
   void refreshQuotes({ reason: 'startup' });
   startQuoteAutoRefresh();
-  // 首屏已經顯示後，趁瀏覽器空閒先把股票 Kevin 私帳載好；使用者點股票分析時就能直接進內容。
+  // 首屏已經顯示後，趁瀏覽器空閒先把股票私帳載好；使用者點股票分析時就能直接進內容。
   scheduleLedgerWarmup();
 }
 
@@ -768,7 +768,7 @@ function scheduleLedgerWarmup() {
     void ensureLedger();
   };
   // Safari 支援 requestIdleCallback 時等主畫面完成再做；舊版 WebKit 用短計時器退化，
-  // 仍先讓目前這一幀完成，避免登入首頁跟 Kevin 私帳計算互相搶主執行緒。
+  // 仍先讓目前這一幀完成，避免登入首頁跟私帳計算互相搶主執行緒。
   if ('requestIdleCallback' in window) window.requestIdleCallback(warm, { timeout: 1200 });
   else window.setTimeout(warm, 250);
 }
@@ -854,7 +854,7 @@ async function loadData({ blocking = false } = {}) {
   return loadFlight;
 }
 
-// financial_items 變動不代表 Kevin 私帳變動 —— 每一輪報價更新都會寫它，realtime 再把事件
+// financial_items 變動不代表私帳變動 —— 每一輪報價更新都會寫它，realtime 再把事件
 // 送回來給我們自己。照單全收就是每分鐘整包重載一次（92 KB，其中 89 KB 是交易）。
 // 這裡只重抓 financial_items 本身；交易真的變了會由 klfan_transactions 的事件帶進來，
 // 那一條才走完整重載。用時間窗把自己的寫入濾掉也行，但別的裝置剛好在窗口內改東西就漏了。
@@ -1440,7 +1440,7 @@ function portfolioModelFor(ownerScope) {
   return model;
 }
 
-// 兩個人合起來的部位，只有查單一標的時才會用到 —— 沒載 Kevin 私帳就不要算。
+// 兩個人合起來的部位，只有查單一標的時才會用到 —— 沒載私帳就不要算。
 function allPortfolioModel() {
   return ledgerLoaded ? portfolioModelFor('all') : null;
 }
@@ -1562,7 +1562,7 @@ function portfolioPerformanceCard() {
   const engineNote = !appVersion || engineVersion === appVersion ? ''
     : ` · ⚠ 計算引擎停在 ${escapeHtml(engineVersion ?? '舊版')}，畫面是 ${escapeHtml(appVersion)}`;
   const selection = `<rect class="portfolioPerformanceHit" x="82" y="8" width="572" height="192"/><g class="portfolioPerformanceSelection" data-portfolio-performance-selection hidden><line data-portfolio-performance-guide y1="12" y2="192"/><circle class="mine" data-portfolio-performance-mine r="7"/><circle class="benchmark" data-portfolio-performance-benchmark r="7"/><g class="portfolioPerformanceTooltip" data-portfolio-performance-tooltip><rect x="-140" y="0" width="280" height="76" rx="13"/><text class="date" data-portfolio-performance-date x="0" y="19" text-anchor="middle"></text><text class="values" data-portfolio-performance-values x="0" y="43" text-anchor="middle"></text><text class="excess" data-portfolio-performance-excess x="0" y="64" text-anchor="middle"></text></g></g>`;
-  return `<section class="portfolioPerformance"><div class="portfolioPerformanceHead"><div><span>TWR 績效趨勢</span><h2>我的投資組合 vs 大盤</h2></div><b>起始＝100</b></div>${periodControls}${benchmarkControl}<div class="portfolioPerformanceStats"><div><span>我的 TWR</span><b class="${portfolioTone(portfolioReturn)}">${signed(portfolioReturn)}</b></div><div><span>大盤 TWR</span><b class="${portfolioTone(benchmarkReturn)}">${benchmarkReturn === null ? '—' : signed(benchmarkReturn)}</b></div><div><span>超額報酬</span><b class="${portfolioTone(excess)}">${excess === null ? '—' : `${excess >= 0 ? '+' : ''}${excess.toFixed(2)}pp`}</b></div></div>${annualComparison}${moneyWeightedComparison}<div class="portfolioPerformanceLegend"><span class="mine"><i></i>我的投資組合</span><span class="market"><i></i>${escapeHtml(benchmarkLabel)}｜含息總報酬</span><small><span class="range">${period}</span> · 已排除入金與提款${coverageNote}${engineNote}</small></div><svg class="portfolioPerformanceChart" data-trend-chart data-trend-kind="portfolio" viewBox="0 0 680 238" role="img" aria-label="投資組合與${escapeHtml(benchmarkLabel)}累積TWR趨勢，點選或左右滑動可查看每日數值，起始為100"><g class="portfolioPerformanceAxis">${ticks}${dates}</g><path class="benchmark" d="${path('benchmark')}"/><path class="mine" d="${path('portfolio')}"/>${selection}</svg><p>採每日收盤計算TWR；持股股息依 Kevin 私帳計入，Benchmark使用股息再投入的含息總報酬。全部頁比較單一美股基準時包含匯率。</p></section>`;
+  return `<section class="portfolioPerformance"><div class="portfolioPerformanceHead"><div><span>TWR 績效趨勢</span><h2>我的投資組合 vs 大盤</h2></div><b>起始＝100</b></div>${periodControls}${benchmarkControl}<div class="portfolioPerformanceStats"><div><span>我的 TWR</span><b class="${portfolioTone(portfolioReturn)}">${signed(portfolioReturn)}</b></div><div><span>大盤 TWR</span><b class="${portfolioTone(benchmarkReturn)}">${benchmarkReturn === null ? '—' : signed(benchmarkReturn)}</b></div><div><span>超額報酬</span><b class="${portfolioTone(excess)}">${excess === null ? '—' : `${excess >= 0 ? '+' : ''}${excess.toFixed(2)}pp`}</b></div></div>${annualComparison}${moneyWeightedComparison}<div class="portfolioPerformanceLegend"><span class="mine"><i></i>我的投資組合</span><span class="market"><i></i>${escapeHtml(benchmarkLabel)}｜含息總報酬</span><small><span class="range">${period}</span> · 已排除入金與提款${coverageNote}${engineNote}</small></div><svg class="portfolioPerformanceChart" data-trend-chart data-trend-kind="portfolio" viewBox="0 0 680 238" role="img" aria-label="投資組合與${escapeHtml(benchmarkLabel)}累積TWR趨勢，點選或左右滑動可查看每日數值，起始為100"><g class="portfolioPerformanceAxis">${ticks}${dates}</g><path class="benchmark" d="${path('benchmark')}"/><path class="mine" d="${path('portfolio')}"/>${selection}</svg><p>採每日收盤計算TWR；持股股息依私帳計入，Benchmark使用股息再投入的含息總報酬。全部頁比較單一美股基準時包含匯率。</p></section>`;
 }
 
 const shareFormat = value => new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 6 }).format(value);
@@ -1710,7 +1710,7 @@ function analysisPage() {
   if (analysisScreen === 'usd') return usdPage();
   if (analysisScreen === 'gold') return goldPage();
   if (analysisScreen === 'loans') return loanPage();
-  // 點進來才去載 Kevin 私帳，載好會再 render 一次。
+  // 點進來才去載私帳，載好會再 render 一次。
   if (!ledgerLoaded) {
     return shell('<div class="portfolioView"><div class="portfolioEmpty">載入交易紀錄…</div></div>',
       `${ownerName(analysisOwner)}股票分析`);
@@ -1773,7 +1773,7 @@ function goldPage() {
   // 對得起來就不用講話 —— 重量跟「納入年化投入成本」那一格的克數是同一個數字，再寫一次是重複。
   // 對不起來才要出聲，不然少了買進成本會靜靜地不見。
   const reconciliation = model.reconciled ? ''
-    : `<div class="goldReconcile warn"><b>尚有 ${gramFormat(model.untrackedGrams)} g 缺少買進成本</b><span>資產頁 ${gramFormat(model.holdingGrams)} g；Kevin 私帳已記錄 ${gramFormat(model.trackedGrams + model.excludedGrams)} g。下方報酬不把差額當成零成本${givenNote}。</span></div>`;
+    : `<div class="goldReconcile warn"><b>尚有 ${gramFormat(model.untrackedGrams)} g 缺少買進成本</b><span>資產頁 ${gramFormat(model.holdingGrams)} g；私帳已記錄 ${gramFormat(model.trackedGrams + model.excludedGrams)} g。下方報酬不把差額當成零成本${givenNote}。</span></div>`;
   shell(`<div class="portfolioView"><div class="portfolioSummary"><div class="portfolioMetric"><span>投入成本</span><b>NT$ ${formatNumber(model.trackedCostTwd)}</b><small>納入年化 · ${gramFormat(model.trackedGrams)} g</small></div><div class="portfolioMetric"><span>目前價值</span><b>NT$ ${formatNumber(model.trackedValueTwd)}</b><small>目前金價＋工錢 NT$ ${formatNumber(model.retainedWorkmanshipTwd)}</small></div><div class="portfolioMetric"><span>累計損益</span><b class="${resultTone}">NT$ ${formatNumber(model.trackedProfitTwd)}</b><small>${formatPercent(model.trackedReturnRate)} · 納入年化</small></div><div class="portfolioMetric"><span>年化報酬率</span><b class="${resultTone}">${formatPercent(model.xirr)}</b><small>排除標記不計入的紀錄</small></div></div>${reconciliation}<div class="sectionHead"><span>買進紀錄${model.firstTradeDate ? ` · 自 ${escapeHtml(model.firstTradeDate)}` : ''}</span><b>${model.transactions} 筆</b></div><div class="portfolioTxList">${rows.length ? rows.map(goldTransactionRow).join('') : '<div class="portfolioEmpty">還沒有黃金成本紀錄。</div>'}</div></div>`, `${ownerName(analysisOwner)}黃金分析`);
 }
 
@@ -2070,7 +2070,7 @@ function personPage(ownerScope) {
         return;
       }
       // 台股／美股以前會跳到「股票投資」的明細頁，現在交易就記在編輯表單裡，
-      // 所以一律開表單；完整的交易歷史還是從上面的 Kevin 私帳卡片進去看。
+      // 所以一律開表單；完整的交易歷史還是從上面的私帳卡片進去看。
       void editItem(selected, ownerScope, kind);
     }
   };
@@ -2149,7 +2149,7 @@ function openAnalysis(screen, ownerScope) {
   analysisScreen = screen;
   window.history.pushState({ ks: 'analysis' }, '');
   analysisPushed = true;
-  // 先切換畫面並回頂部，網路與計算放到下一步；點擊當下不再被 Kevin 私帳載入擋住。
+  // 先切換畫面並回頂部，網路與計算放到下一步；點擊當下不再被私帳載入擋住。
   render();
   window.scrollTo(0, 0);
   if (needsStockLedger) {
@@ -2359,11 +2359,11 @@ function assetAttributeForItem(item) {
 }
 
 async function editItem(item, defaultOwner, defaultKind) {
-  // 這一列是 Kevin 私帳連動的股票的話，表單要列出它的交易紀錄，得先把 Kevin 私帳載進來。
+  // 這一列是私帳連動的股票的話，表單要列出它的交易紀錄，得先把私帳載進來。
   if (item?.portfolio_stock_key) await ensureLedger();
   // 台股／美股的股數與市值是從交易推算出來的（klfan_transactions 一動，
   // sync_klfan_financial_item 觸發器就會把結果寫回 financial_items），所以這種
-  // 項目在這張表單裡直接編 Kevin 私帳、記買賣，而不是手打股數。
+  // 項目在這張表單裡直接編私帳、記買賣，而不是手打股數。
   const ledgerStock = item?.portfolio_stock_key
     ? allPortfolioModel()?.positions.find(row => row.key === item.portfolio_stock_key) ?? null
     : null;
@@ -2438,7 +2438,7 @@ async function editItem(item, defaultOwner, defaultKind) {
       ? `NT$ ${new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 }).format(Math.round(amount * rate))}`
       : '等待有效美元金額與匯率';
   };
-  // Kevin 私帳只認帶交易所前綴的代號（TPE:2330 / NASDAQ:QQQ），sync_klfan_financial_item
+  // 私帳只認帶交易所前綴的代號（TPE:2330 / NASDAQ:QQQ），sync_klfan_financial_item
   // 也是靠這個前綴把裸代號切出來寫進 financial_items.symbol。使用者只打 2330 的話
   // 這裡補上去，並且把補完的結果顯示出來讓他確認。
   const QUOTE_PREFIXES = /^[A-Za-z0-9]+:/;
@@ -2533,7 +2533,7 @@ async function editItem(item, defaultOwner, defaultKind) {
     const manual = kind === 'asset' && mode.startsWith('manual-');
     const stock = kind === 'asset' && mode.startsWith('stock-');
     const gold = kind === 'asset' && mode === 'gold';
-    // 新增的台股／美股一律走 Kevin 私帳；既有項目只有真的連著 Kevin 私帳的才走（沒連的還是手打股數）。
+    // 新增的台股／美股一律走私帳；既有項目只有真的連著私帳的才走（沒連的還是手打股數）。
     const ledger = stock && (!item || Boolean(item.portfolio_stock_key));
     nameBox.classList.toggle('hide', stock);
     nameInput.required = !stock;
@@ -2603,7 +2603,7 @@ async function editItem(item, defaultOwner, defaultKind) {
   };
 
   const saveLedgerStock = async ({ ownerScope }) => {
-    // Kevin 私帳是延遲載入的。沒載好就往下走，下面比對不到既有標的，同一檔會被開成第二筆。
+    // 私帳是延遲載入的。沒載好就往下走，下面比對不到既有標的，同一檔會被開成第二筆。
     await ensureLedger();
     const marketLabel = mode === 'stock-us' ? '美股' : '台股';
     const currency = mode === 'stock-us' ? 'USD' : 'TWD';
@@ -2679,7 +2679,7 @@ async function editItem(item, defaultOwner, defaultKind) {
       const category = selectedCategory();
       if (!categories[kind].includes(category)) throw new Error('資產屬性／分類設定不正確。');
 
-      // Kevin 私帳項目的股數與市值是觸發器算出來的，financial_items 那一列完全是衍生的，
+      // 私帳項目的股數與市值是觸發器算出來的，financial_items 那一列完全是衍生的，
       // 所以這條路徑只寫 klfan_stocks / klfan_transactions，不自己組 payload。
       if (stockMode && (!item || item.portfolio_stock_key)) {
         await saveLedgerStock({ ownerScope: owner });
@@ -2788,8 +2788,8 @@ async function editItem(item, defaultOwner, defaultKind) {
 
   const deleteButton = backdrop.querySelector('#del');
   if (deleteButton) deleteButton.onclick = async () => {
-    // Kevin 私帳項目刪掉 financial_items 那一列是沒有用的：klfan_stocks 還在，下一筆交易或
-    // 報價更新會讓觸發器把它重建回來。要刪就得從 Kevin 私帳刪，交易會跟著 cascade。
+    // 私帳項目刪掉 financial_items 那一列是沒有用的：klfan_stocks 還在，下一筆交易或
+    // 報價更新會讓觸發器把它重建回來。要刪就得從私帳刪，交易會跟著 cascade。
     const txCount = ledgerStock?.transactions.length ?? 0;
     const warning = ledgerStock
       ? `確定刪除「${item.name}」？連同 ${txCount} 筆交易紀錄一起刪除，無法復原。`
