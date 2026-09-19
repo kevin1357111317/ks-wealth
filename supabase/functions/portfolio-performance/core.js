@@ -35,7 +35,7 @@ export function buildPerformanceSeries({ snapshots, flows, twBenchmark, usBenchm
     : market === 'us' ? n(row.usUsd)
       : n(row.twTwd) + n(row.usTwd);
   // 每日 TWR 的分子要跟市值同一把尺：快照自己帶的 flow 已用當日收盤價計價，優先採用；
-  // 只有手工組出來、沒有 flow 的快照才退回台帳現金金額。
+  // 只有手工組出來、沒有 flow 的快照才退回 Kevin 私帳現金金額。
   const flowOf = row => {
     const source = row.flow ?? flows?.[row.date] ?? {};
     return market === 'tw' ? n(source.twTwd)
@@ -116,7 +116,7 @@ export function yahooPriceRows(result, field = 'close') {
 }
 
 // 沒有企業行動資料時只能從一組常見倍率裡猜。除了拆股，也要涵蓋長榮等現金減資造成的
-// 反向股數調整：Yahoo close 會回溯調整企業行動，台帳仍是成交當時股數，倍率可能小於 1。
+// 反向股數調整：Yahoo close 會回溯調整企業行動，Kevin 私帳仍是成交當時股數，倍率可能小於 1。
 const GUESSED_SCALES = [0.1, 0.2, 0.25, 1 / 3, 0.4, 0.5, 1, 2, 3, 4, 5, 10, 20, 50, 100];
 
 const recognizedScale = (ratio, candidates = GUESSED_SCALES) => {
@@ -146,7 +146,7 @@ const splitsFor = (stock, splits) => {
   return TW_ETF_SPLITS[code] ?? null;
 };
 
-// 台帳記的是成交當時的股數，Yahoo 的 close 卻回溯調整過，所以要知道兩者差幾倍。
+// Kevin 私帳記的是成交當時的股數，Yahoo 的 close 卻回溯調整過，所以要知道兩者差幾倍。
 //
 // 有拆股資料（Yahoo 或上面那張表）就直接用：成交日之後的累計倍率就是答案，沒有就是 1。
 // 以前這裡在「累計倍率剛好是 1」時會退回去猜十幾個候選，等於把已經確定的答案丟掉 ——
@@ -164,7 +164,7 @@ export function transactionShareScale(transaction, stock, prices, splits) {
     if (applied === 1) return 1;
     const close = latestOnOrBefore(prices, transaction.tx_date);
     if (!close) return 1;
-    // 只剩兩種可能：台帳是成交當時股數（該倍率），或已經換算過（1）。用成交單價決定。
+    // 只剩兩種可能：Kevin 私帳是成交當時股數（該倍率），或已經換算過（1）。用成交單價決定。
     return recognizedScale(Math.abs(n(transaction.amount) / n(transaction.shares)) / close, [1, applied]);
   }
   // Yahoo 對美股的拆股回報是可靠的，沒回報就是真的沒拆過 —— 不該讓一筆對不上市價的
@@ -181,7 +181,7 @@ const appliedSplit = (splits, date) => {
   return Number.isFinite(total) && total > 0 ? total : 1;
 };
 
-// 同一檔、同一個拆股期間，台帳的單位只會有一種慣例：要嘛整段都是成交當時股數，要嘛整段
+// 同一檔、同一個拆股期間，Kevin 私帳的單位只會有一種慣例：要嘛整段都是成交當時股數，要嘛整段
 // 都已經換算成拆股後股數。逐筆各自判斷會被一筆壞資料帶走 —— 0050 的 2023-01-30 那筆金額
 // 只記了一半，單價比值算出來剛好是 2，自己跑出一個不存在的倍率，整體股數就少了 120 股。
 // 所以同一段期間只決定一次，少數服從多數。
@@ -212,10 +212,10 @@ const DAY_MS = 86_400_000;
 const dayGap = (from, to) =>
   Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY_MS);
 
-// 台帳的股息記的是「入帳日」，但價格是在「除息日」掉下來的，兩者常差好幾週。TWR 把股息
+// Kevin 私帳的股息記的是「入帳日」，但價格是在「除息日」掉下來的，兩者常差好幾週。TWR 把股息
 // 算在入帳日，等於除息日先吃一次下跌、入帳日再補一次上漲；同一期間內大致抵銷，跨期間邊界
 // 就會少算或多算。改成對齊 Yahoo 的除息日；抓不到（或差超過 120 天，不像同一次配息）就
-// 退回台帳日期。XIRR 用的 transactionFlows 不動，資金加權本來就該用真實入帳時點。
+// 退回 Kevin 私帳日期。XIRR 用的 transactionFlows 不動，資金加權本來就該用真實入帳時點。
 const dividendFlowDate = (transaction, events) => {
   let hit = null;
   for (const event of events ?? []) {
@@ -290,7 +290,7 @@ export function buildHistoricalSnapshots({ stocks, transactions, priceHistory, f
       const stock = stockByKey.get(transaction.stock_key);
       if (!stock) continue;
       if (transaction.kind === 'dividend') {
-        // 股息沒有股數，現金直接離開部位，照台帳金額當提款。
+        // 股息沒有股數，現金直接離開部位，照 Kevin 私帳金額當提款。
         if (stock.currency === 'USD') {
           flow.usUsd -= n(transaction.amount);
           flow.usTwd -= n(transaction.amount) * currentFx;

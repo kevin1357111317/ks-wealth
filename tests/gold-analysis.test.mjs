@@ -36,7 +36,7 @@ test('送出去的黃金不進部位、不進年化，但留在買進紀錄裡',
   assert.equal(model.givenGrams, 5);
   assert.equal(model.givenCostTwd, 24568);
   assert.equal(model.givenTransactions, 2);
-  assert.equal(model.reconciled, true, '資產頁 199.3105 g 要跟還持有的台帳對得起來');
+  assert.equal(model.reconciled, true, '資產頁 199.3105 g 要跟還持有的 Kevin 私帳對得起來');
   assert.equal(model.rows.length, 7, '紀錄留著');
   assert.equal(model.rows.filter(row => !row.stillHeld).length, 2);
   // 成本裡不能混進送出去的那 24,568
@@ -46,7 +46,7 @@ test('送出去的黃金不進部位、不進年化，但留在買進紀錄裡',
 });
 
 test('資產頁重量沒扣掉送出的部分就會抓出來', () => {
-  // 舊資料的樣子：台帳說送掉 5g，資產頁卻還記 204.3105 g
+  // 舊資料的樣子：Kevin 私帳說送掉 5g，資產頁卻還記 204.3105 g
   const model = calculateGold(klfan, [{ market: 'GOLD', quantity: 204.3105, amount_twd: 904345 }], '2026-09-09');
   assert.equal(model.reconciled, false);
   assert.equal(Math.round(model.untrackedGrams * 10000) / 10000, 5);

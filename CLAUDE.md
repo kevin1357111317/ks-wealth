@@ -179,7 +179,7 @@ Vercel 直接部署靜態檔。
 
 ## 資料
 
-貸款、股票台帳、美金這幾塊的數字都跟 KLFAN 試算表或銀行 App 核對過，`README.md` 裡有
+貸款、股票 Kevin 私帳、美金這幾塊的數字都跟 KLFAN 試算表或銀行 App 核對過，`README.md` 裡有
 對照結果。動到計算邏輯就重新對一次，別只看測試綠。
 
 ## Supabase Production 防呆
