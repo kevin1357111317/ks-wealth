@@ -6,6 +6,7 @@ import {
   INSURANCE_NOTE_PREFIX,
   calculateInsuranceSummary,
   decodeInsuranceNote,
+  groupInsurancePolicies,
   insurancePoliciesFromItems,
 } from '../insurance-core.js';
 
@@ -18,7 +19,7 @@ test('保險分析入口、畫面與獨立樣式已接進正式 App', () => {
   assert.match(app, /data-open-insurance>保險分析/);
   assert.match(app, /analysisScreen === 'insurance'/);
   assert.match(app, /calculateInsuranceSummary\(items, analysisOwner\)/);
-  assert.match(index, /insurance\.css\?v=V3\.36\.0/);
+  assert.match(index, /insurance\.css\?v=V3\.36\.1/);
 });
 
 test('只解析有版本標記的保單 notes，壞資料不拖垮資產頁', () => {
@@ -37,6 +38,19 @@ test('同一保險資產列可以拆成多張有效主約', () => {
   }];
   const policies = insurancePoliciesFromItems(rows, 'husband');
   assert.deepEqual(policies.map(policy => policy.name), ['保障甲', '保障乙']);
+});
+
+test('同一保險公司的保單整合顯示但仍保留逐張計數', () => {
+  const policies = [
+    { insurer: '南山人壽', status: 'active_paying', nextDue: '2027-05-06' },
+    { insurer: '新光人壽', status: 'active_paying', nextDue: '2027-05-12' },
+    { insurer: '南山人壽', status: 'active_paid_up', nextDue: null },
+  ];
+  const groups = groupInsurancePolicies(policies);
+  assert.deepEqual(groups.map(group => group.insurer), ['南山人壽', '新光人壽']);
+  assert.equal(groups[0].activePolicies, 2);
+  assert.equal(groups[0].payingPolicies, 1);
+  assert.equal(groups[0].paidUpPolicies, 1);
 });
 
 test('淨資產只加 financial_items 現金價值，不把保額加進去', () => {

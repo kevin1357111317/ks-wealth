@@ -56,6 +56,26 @@ export function insurancePoliciesFromItems(items, ownerScope) {
       || a.insurer.localeCompare(b.insurer, 'zh-Hant'));
 }
 
+export function groupInsurancePolicies(policies) {
+  const groups = new Map();
+  for (const policy of policies ?? []) {
+    const insurer = policy.insurer || '保險公司待補';
+    if (!groups.has(insurer)) groups.set(insurer, { insurer, policies: [] });
+    groups.get(insurer).policies.push(policy);
+  }
+
+  return [...groups.values()]
+    .map(group => ({
+      ...group,
+      activePolicies: group.policies.length,
+      payingPolicies: group.policies.filter(policy => policy.status === 'active_paying').length,
+      paidUpPolicies: group.policies.filter(policy => policy.status === 'active_paid_up').length,
+      nextDue: group.policies.map(policy => policy.nextDue).filter(Boolean).sort()[0] ?? null,
+    }))
+    .sort((a, b) => (a.nextDue ?? '9999').localeCompare(b.nextDue ?? '9999')
+      || a.insurer.localeCompare(b.insurer, 'zh-Hant'));
+}
+
 export function calculateInsuranceSummary(items, ownerScope) {
   const insuranceItems = (items ?? []).filter(item =>
     item?.kind === 'asset' && item?.category === '保險' && item?.owner_scope === ownerScope);
@@ -68,6 +88,7 @@ export function calculateInsuranceSummary(items, ownerScope) {
 
   return {
     policies,
+    insurers: groupInsurancePolicies(policies),
     activePolicies: policies.length,
     payingPolicies: paying.length,
     paidUpPolicies: policies.length - paying.length,

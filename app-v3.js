@@ -10,12 +10,12 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.36.0';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.36.0';
-import { calculateUsd } from './usd-core.js?v=V3.36.0';
-import { calculateGold } from './gold-core.js?v=V3.36.0';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.36.0';
-import { buildPersonalTrendRows } from './trend-core.js?v=V3.36.0';
+} from './financial-core.js?v=V3.36.1';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.36.1';
+import { calculateUsd } from './usd-core.js?v=V3.36.1';
+import { calculateGold } from './gold-core.js?v=V3.36.1';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.36.1';
+import { buildPersonalTrendRows } from './trend-core.js?v=V3.36.1';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -24,8 +24,8 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.36.0';
-import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.36.0';
+} from './health-core.js?v=V3.36.1';
+import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.36.1';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -1730,16 +1730,22 @@ function insurancePage() {
   const missingNotice = model.missingFields
     ? `<div class="insuranceNotice"><b>還有 ${model.missingFields} 項資料待補</b><span>缺少的保額、保費或附約額度不會用 0 冒充；補齊後保障盤點會自動更新。</span></div>`
     : '';
-  const policyCards = model.policies.map(policy => {
+  const policyCard = policy => {
     const premium = policy.status === 'active_paid_up'
       ? '已繳清／無須繳費'
       : policy.annualPremium === null
         ? '待補'
         : insuranceMoney(policy.annualPremium + (policy.riderAnnualPremium ?? 0));
     const nextDue = policy.status === 'active_paid_up' ? '—' : (policy.nextDue ?? '待補');
-    return `<article class="insurancePolicy"><div class="insurancePolicyHead"><div><span>${escapeHtml(policy.insurer)} · ${escapeHtml(policy.type)}</span><b>${escapeHtml(policy.name)}</b><small>${policy.policyNo ? `保單 ${escapeHtml(policy.policyNo)}` : '保單號待補'}</small></div><span class="insuranceStatus ${policy.status === 'active_paying' ? 'paying' : ''}">${policy.status === 'active_paying' ? '持續繳費' : '已繳清'}</span></div><div class="insuranceFacts"><div><span>保額</span><b>${insuranceMoney(policy.faceAmount, policy.currency)}</b></div><div><span>目前年繳</span><b>${premium}</b></div><div><span>現金價值</span><b>${insuranceMoney(policy.cashValue, policy.cashValueCurrency)}</b></div><div><span>下次繳費</span><b>${escapeHtml(nextDue)}</b></div></div>${policy.coverageSummary ? `<p class="insuranceCoverageCopy">${escapeHtml(policy.coverageSummary)}</p>` : ''}${policy.missing.length ? `<div class="insuranceMissing">待補：${escapeHtml(policy.missing.join('、'))}</div>` : ''}</article>`;
+    return `<article class="insurancePolicy"><div class="insurancePolicyHead"><div><span>${escapeHtml(policy.type)}</span><b>${escapeHtml(policy.name)}</b><small>${policy.policyNo ? `保單 ${escapeHtml(policy.policyNo)}` : '保單號待補'}</small></div><span class="insuranceStatus ${policy.status === 'active_paying' ? 'paying' : ''}">${policy.status === 'active_paying' ? '持續繳費' : '已繳清'}</span></div><div class="insuranceFacts"><div><span>保額</span><b>${insuranceMoney(policy.faceAmount, policy.currency)}</b></div><div><span>目前年繳</span><b>${premium}</b></div><div><span>現金價值</span><b>${insuranceMoney(policy.cashValue, policy.cashValueCurrency)}</b></div><div><span>下次繳費</span><b>${escapeHtml(nextDue)}</b></div></div>${policy.coverageSummary ? `<p class="insuranceCoverageCopy">${escapeHtml(policy.coverageSummary)}</p>` : ''}${policy.missing.length ? `<div class="insuranceMissing">待補：${escapeHtml(policy.missing.join('、'))}</div>` : ''}</article>`;
+  };
+  const insurerCards = model.insurers.map(group => {
+    const status = group.payingPolicies
+      ? `${group.payingPolicies} 張持續繳費${group.paidUpPolicies ? ` · ${group.paidUpPolicies} 張已繳清` : ''}`
+      : `${group.paidUpPolicies} 張已繳清`;
+    return `<section class="insuranceProvider"><div class="insuranceProviderHead"><div><span>保險公司</span><b>${escapeHtml(group.insurer)}</b></div><div><strong>${group.activePolicies} 張</strong><small>${status}</small></div></div><div class="insuranceProviderPolicies">${group.policies.map(policyCard).join('')}</div></section>`;
   }).join('');
-  shell(`<div class="insuranceView"><div class="insuranceSummary"><div class="insuranceMetric"><span>有效主約</span><b>${model.activePolicies} 張</b><small>${model.payingPolicies} 張持續繳費 · ${model.paidUpPolicies} 張已繳清</small></div><div class="insuranceMetric"><span>已知年繳保費</span><b>${insuranceMoney(model.knownAnnualPremium)}</b><small>${premiumNote}</small></div><div class="insuranceMetric"><span>計入淨資產</span><b>${insuranceMoney(model.cashValueTwd)}</b><small>只算解約金／現金價值</small></div><div class="insuranceMetric"><span>保障資料</span><b>${model.missingFields ? `${model.missingFields} 項待補` : '已完整'}</b><small>保額不計入資產</small></div></div>${missingNotice}<div class="sectionHead"><span>保障盤點</span><b>不同事故不重複相加</b></div><div class="insuranceCoverage">${coverageLabels.map(([key, label]) => `<div class="${model.coverage.has(key) ? 'covered' : ''}"><span>${label}</span><b>${model.coverage.has(key) ? '已有' : '未確認'}</b></div>`).join('')}</div><div class="sectionHead"><span>有效保單</span><b>${model.activePolicies} 張</b></div><div class="insurancePolicyList">${policyCards || '<div class="portfolioEmpty">尚未匯入保單明細。</div>'}</div></div>`, `${ownerName(analysisOwner)}保險分析`);
+  shell(`<div class="insuranceView"><div class="insuranceSummary"><div class="insuranceMetric"><span>有效主約</span><b>${model.activePolicies} 張</b><small>${model.payingPolicies} 張持續繳費 · ${model.paidUpPolicies} 張已繳清</small></div><div class="insuranceMetric"><span>已知年繳保費</span><b>${insuranceMoney(model.knownAnnualPremium)}</b><small>${premiumNote}</small></div><div class="insuranceMetric"><span>計入淨資產</span><b>${insuranceMoney(model.cashValueTwd)}</b><small>只算解約金／現金價值</small></div><div class="insuranceMetric"><span>保障資料</span><b>${model.missingFields ? `${model.missingFields} 項待補` : '已完整'}</b><small>保額不計入資產</small></div></div>${missingNotice}<div class="sectionHead"><span>保障盤點</span><b>不同事故不重複相加</b></div><div class="insuranceCoverage">${coverageLabels.map(([key, label]) => `<div class="${model.coverage.has(key) ? 'covered' : ''}"><span>${label}</span><b>${model.coverage.has(key) ? '已有' : '未確認'}</b></div>`).join('')}</div><div class="sectionHead"><span>有效保單</span><b>${model.insurers.length} 家 · ${model.activePolicies} 張</b></div><div class="insurancePolicyList">${insurerCards || '<div class="portfolioEmpty">尚未匯入保單明細。</div>'}</div></div>`, `${ownerName(analysisOwner)}保險分析`);
 }
 
 const gramFormat = value => masked
