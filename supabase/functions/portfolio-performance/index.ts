@@ -2,6 +2,12 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.95.0";
 import { buildHistoricalSnapshots, buildPerformanceSeries, downsampleSeries, summarizePerformance, transactionFlows, yahooEventRows, yahooPriceRows } from "./core.js";
 
+// Edge Function 不在 Vercel 的部署範圍：推 main 只會更新前端，這支要另外 deploy。
+// 以前只能靠人工撈線上原始碼才知道有沒有漏，2026-09-18 就出現過「畫面版號是新的、
+// 數字卻是舊的」。把版號跟著回應送出去，前端一比就知道。
+// 這個常數必須跟 app-version.js 的 APP_VERSION 一致，tests/app-version.test.mjs 會擋。
+const FN_VERSION = "V3.37.0";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -199,6 +205,7 @@ Deno.serve(async (req: Request) => {
   }
   const ytd = periods.ytd as { all: unknown[]; tw: unknown[]; us: unknown[] };
   return json({
+    fnVersion: FN_VERSION,
     ownerScope, earliest, periods, all: ytd.all, tw: ytd.tw, us: ytd.us,
     benchmarkLabels: { mixed: "0050＋VOO 動態混合", "0050": "0050", VOO: "VOO", QQQ: "QQQ", SOXX: "SOXX" },
     benchmarkOptions: { all: ["mixed", "VOO", "QQQ", "SOXX"], tw: ["0050"], us: ["VOO", "QQQ", "SOXX"] },

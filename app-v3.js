@@ -10,12 +10,12 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.36.3';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.36.3';
-import { calculateUsd } from './usd-core.js?v=V3.36.3';
-import { calculateGold } from './gold-core.js?v=V3.36.3';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.36.3';
-import { buildPersonalTrendRows } from './trend-core.js?v=V3.36.3';
+} from './financial-core.js?v=V3.37.0';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.37.0';
+import { calculateUsd } from './usd-core.js?v=V3.37.0';
+import { calculateGold } from './gold-core.js?v=V3.37.0';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.37.0';
+import { buildPersonalTrendRows } from './trend-core.js?v=V3.37.0';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -24,8 +24,8 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.36.3';
-import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.36.3';
+} from './health-core.js?v=V3.37.0';
+import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.37.0';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -1554,8 +1554,15 @@ function portfolioPerformanceCard() {
   const moneyWeightedComparison = `<div class="portfolioPerformanceSubhead"><b>實際資金績效</b></div><div class="portfolioPerformanceMetrics"><div><span>我的 XIRR</span><b class="${metricTone(metrics?.portfolioXirr)}">${signedRate(metrics?.portfolioXirr)}</b></div><div><span>Benchmark XIRR</span><b class="${metricTone(metrics?.benchmarkXirr)}">${signedRate(metrics?.benchmarkXirr)}</b></div><div><span>XIRR 差距</span><b class="${metricTone(metrics?.xirrGap)}">${signedPoints(metrics?.xirrGap)}</b></div></div><small class="portfolioPerformanceMetricNote">我的 XIRR 考慮實際投入金額與時間；Benchmark XIRR 以相同資金時點改投比較基準。</small>`;
   const period = `${chartFullDate(rows[0].date)}－${chartFullDate(last.date)}`;
   const coverageNote = data.coverage?.missing ? ` · ${formatNumber(data.coverage.missing)} 檔歷史行情缺漏` : '';
+  // Edge Function 要自己 deploy，前端 push main 就上線，兩邊會不同步。漏掉的時候畫面看起來
+  // 正常、數字卻是舊演算法算的。版號一致就不顯示；沒帶 fnVersion 代表線上還是加這個欄位之前
+  // 的舊版，一樣要提醒。
+  const engineVersion = data.fnVersion ?? null;
+  const appVersion = window.KS_APP_VERSION ?? document.documentElement.dataset.appVersion ?? null;
+  const engineNote = !appVersion || engineVersion === appVersion ? ''
+    : ` · ⚠ 計算引擎停在 ${escapeHtml(engineVersion ?? '舊版')}，畫面是 ${escapeHtml(appVersion)}`;
   const selection = `<rect class="portfolioPerformanceHit" x="82" y="8" width="572" height="192"/><g class="portfolioPerformanceSelection" data-portfolio-performance-selection hidden><line data-portfolio-performance-guide y1="12" y2="192"/><circle class="mine" data-portfolio-performance-mine r="7"/><circle class="benchmark" data-portfolio-performance-benchmark r="7"/><g class="portfolioPerformanceTooltip" data-portfolio-performance-tooltip><rect x="-140" y="0" width="280" height="76" rx="13"/><text class="date" data-portfolio-performance-date x="0" y="19" text-anchor="middle"></text><text class="values" data-portfolio-performance-values x="0" y="43" text-anchor="middle"></text><text class="excess" data-portfolio-performance-excess x="0" y="64" text-anchor="middle"></text></g></g>`;
-  return `<section class="portfolioPerformance"><div class="portfolioPerformanceHead"><div><span>TWR 績效趨勢</span><h2>我的投資組合 vs 大盤</h2></div><b>起始＝100</b></div>${periodControls}${benchmarkControl}<div class="portfolioPerformanceStats"><div><span>我的 TWR</span><b class="${portfolioTone(portfolioReturn)}">${signed(portfolioReturn)}</b></div><div><span>大盤 TWR</span><b class="${portfolioTone(benchmarkReturn)}">${benchmarkReturn === null ? '—' : signed(benchmarkReturn)}</b></div><div><span>超額報酬</span><b class="${portfolioTone(excess)}">${excess === null ? '—' : `${excess >= 0 ? '+' : ''}${excess.toFixed(2)}pp`}</b></div></div>${annualComparison}${moneyWeightedComparison}<div class="portfolioPerformanceLegend"><span class="mine"><i></i>我的投資組合</span><span class="market"><i></i>${escapeHtml(benchmarkLabel)}｜含息總報酬</span><small><span class="range">${period}</span> · 已排除入金與提款${coverageNote}</small></div><svg class="portfolioPerformanceChart" data-trend-chart data-trend-kind="portfolio" viewBox="0 0 680 238" role="img" aria-label="投資組合與${escapeHtml(benchmarkLabel)}累積TWR趨勢，點選或左右滑動可查看每日數值，起始為100"><g class="portfolioPerformanceAxis">${ticks}${dates}</g><path class="benchmark" d="${path('benchmark')}"/><path class="mine" d="${path('portfolio')}"/>${selection}</svg><p>採每日收盤計算TWR；持股股息依台帳計入，Benchmark使用股息再投入的含息總報酬。全部頁比較單一美股基準時包含匯率。</p></section>`;
+  return `<section class="portfolioPerformance"><div class="portfolioPerformanceHead"><div><span>TWR 績效趨勢</span><h2>我的投資組合 vs 大盤</h2></div><b>起始＝100</b></div>${periodControls}${benchmarkControl}<div class="portfolioPerformanceStats"><div><span>我的 TWR</span><b class="${portfolioTone(portfolioReturn)}">${signed(portfolioReturn)}</b></div><div><span>大盤 TWR</span><b class="${portfolioTone(benchmarkReturn)}">${benchmarkReturn === null ? '—' : signed(benchmarkReturn)}</b></div><div><span>超額報酬</span><b class="${portfolioTone(excess)}">${excess === null ? '—' : `${excess >= 0 ? '+' : ''}${excess.toFixed(2)}pp`}</b></div></div>${annualComparison}${moneyWeightedComparison}<div class="portfolioPerformanceLegend"><span class="mine"><i></i>我的投資組合</span><span class="market"><i></i>${escapeHtml(benchmarkLabel)}｜含息總報酬</span><small><span class="range">${period}</span> · 已排除入金與提款${coverageNote}${engineNote}</small></div><svg class="portfolioPerformanceChart" data-trend-chart data-trend-kind="portfolio" viewBox="0 0 680 238" role="img" aria-label="投資組合與${escapeHtml(benchmarkLabel)}累積TWR趨勢，點選或左右滑動可查看每日數值，起始為100"><g class="portfolioPerformanceAxis">${ticks}${dates}</g><path class="benchmark" d="${path('benchmark')}"/><path class="mine" d="${path('portfolio')}"/>${selection}</svg><p>採每日收盤計算TWR；持股股息依台帳計入，Benchmark使用股息再投入的含息總報酬。全部頁比較單一美股基準時包含匯率。</p></section>`;
 }
 
 const shareFormat = value => new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 6 }).format(value);
