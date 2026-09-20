@@ -14,6 +14,7 @@ import {
 import {
   annualizeReturn,
   buildBenchmarkCashflows,
+  buildPortfolioCashflows,
 } from '../supabase/functions/portfolio-performance/return-math.js';
 
 test('累積 TWR 依實際日數年化，未滿一年不顯示', () => {
@@ -75,6 +76,38 @@ test('Benchmark XIRR 套用完全相同的多次資金時點與金額', () => {
   // 半年腰斬時加碼、年底回到原點：Benchmark TWR 為 0%，但資金加權結果約 +70%。
   assert.equal(result.benchmarkAnnualizedTwr, 0);
   assert.ok(result.benchmarkXirr > 0.69 && result.benchmarkXirr < 0.71);
+});
+
+test('Benchmark 行情缺漏時，自己的 XIRR 照算，只有 Benchmark 那欄是空的', () => {
+  // 0050／VOO 的歷史行情有缺口時，benchmark 會整段算不出來。以前 portfolio 的 XIRR 是從
+  // buildBenchmarkCashflows 順便拿的，所以連自己的報酬都跟著變 null；那是 benchmark 的問題，
+  // 不該讓自己賺多少也消失。
+  const series = [
+    { date: '2025-01-01', portfolio: 100, benchmark: null, benchmarkRaw: null },
+    { date: '2026-01-01', portfolio: 120, benchmark: null, benchmarkRaw: null },
+  ];
+  const snapshots = [
+    { date: '2025-01-01', twTwd: 100, usTwd: 0, usUsd: 0 },
+    { date: '2026-01-01', twTwd: 240, usTwd: 0, usUsd: 0 },
+  ];
+  const flows = { '2025-07-02': { twTwd: 100, usTwd: 0, usUsd: 0 } };
+
+  assert.equal(buildBenchmarkCashflows({ series, snapshots, flows, market: 'tw' }), null);
+
+  const own = buildPortfolioCashflows({ series, snapshots, flows, market: 'tw' });
+  assert.deepEqual(own.cashflows.map(row => [row.date, row.amount]), [
+    ['2025-01-01', -100], ['2025-07-02', -100], ['2026-01-01', 240],
+  ]);
+
+  const result = summarizePerformance({ series, snapshots, flows, market: 'tw' });
+  assert.ok(Number.isFinite(result.portfolioXirr), '自己的 XIRR 不該因為 benchmark 缺漏而消失');
+  // 期初 100、半年後加碼 100、年底 240：資金加權約 +27.2%。
+  assert.ok(Math.abs(result.portfolioXirr - 0.271860) < 1e-5, `XIRR 是 ${result.portfolioXirr}`);
+  assert.equal(result.benchmarkXirr, null);
+  assert.equal(result.xirrGap, null);
+  assert.equal(result.externalCashflowCount, 1, '入金筆數也不該被 benchmark 綁住');
+  // TWR 本來就不經過 benchmark，順手確認沒被改壞。
+  assert.ok(Math.abs(result.portfolioCumulativeTwr - 0.2) < 1e-12);
 });
 
 test('台股、美股與全部 scope 都能產生期間 TWR 與 XIRR 指標', () => {
