@@ -367,6 +367,11 @@ Edge Function 不在 Vercel 的部署範圍，推 `main` 只更新前端，`port
 當日含息 Benchmark 指數換算為單位；全部頁的混合 Benchmark 仍沿用前一日實際台美股權重，不退化成
 固定 50/50。上方摘要的 XIRR 仍是完整交易私帳的實際資金年化報酬，TWR、XIRR 與累計損益率不互換。
 
+自己的資金流由 `buildPortfolioCashflows` 單獨組出來，**不經過 Benchmark**。以前兩者共用
+`buildBenchmarkCashflows`，0050 或 VOO 的歷史行情只要有缺口，整個函式回 `null`，連「自己賺多少」
+都跟著變成「—」；那是 Benchmark 的問題，不該讓自己的報酬一起消失。現在 Benchmark 算不出來時
+只有 Benchmark XIRR 與差距是空的，期間 XIRR 與入金筆數照常顯示。
+
 Yahoo 的 `close` 已回溯調整拆股、但不調整現金股息；持股市值繼續使用 `close`，私帳股息當提款
 排除後加回個人報酬。Benchmark 改用 `adjclose`，把現金股息再投入納入含息總報酬，避免個人含息、
 大盤不含息造成超額報酬偏高。歷史交易有兩種

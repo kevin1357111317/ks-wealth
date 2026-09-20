@@ -89,29 +89,43 @@ const latestIndexOnOrBefore = (series, date, field) => {
   return null;
 };
 
-// 用同一組期初資金、投入與提款日期模擬 Benchmark。期間第一天以前的歷史
-// 已濃縮成期初市值，避免把「全部」以外期間誤當成從零開始的新帳戶。
-export function buildBenchmarkCashflows({ series, snapshots, flows, market }) {
+// 自己的資金流：期初市值當一次投入，期間每天的淨投入／提款各算一筆，期末市值當一次贖回。
+// 期間第一天以前的歷史已濃縮成期初市值，避免把「全部」以外期間誤當成從零開始的新帳戶。
+//
+// 這裡刻意不碰 benchmark。以前 portfolio 的 XIRR 是從 buildBenchmarkCashflows 順便拿的，
+// 所以 0050 或 VOO 的歷史行情只要有缺口，整個函式回 null，連「你自己賺多少」都跟著消失 ——
+// 那是 benchmark 的問題，不該讓自己的報酬跟著不見。
+export function buildPortfolioCashflows({ series, snapshots, flows, market }) {
   const rows = series ?? [];
   const first = rows[0];
   const last = rows.at(-1);
-  const firstBenchmark = Number.isFinite(first?.benchmarkRaw) ? first.benchmarkRaw : first?.benchmark;
-  const lastBenchmark = Number.isFinite(last?.benchmarkRaw) ? last.benchmarkRaw : last?.benchmark;
-  if (!first || !last || !Number.isFinite(firstBenchmark) || !Number.isFinite(lastBenchmark)) return null;
+  if (!first || !last) return null;
   const startSnapshot = (snapshots ?? []).find(row => row.date === first.date);
   const endSnapshot = [...(snapshots ?? [])].reverse().find(row => row.date === last.date);
   const startingValue = snapshotValue(startSnapshot, market);
   const endingValue = snapshotValue(endSnapshot, market);
-  if (!(startingValue > 0) || !(endingValue > 0) || !(firstBenchmark > 0)) return null;
+  if (!(startingValue > 0) || !(endingValue > 0)) return null;
 
   const datedFlows = Object.entries(flows ?? {})
     .filter(([date]) => date > first.date && date <= last.date)
     .map(([date, flow]) => ({ date, amount: externalFlow(flow, market) }))
     .filter(flow => Math.abs(flow.amount) > 1e-9)
     .sort((a, b) => a.date.localeCompare(b.date));
-  const portfolioCashflows = [{ date: first.date, amount: -startingValue },
+  const cashflows = [{ date: first.date, amount: -startingValue },
     ...datedFlows.map(flow => ({ date: flow.date, amount: -flow.amount })),
     { date: last.date, amount: endingValue }];
+  return { first, last, startingValue, endingValue, datedFlows, cashflows };
+}
+
+// 用同一組期初資金、投入與提款日期模擬 Benchmark，才能跟自己的 XIRR 直接比。
+export function buildBenchmarkCashflows({ series, snapshots, flows, market, portfolio }) {
+  const rows = series ?? [];
+  const own = portfolio ?? buildPortfolioCashflows({ series, snapshots, flows, market });
+  if (!own) return null;
+  const { first, last, startingValue, datedFlows, cashflows: portfolioCashflows } = own;
+  const firstBenchmark = Number.isFinite(first?.benchmarkRaw) ? first.benchmarkRaw : first?.benchmark;
+  const lastBenchmark = Number.isFinite(last?.benchmarkRaw) ? last.benchmarkRaw : last?.benchmark;
+  if (!Number.isFinite(firstBenchmark) || !Number.isFinite(lastBenchmark) || !(firstBenchmark > 0)) return null;
 
   let benchmarkUnits = startingValue / firstBenchmark;
   for (const flow of datedFlows) {
@@ -140,9 +154,10 @@ export function summarizePerformance({ series, snapshots, flows, market, portfol
     : annualizeReturn(portfolioCumulativeTwr, first.date, last.date);
   const benchmarkAnnualizedTwr = benchmarkCumulativeTwr === null ? null
     : annualizeReturn(benchmarkCumulativeTwr, first.date, last.date);
-  const comparableCashflows = buildBenchmarkCashflows({ series, snapshots, flows, market });
+  const portfolioCashflows = buildPortfolioCashflows({ series, snapshots, flows, market });
+  const comparableCashflows = buildBenchmarkCashflows({ series, snapshots, flows, market, portfolio: portfolioCashflows });
   const portfolioXirr = portfolioXirrOverride !== undefined ? portfolioXirrOverride
-    : comparableCashflows ? xirr(comparableCashflows.portfolioCashflows) : null;
+    : portfolioCashflows ? xirr(portfolioCashflows.cashflows) : null;
   const benchmarkXirr = comparableCashflows ? xirr(comparableCashflows.benchmarkCashflows) : null;
   return {
     startDate: first.date,
@@ -157,6 +172,6 @@ export function summarizePerformance({ series, snapshots, flows, market, portfol
     portfolioXirr,
     benchmarkXirr,
     xirrGap: portfolioXirr === null || benchmarkXirr === null ? null : portfolioXirr - benchmarkXirr,
-    externalCashflowCount: comparableCashflows?.datedFlows.length ?? 0,
+    externalCashflowCount: portfolioCashflows?.datedFlows.length ?? 0,
   };
 }
