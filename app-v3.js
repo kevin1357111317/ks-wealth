@@ -10,12 +10,12 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.37.3';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.37.3';
-import { calculateUsd } from './usd-core.js?v=V3.37.3';
-import { calculateGold } from './gold-core.js?v=V3.37.3';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.37.3';
-import { buildPersonalTrendRows } from './trend-core.js?v=V3.37.3';
+} from './financial-core.js?v=V3.37.4';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.37.4';
+import { calculateUsd } from './usd-core.js?v=V3.37.4';
+import { calculateGold } from './gold-core.js?v=V3.37.4';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.37.4';
+import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.37.4';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -24,8 +24,8 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.37.3';
-import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.37.3';
+} from './health-core.js?v=V3.37.4';
+import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.37.4';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -160,6 +160,10 @@ let portfolioPerformancePeriod = 'ytd';
 const portfolioPerformanceBenchmark = { all: 'mixed', tw: '0050', us: 'VOO' };
 let openGroups = new Set();
 let trendMode = 'value';
+const NET_WORTH_TREND_START = Object.freeze({
+  family: '2026-09-01',
+  wife: '2026-09-01',
+});
 let currentTrendSeries = [];
 let currentPortfolioPerformanceSeries = [];
 let trendDrag = null;
@@ -347,16 +351,17 @@ function familyTrendRows(currentNetWorth) {
   byDate.set(taipeiDate(), currentNetWorth);
   const rows = [...byDate].map(([recorded_on, total_twd]) => ({ recorded_on, total_twd }))
     .sort((a, b) => a.recorded_on.localeCompare(b.recorded_on));
-  return rows;
+  return filterTrendRowsFrom(rows, NET_WORTH_TREND_START.family);
 }
 
 function personalTrendRows(ownerScope, currentNetWorth) {
-  return buildPersonalTrendRows({
+  const rows = buildPersonalTrendRows({
     scopeHistory,
     ownerScope,
     currentNetWorth,
     today: taipeiDate(),
   });
+  return filterTrendRowsFrom(rows, NET_WORTH_TREND_START[ownerScope]);
 }
 
 // Auth / startup -------------------------------------------------------------
