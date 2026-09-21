@@ -10,12 +10,12 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.37.4';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.37.4';
-import { calculateUsd } from './usd-core.js?v=V3.37.4';
-import { calculateGold } from './gold-core.js?v=V3.37.4';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.37.4';
-import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.37.4';
+} from './financial-core.js?v=V3.37.5';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.37.5';
+import { calculateUsd } from './usd-core.js?v=V3.37.5';
+import { calculateGold } from './gold-core.js?v=V3.37.5';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.37.5';
+import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.37.5';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -24,8 +24,8 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.37.4';
-import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.37.4';
+} from './health-core.js?v=V3.37.5';
+import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.37.5';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -161,8 +161,8 @@ const portfolioPerformanceBenchmark = { all: 'mixed', tw: '0050', us: 'VOO' };
 let openGroups = new Set();
 let trendMode = 'value';
 const NET_WORTH_TREND_START = Object.freeze({
-  family: '2026-09-01',
-  wife: '2026-09-01',
+  family: '2026-09-18',
+  wife: '2026-09-18',
 });
 let currentTrendSeries = [];
 let currentPortfolioPerformanceSeries = [];

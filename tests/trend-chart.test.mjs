@@ -32,10 +32,10 @@ const skip = !chromium ? 'playwright 未安裝'
 
 test('趨勢圖可以刮，放開之後不留下任何監聽器', { skip }, async t => {
   // 圖只有一個點的話 index 永遠是 0，刮不動也看不出差別，要有一整段歷史才測得到。
-  // 家庭趨勢現在從 2026-09-01 起顯示，所以假資料也從起始日開始。
+  // 家庭趨勢現在從 2026-09-18 起顯示，所以假資料也從起始日開始。
   const history = Array.from({ length: 153 }, (_, index) => ({
     household_id: 'H1',
-    recorded_on: new Date(Date.UTC(2026, 8, 1) + index * 86_400_000).toISOString().slice(0, 10),
+    recorded_on: new Date(Date.UTC(2026, 8, 18) + index * 86_400_000).toISOString().slice(0, 10),
     net_worth_twd: 70_000_000 + Math.sin(index / 7) * 3_000_000 + index * 20_000,
   }));
   const stub = `${await readFile(new URL('./support/fake-supabase.js', import.meta.url), 'utf8')}
