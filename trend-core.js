@@ -10,6 +10,14 @@ const validScopeRow = row => (
   && row.recorded_on.length > 0
 );
 
+export function filterTrendRowsFrom(rows = [], startDate) {
+  if (!startDate) return [...rows];
+  return rows.filter(row => (
+    typeof row?.recorded_on === 'string'
+    && row.recorded_on >= startDate
+  ));
+}
+
 export function buildPersonalTrendRows({
   scopeHistory = [],
   ownerScope,
