@@ -321,8 +321,31 @@ NVDA 本來就是對的，真正的 8.87 來自一檔私帳完全沒有的 GOOGL
 
 ### 覆蓋率
 
-哪幾段已經用對帳單核對過、哪幾段還沒有，以及還沒結案的個案，**都存在 Supabase**，不寫進這裡 ——
-`AGENTS.md` 規定金融數字與個資不進 repo。接手前先查一次，不要假設全部都驗過。
+哪幾段已經用對帳單核對過、哪幾段還沒有，以及還沒結案的個案，**都存在 Supabase 的
+`klfan_recon_coverage`**，不寫進這裡 —— `AGENTS.md` 規定金融數字與個資不進 repo。
+接手前先查一次，不要假設全部都驗過：
+
+```sql
+select broker, asset_class, kind, period_start, period_end, status,
+       method, matched_rows, ledger_rows, open_items, note
+from klfan_recon_coverage
+order by status, broker, period_start;
+```
+
+一列 = 一個（券商 × 資產類別 × 買賣/股息 × 期間）區段。`status` 只有三種：
+`verified`（逐筆雙向配對全中）／`partial`（改過但無法宣告全驗）／`unverified`。
+**`matched_rows` 是配對得上的筆數**，`status='verified'` 時必須等於 `ledger_rows`。
+
+改完覆蓋率一定要跑這個收尾檢查 —— 每一列私帳都要被涵蓋**剛好一次**，不重不漏：
+
+```sql
+select (select sum(ledger_rows) from klfan_recon_coverage) = 
+       (select count(*) from klfan_transactions where stock_key not like '%-wife');
+```
+
+**`klfan_transactions.note` 不能拿來反推覆蓋率。** note 只記「改過什麼」，驗過而沒問題的
+列不會留 note —— 2026-09-22 就是因為這樣，把「國泰台幣股息還缺幾筆」講錯過一次。
+表建立前的歷史狀態無法回溯，一律以這張表為準。
 
 沒有對帳單涵蓋的期間**維持原狀並標記待驗**。只有 Yahoo 股價區間可以用來抓「不可能的成交價」跟
 漏掉的拆股，但它抓不到漏單，不能當成已核對。

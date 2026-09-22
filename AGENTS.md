@@ -18,7 +18,8 @@
 - 非交易列除了分割沖銷還有「存券轉入／存券轉出」（有股數、無金額），是券商之間搬股票，不影響現金與總持股，照抄會灌爆股數。
 - 掃描檔可能整段掉頁首（掃描時整張上偏），頁數與尺寸都正常看不出來。**逐頁檢查「上一頁末列與下一頁首列的日期是否連續」**；跳段就是掉列，要用其他來源補，不能判成「對帳單沒有」。
 - 對帳單匯出檔若標示「總計 N 筆、當前 1-M 筆」且 N > M，即為截斷；只有比最舊一筆更新的區段可視為完整，更舊的部分不得用來判定「對帳單沒有」。
-- 對帳方法與覆蓋率狀態見 `CLAUDE.md`「私帳對帳」；實際金額只留在 Supabase。
+- 對帳方法見 `CLAUDE.md`「私帳對帳」；覆蓋率狀態查 Supabase 的 `klfan_recon_coverage`（一列 = 一個券商×資產類別×期間區段），實際金額只留在 Supabase。
+- 覆蓋率改完要驗「每一列私帳被涵蓋剛好一次」（`sum(ledger_rows)` = 私帳總筆數）。**不得用 `klfan_transactions.note` 反推哪幾段驗過** —— note 只記改過什麼，驗過沒問題的列不留 note。
 - 每個 PR 在合併前都要依 `VERSIONING.md` 明確判定 `Version impact: none / patch / minor / major`；以整個 PR 的最高影響為準，不能預設沿用上一版再 +1。
 - 版號採 SemVer 判定：breaking change → MAJOR；向後相容新功能 → MINOR；向後相容 bug fix → PATCH；純文件／測試／CI 且不影響正式產品 → none。
 - `incremental patch` 是最小修改的開發方法，不代表 SemVer PATCH；小 diff 也可能是 MAJOR，大 refactor 若完全相容也不必升 MAJOR。
