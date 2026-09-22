@@ -27,4 +27,5 @@
 - 完整測試使用 `node --test --test-concurrency=1 tests/*.test.mjs`；涉及金額的修正要確認移除修正後測試會失敗，並重新核對原始資料。
 - 任何 Supabase 操作前先核對 Production migration history；同一時間只由一位協作者部署 migration。提案放 `supabase/proposals/`，不得混進 `supabase/migrations/`。
 - 改到 `supabase/functions/` 要另外部署 Edge Function（Vercel 不含它）；部署後比對線上原始碼，並確認畫面上該變的數字真的變了，不能只看 App 版號。
+- 等 CI 要用**條件成立才結束的背景 until 迴圈**（curl `actions/runs/<id>/jobs` 直到所有 job `completed`），不要用背景 `sleep` 再戳 —— 背景 sleep 不會擋住自己的回合，會把「只過了十幾秒」誤判成「CI 卡住二十幾分鐘」。細節見 `CLAUDE.md`。
 - 合併前檢查 diff、測試與正式部署；部署後驗證使用者實際操作路徑。

@@ -152,6 +152,34 @@ Vercel 直接部署靜態檔。
 一輪 CI 大約 1～2 分鐘，等它跑完再講，屋主才不用自己去看、也不會先收到一個之後被推翻的結論。
 紅了就先查、修完再回報，不要把紅燈丟回去給他。
 
+#### 等 CI 要用會自己結束的 until 迴圈，不要用背景 sleep
+
+2026-09-21（#173）與 09-22（#176）兩次都誤判成「CI 卡住二十幾分鐘」，其實那兩個 job
+分別只跑了 75 秒與 82 秒。**問題出在等待方式，不是 GitHub。**
+
+`sleep` 丟到背景（`run_in_background`）**不會擋住自己的回合** —— 它立刻回傳，然後就
+接著往下戳下一次查詢。所以以為「等了 3 分鐘再查」，實際只過了十幾秒；連戳五、六次還
+看到 `in_progress`，就誤以為是狀態 API 在回快取。實測容器時鐘與 GitHub 伺服器時鐘
+完全一致，兩邊的狀態端點也都如實回報，沒有快取問題。
+
+正確做法是跑一個**條件成立才結束**的背景指令，這樣只會在真正跑完時收到一次通知：
+
+```bash
+until curl -sS -H "Authorization: Bearer ${GH_TOKEN:-$GITHUB_TOKEN}" \
+        -H "Accept: application/vnd.github+json" \
+        "https://api.github.com/repos/kevin1357111317/ks-wealth/actions/runs/<run_id>/jobs" \
+      | python3 -c "import json,sys; sys.exit(0 if all(j['status']=='completed' for j in json.load(sys.stdin)['jobs']) else 1)"
+do sleep 20; done
+```
+
+這裡用 `curl` 而不是 GitHub MCP，單純因為 **MCP 工具沒辦法在 shell 迴圈裡呼叫**。
+這台機器連得到 `api.github.com`，環境變數本來就有 `GH_TOKEN`／`GITHUB_TOKEN`，一次
+就拿到 job 的 `status`／`conclusion` 與每個 step 的結論。迴圈結束後再看結論即可；
+單次查看用 MCP 或 curl 都行。
+
+（注意 proxy 會攔截 `https://api.github.com/` 根路徑並回一個假的 200 空回應，
+拿它測連通性會被騙。要測就打真正會回資料的 endpoint。）
+
 **CI 綠了就直接 squash merge，不用再問一次**。他要的東西做完、測試過了、CI 也綠了，
 再回頭問「要 merge 嗎」只是多一趟來回。merge 完把結果連同後續動作（部署、驗證）一次講完。
 
