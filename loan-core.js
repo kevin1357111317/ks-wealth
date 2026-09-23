@@ -22,12 +22,14 @@ export function calculateLoanCashflow(rows, today) {
   const payments = entries.filter(row => row.type === 'payment');
   const fees = entries.filter(row => row.type === 'fee');
   const inflows = entries.filter(row => row.type === 'disbursement' || (row.type === 'adjustment' && row.amount > 0));
-  const pastPayments = payments.filter(row => row.actual_date
+  // actual_date 是銀行核對後的實際扣款日；applied_at 是系統已把本期本金套用到
+  // 負債餘額的憑證。到期日當天只要已套用，就應立即列入過往繳款；尚未套用的
+  // 當期款仍留在未來繳款，避免單靠日期冒充已扣款。
+  const isPastPayment = row => row.actual_date
     ? String(row.actual_date) <= date
-    : row.due_date < date);
-  const upcoming = payments.filter(row => row.actual_date
-    ? String(row.actual_date) > date
-    : row.due_date >= date);
+    : Boolean(row.applied_at) || row.due_date < date;
+  const pastPayments = payments.filter(isPastPayment);
+  const upcoming = payments.filter(row => !isPastPayment(row));
   const grossProceeds = inflows.reduce((sum, row) => sum + Math.max(0, row.amount), 0);
   const totalFees = fees.reduce((sum, row) => sum + Math.abs(row.amount), 0);
   const totalPayments = payments.reduce((sum, row) => sum + Math.abs(row.amount), 0);
