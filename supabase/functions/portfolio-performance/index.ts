@@ -6,7 +6,7 @@ import { buildHistoricalSnapshots, buildPerformanceSeries, downsampleSeries, sum
 // 以前只能靠人工撈線上原始碼才知道有沒有漏，2026-09-18 就出現過「畫面版號是新的、
 // 數字卻是舊的」。把版號跟著回應送出去，前端一比就知道。
 // 這個常數必須跟 app-version.js 的 APP_VERSION 一致，tests/app-version.test.mjs 會擋。
-const FN_VERSION = "V3.37.5";
+const FN_VERSION = "V3.37.6";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",

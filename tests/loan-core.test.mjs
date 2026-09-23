@@ -74,3 +74,30 @@ test('LINE Bank 實際流水對上 25 次已繳與 72 次未繳', () => {
   assert.equal(result.pastPayments.at(-1).balance_after_twd, 2663371);
   assert.ok(Math.abs(result.annualCost - 0.022082550246961295) < 1e-10);
 });
+
+
+test('到期日當天以 applied_at 判斷是否已套用', () => {
+  const paid = calculateLoanCashflow([
+    {
+      due_date: '2026-09-23',
+      amount_twd: -65706,
+      entry_type: 'payment',
+      applied_at: '2026-09-22T16:30:37Z',
+    },
+  ], '2026-09-23');
+  assert.equal(paid.pastPayments.length, 1);
+  assert.equal(paid.upcoming.length, 0);
+  assert.equal(paid.next, null);
+
+  const pending = calculateLoanCashflow([
+    {
+      due_date: '2026-09-23',
+      amount_twd: -65706,
+      entry_type: 'payment',
+      applied_at: null,
+    },
+  ], '2026-09-23');
+  assert.equal(pending.pastPayments.length, 0);
+  assert.equal(pending.upcoming.length, 1);
+  assert.equal(pending.next.due_date, '2026-09-23');
+});

@@ -121,3 +121,11 @@ test('health trend tooltip fits its frame to the rendered text', () => {
   assert.match(selector, /const tooltipWidth = fitHealthTrendTooltip\(selection\)/);
   assert.match(selector, /340 - halfWidth - 12/);
 });
+
+
+test('loan detail reads applied payment state and invalidates its schedule cache', () => {
+  assert.match(source, /select\('id,loan_account_id,due_date,actual_date,amount_twd,balance_after_twd,entry_type,note,applied_at'\)/);
+  const invalidator = source.slice(source.indexOf('function scheduleLoanReload'), source.indexOf('function subscribeRealtime'));
+  assert.match(invalidator, /loanScheduleLoaded = false/);
+  assert.match(source, /table: 'loan_accounts'.*\n\s*\}, scheduleLoanReload\)/);
+});
