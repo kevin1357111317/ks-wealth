@@ -10,12 +10,12 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.37.5';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.37.5';
-import { calculateUsd } from './usd-core.js?v=V3.37.5';
-import { calculateGold } from './gold-core.js?v=V3.37.5';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.37.5';
-import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.37.5';
+} from './financial-core.js?v=V3.37.6';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.37.6';
+import { calculateUsd } from './usd-core.js?v=V3.37.6';
+import { calculateGold } from './gold-core.js?v=V3.37.6';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.37.6';
+import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.37.6';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -24,8 +24,8 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.37.5';
-import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.37.5';
+} from './health-core.js?v=V3.37.6';
+import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.37.6';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -699,7 +699,7 @@ async function ensureLoanSchedule() {
   if (loanScheduleFlight) return loanScheduleFlight;
   loanScheduleFlight = (async () => {
     const { data, error } = await fetchAllRows(() => sb.from('loan_schedule')
-      .select('id,loan_account_id,due_date,actual_date,amount_twd,balance_after_twd,entry_type,note').order('due_date').order('id'));
+      .select('id,loan_account_id,due_date,actual_date,amount_twd,balance_after_twd,entry_type,note,applied_at').order('due_date').order('id'));
     if (error) return false;
     loanSchedule = data ?? [];
     loanScheduleLoaded = true;
@@ -893,6 +893,11 @@ function scheduleRealtimeReload() {
   }, 300);
 }
 
+function scheduleLoanReload() {
+  loanScheduleLoaded = false;
+  scheduleRealtimeReload();
+}
+
 function subscribeRealtime() {
   if (!member || channel) return;
   const householdId = member.household_id;
@@ -908,7 +913,7 @@ function subscribeRealtime() {
     }, scheduleRealtimeReload)
     .on('postgres_changes', {
       event: '*', schema: 'public', table: 'loan_accounts', filter: `household_id=eq.${householdId}`,
-    }, scheduleRealtimeReload)
+    }, scheduleLoanReload)
     .subscribe(status => {
       realtimeStatus = status;
       if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
@@ -1802,8 +1807,9 @@ const normalizedLoanType = account => account.loan_type === 'topup'
 
 const loanTypeName = type => type === 'topup' ? '增貸' : type === 'mortgage' ? '房貸' : '信貸';
 
-// 有 actual_date 的列才是銀行 App 已核對的實際繳款；舊資料若沒有實際日，
-// 到期後仍會列在歷史區，但明確標成排程，不冒充實際扣款。
+// actual_date 只代表銀行 App 已核對的實際扣款日；applied_at 則表示系統已把本期
+// 本金套用到負債餘額。兩者任一成立即可列入過往繳款，但沒有 actual_date 時仍明確
+// 標成歷史還款排程，不冒充銀行實際扣款。
 function loanScheduleFor(accountId, today = taipeiDate()) {
   return calculateLoanCashflow(
     loanSchedule.filter(row => row.loan_account_id === accountId),
