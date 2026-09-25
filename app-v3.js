@@ -10,12 +10,12 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.37.6';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.37.6';
-import { calculateUsd } from './usd-core.js?v=V3.37.6';
-import { calculateGold } from './gold-core.js?v=V3.37.6';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.37.6';
-import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.37.6';
+} from './financial-core.js?v=V3.37.7';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.37.7';
+import { calculateUsd } from './usd-core.js?v=V3.37.7';
+import { calculateGold } from './gold-core.js?v=V3.37.7';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.37.7';
+import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.37.7';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -24,8 +24,8 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.37.6';
-import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.37.6';
+} from './health-core.js?v=V3.37.7';
+import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.37.7';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -109,6 +109,8 @@ let quoteUsTimer = null;
 let quoteTimer = null;
 let wakeLock = null;
 let quoteLastUpdatedAt = null;
+let liveQuoteUpdatedAt = { tw: null, us: null };
+let quoteValuePulseUntil = 0;
 let quoteData = {};
 let fxRate = null;
 // 私帳（39 檔標的、1489 筆交易、92 KB）只有股票分析頁與編輯表單的交易紀錄要用。
@@ -206,7 +208,39 @@ const formatClock = value => {
     timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit', hour12: false,
   }).format(date);
 };
+const formatClockWithSeconds = value => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return '';
+  return new Intl.DateTimeFormat('zh-TW', {
+    timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  }).format(date);
+};
 const summary = ownerScope => calculateSummary(items, ownerScope ?? null);
+
+function visibleNetWorth() {
+  if (analysisScreen) return null;
+  if (tab === 'dashboard') return summary().netWorth;
+  if (tab === 'husband' || tab === 'wife') return summary(tab).netWorth;
+  return null;
+}
+
+function recordLiveQuoteRefresh(market, requestedAt) {
+  liveQuoteUpdatedAt = {
+    ...liveQuoteUpdatedAt,
+    [market]: requestedAt || new Date().toISOString(),
+  };
+  updateQuoteStatusUi();
+}
+
+function renderQuoteChange(previousNetWorth, changed) {
+  if (!changed) return;
+  const nextNetWorth = visibleNetWorth();
+  if (previousNetWorth !== null && nextNetWorth !== null && previousNetWorth !== nextNetWorth) {
+    quoteValuePulseUntil = Date.now() + 900;
+  }
+  render();
+}
 
 function chartAxisFormat(value) {
   if (masked) return '••••';
@@ -553,6 +587,7 @@ async function refreshTwQuotes() {
   twFlight = (async () => {
     const { data, error } = await sb.functions.invoke('refresh-tw-quotes', { body: { scope: 'tw' } });
     if (error || !data) return null;
+    const previousNetWorth = visibleNetWorth();
     let changed = false;
     for (const result of data.results ?? []) {
       const price = toFiniteNumber(result.price);
@@ -564,7 +599,8 @@ async function refreshTwQuotes() {
       item.amount_twd = amountTwd;
       changed = true;
     }
-    if (changed) render();
+    recordLiveQuoteRefresh('tw', data.requestedAt);
+    renderQuoteChange(previousNetWorth, changed);
     return data;
   })().catch(() => null).finally(() => { twFlight = null; });
   return twFlight;
@@ -581,6 +617,7 @@ async function refreshUsQuotes() {
     const { data, error } = await sb.functions.invoke('refresh-tw-quotes', { body: { scope: 'us' } });
     if (error || !data) return null;
     const rate = toFiniteNumber(fxRate);
+    const previousNetWorth = visibleNetWorth();
     let changed = false;
     for (const result of data.results ?? []) {
       const price = toFiniteNumber(result.price);
@@ -592,7 +629,8 @@ async function refreshUsQuotes() {
       item.amount_twd = amountTwd;
       changed = true;
     }
-    if (changed) render();
+    recordLiveQuoteRefresh('us', data.requestedAt);
+    renderQuoteChange(previousNetWorth, changed);
     return data;
   })().catch(() => null).finally(() => { usFlight = null; });
   return usFlight;
@@ -670,6 +708,8 @@ async function applySession(nextSession) {
   analysisPushed = false;
   analysisReturnScroll = 0;
   quoteData = {};
+  liveQuoteUpdatedAt = { tw: null, us: null };
+  quoteValuePulseUntil = 0;
   quoteStatus = 'idle';
   quoteFlight = null;
   lastSuccessfulLoadAt = 0;
@@ -985,8 +1025,15 @@ function describeQuoteFailures(results) {
 function quoteStatusCopy() {
   const lastUpdate = formatClock(quoteLastUpdatedAt);
   const suffix = lastUpdate ? ` · 更新於 ${lastUpdate}` : '';
+  const liveUpdates = [
+    ['台股', formatClockWithSeconds(liveQuoteUpdatedAt.tw)],
+    ['美股', formatClockWithSeconds(liveQuoteUpdatedAt.us)],
+  ].filter(([, time]) => time);
   const why = quoteFailureNote ? `（${quoteFailureNote}）` : '';
   if (quoteStatus === 'updating') return '正在更新市場行情…';
+  if (quoteStatus === 'success' && liveUpdates.length) {
+    return `即時行情：${liveUpdates.map(([market, time]) => `${market} ${time}`).join('・')}`;
+  }
   if (quoteStatus === 'success') return `台股、美股、黃金與匯率已更新${suffix}`;
   if (quoteStatus === 'partial') return `部分行情更新失敗${why}，沿用上一筆價格${suffix}`;
   if (quoteStatus === 'error') return `行情更新失敗${why}，沿用上一筆價格${suffix}`;
@@ -1110,7 +1157,7 @@ function dashboard() {
   const distributionTotal = distributionKind === 'asset' ? family.totalAssets : family.totalLiabilities;
   const distributionTitle = distributionKind === 'asset' ? '家庭資產分布' : '家庭負債分布';
 
-  shell(`<section class="portfolioHero"><div class="heroLabel"><span>家庭淨資產</span><span>老公＋老婆</span></div><div class="bigMoney">${formatMoney(family.netWorth)}</div><div class="miniStats"><div><span>家庭總資產</span><b>NT$ ${formatNumber(family.totalAssets)}</b></div><div><span>家庭總負債</span><b>NT$ ${formatNumber(family.totalLiabilities)}</b></div></div></section>${trendChart(familyTrendRows(family.netWorth))}${distributionPanel(distributionRows, distributionTotal, distributionTitle, distributionKind)}${ownerDistribution}`, '家庭');
+  shell(`<section class="portfolioHero"><div class="heroLabel"><span>家庭淨資產</span><span>老公＋老婆</span></div><div class="bigMoney${quoteValuePulseUntil > Date.now() ? ' quoteChanged' : ''}">${formatMoney(family.netWorth)}</div><div class="miniStats"><div><span>家庭總資產</span><b>NT$ ${formatNumber(family.totalAssets)}</b></div><div><span>家庭總負債</span><b>NT$ ${formatNumber(family.totalLiabilities)}</b></div></div></section>${trendChart(familyTrendRows(family.netWorth))}${distributionPanel(distributionRows, distributionTotal, distributionTitle, distributionKind)}${ownerDistribution}`, '家庭');
 }
 
 function distributionPanel(rows, total, title, kind) {
@@ -2046,7 +2093,7 @@ function personPage(ownerScope) {
   const distributionRows = distributionKind === 'asset' ? totals.assets : totals.liabilities;
   const distributionTotal = distributionKind === 'asset' ? totals.totalAssets : totals.totalLiabilities;
   const distributionTitle = `${name}${distributionKind === 'asset' ? '資產' : '負債'}分布`;
-  shell(`<section class="portfolioHero"><div class="heroLabel"><span>${name}淨資產</span><span>${totals.assets.length + totals.liabilities.length} 筆</span></div><div class="bigMoney">${formatMoney(totals.netWorth)}</div><div class="miniStats"><div><span>資產總額</span><b>NT$ ${formatNumber(totals.totalAssets)}</b></div><div><span>負債總額</span><b>NT$ ${formatNumber(totals.totalLiabilities)}</b></div></div></section>${trendChart(personalTrendRows(ownerScope, totals.netWorth))}${distributionPanel(distributionRows, distributionTotal, distributionTitle, distributionKind)}${analysisEntry()}<div class="seg personSeg" id="personSeg"><button data-kind="asset" class="${kind === 'asset' ? 'on' : ''}">資產</button><button data-kind="liability" class="${kind === 'liability' ? 'on' : ''}">負債</button></div><div class="sectionHead"><span>${kind === 'asset' ? '投資與資產' : '貸款與負債'}</span><b>NT$ ${formatNumber(total)}</b></div><div class="categoryList">${list.length ? groupedCards(list, ownerScope, kind) : `<div class="empty"><div><b>目前沒有${kind === 'asset' ? '資產' : '負債'}資料</b><span>按右下角 ＋ 新增財務項目。</span></div></div>`}</div>`, name, true);
+  shell(`<section class="portfolioHero"><div class="heroLabel"><span>${name}淨資產</span><span>${totals.assets.length + totals.liabilities.length} 筆</span></div><div class="bigMoney${quoteValuePulseUntil > Date.now() ? ' quoteChanged' : ''}">${formatMoney(totals.netWorth)}</div><div class="miniStats"><div><span>資產總額</span><b>NT$ ${formatNumber(totals.totalAssets)}</b></div><div><span>負債總額</span><b>NT$ ${formatNumber(totals.totalLiabilities)}</b></div></div></section>${trendChart(personalTrendRows(ownerScope, totals.netWorth))}${distributionPanel(distributionRows, distributionTotal, distributionTitle, distributionKind)}${analysisEntry()}<div class="seg personSeg" id="personSeg"><button data-kind="asset" class="${kind === 'asset' ? 'on' : ''}">資產</button><button data-kind="liability" class="${kind === 'liability' ? 'on' : ''}">負債</button></div><div class="sectionHead"><span>${kind === 'asset' ? '投資與資產' : '貸款與負債'}</span><b>NT$ ${formatNumber(total)}</b></div><div class="categoryList">${list.length ? groupedCards(list, ownerScope, kind) : `<div class="empty"><div><b>目前沒有${kind === 'asset' ? '資產' : '負債'}資料</b><span>按右下角 ＋ 新增財務項目。</span></div></div>`}</div>`, name, true);
 
   root.querySelector('#personSeg').onclick = event => {
     const button = event.target.closest('[data-kind]');

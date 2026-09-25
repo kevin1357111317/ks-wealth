@@ -10,6 +10,7 @@ import {
 } from '../loan-month-cache-core.js';
 
 const app = await readFile(new URL('../app-v3.js', import.meta.url), 'utf8');
+const versionUi = await readFile(new URL('../app-version.js', import.meta.url), 'utf8');
 const loanMonth = await readFile(new URL('../loan-month-summary.js', import.meta.url), 'utf8');
 const quotes = await readFile(new URL('../supabase/functions/refresh-tw-quotes/index.ts', import.meta.url), 'utf8');
 const snapshot = await readFile(new URL('../supabase/functions/daily-wealth-snapshot/index.ts', import.meta.url), 'utf8');
@@ -113,6 +114,22 @@ test('換帳號會清除帳號快取，失敗狀態不保留前一筆金額', ()
 test('行情錯誤文字不把名稱或遠端錯誤直接放進 HTML', () => {
   assert.match(app, /replace\(\/\[<>&\]\/g/);
   assert.match(app, /'<': '＜', '>': '＞', '&': '＆'/);
+});
+
+test('行情快車道顯示台股與美股的秒級成功時間', () => {
+  assert.match(app, /let liveQuoteUpdatedAt = \{ tw: null, us: null \}/);
+  assert.match(app, /second: '2-digit'/);
+  assert.match(app, /recordLiveQuoteRefresh\('tw', data\.requestedAt\)/);
+  assert.match(app, /recordLiveQuoteRefresh\('us', data\.requestedAt\)/);
+  assert.match(app, /即時行情：\$\{liveUpdates/);
+});
+
+test('只有目前頁面的淨資產真的變動才提示動畫', () => {
+  assert.match(app, /previousNetWorth !== nextNetWorth/);
+  assert.match(app, /quoteValuePulseUntil = Date\.now\(\) \+ 900/);
+  assert.match(app, /quoteValuePulseUntil > Date\.now\(\) \? ' quoteChanged' : ''/);
+  assert.match(versionUi, /\.bigMoney\.quoteChanged/);
+  assert.match(versionUi, /prefers-reduced-motion: reduce/);
 });
 
 test('人工編輯有版本衝突保護，系統行情不改人工版本欄位', () => {
