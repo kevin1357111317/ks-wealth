@@ -128,7 +128,8 @@ G6PD、體脂率這些切點是儀器與方法決定的，硬套別家的標準�
 - `loan-ui-fix.js`：把卡片頭的欄位搬進展開的明細、拿掉重複的格子，而且「貸款年限」是
   從已繳期數的**分母**推出來的（所以排程抓不齊時年限會跟著錯，見「排程要分頁抓」那節）
 - `loan-month-summary.js`：把摘要換成「本月剩餘還款」，自己帶 publishable key、從
-  localStorage 讀 auth token，直接打 PostgREST 算當月還沒扣的期數。每輪只批次查一次帳戶與
+  localStorage 讀 auth token（過期就等 SDK 換新再送，見「開 App 的等待時間」），直接打 PostgREST
+  算當月還沒扣的期數。每輪只批次查一次帳戶與
   一次排程，再依成員／貸款類型分桶；同時觸發的更新共用同一個請求。當天快取包含 user id，
   換帳號會清除；同步失敗顯示 `—`，不沿用上一個帳號或過期的數字
 
@@ -948,6 +949,29 @@ Twelve Data 免費方案是每分鐘 8 credits、一個 symbol 算一個。這�
 
 `tests/quote-cache.test.mjs` 直接跑 Edge Function 原始碼、把 fetch 換成假的來數 credit，
 改動這一段時請先跑它。
+
+## 開 App 的等待時間
+
+2026-09 從 Supabase edge log 量過：隔一小時以上再打開（access token 已過期），首屏前是三輪
+**串起來**的網路往返 —— 換 token（含 CORS preflight 約 1 秒）→ 查 `household_members`
+（冷的時候 745 ms）→ 十張表並行（約 0.3 秒），從第一個請求算起 2.3～2.8 秒，還沒算下載程式檔。
+資料庫查詢本身不慢，慢在排隊。
+
+- **家庭成員資格記在裝置上**（`localStorage` 的 `ks-member|<user_id>`，只存 `household_id`
+  與 `role`，不存金額）。記得的話直接抓資料，`household_members` 改在背景重查；查到的不一樣
+  （被移出、換家庭、角色變了）就寫回正確值並 `location.reload()`，走沒有快取的那條路。
+  資料讀不讀得到仍由 RLS 決定，記錯最多是多重來一次。
+- **`loan-month-summary.js` 等 token 換新才送**：它自己讀 storage 裡的 token 打 REST，開 App 時
+  SDK 還沒換好 token，以前每次都先吃一個 401、800 ms 後重試。現在看 `expires_at`（留 10 秒
+  餘裕），過期就每 250 ms 看一次 storage，最多等 8 秒。
+- **`index.html` 預先連線 Supabase、預載 supabase-js**，讓 TLS 握手與 CDN 下載跟 `app-v3.js`
+  並行。預載的網址要跟 `app-v3.js`／`auth-tools.js` 的 import 一字不差，否則等於多抓一份。
+
+沒做長期快取（`Cache-Control: immutable`）：內部 import 的 `?v=` 不是全部跟著版號走
+（`loan-month-core.js?v=V2P4` 之類），設了會讓忘記改字串的檔案在手機上卡一年。
+
+`tests/startup-latency.test.mjs` 守住：記得家庭時 `household_members` 卡住也照樣開出首屏、
+記錯家庭會改正並重來、過期 token 不送出去且換新後補查。
 
 ## 部署
 

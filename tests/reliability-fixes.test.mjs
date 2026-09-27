@@ -92,7 +92,7 @@ test('貸款摘要快取依使用者隔離', () => {
   assert.notEqual(first, second);
   assert.match(first, /^ks-loan-month-summary\|U1\|/);
   assert.deepEqual(readStoredAuth(JSON.stringify({ access_token: 'token', user: { id: 'U1' } })), {
-    accessToken: 'token', userId: 'U1',
+    accessToken: 'token', userId: 'U1', expiresAt: 0,
   });
 });
 

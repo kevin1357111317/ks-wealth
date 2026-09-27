@@ -1,10 +1,11 @@
 import { LOAN_OWNERS, LOAN_TYPES, loanMonthBucketKey, summarizeRemainingMonth } from './loan-month-core.js?v=V2P4';
 import {
   LOAN_MONTH_CACHE_PREFIX,
+  isStoredAuthFresh,
   loanMonthDataKey,
   loanMonthStorageKey,
   readStoredAuth,
-} from './loan-month-cache-core.js?v=V3P23';
+} from './loan-month-cache-core.js?v=V3.37.8';
 
 const root = document.querySelector('#root');
 const SUPABASE_URL = 'https://gbxsnwqbjmgfikpblyot.supabase.co';
@@ -78,9 +79,22 @@ function remainingMonthContext() {
   return { owner, loanType, metric };
 }
 
+// 開 App 時 token 若已過期，SDK 會先換新再寫回 storage。在那之前拿舊 token 打 REST 只會
+// 拿到 401 —— 每次隔一小時以上打開都白送一個請求，還跟換 token 搶網路。所以等 storage 裡
+// 的 token 換新再送，最多等 8 秒。
+async function freshAccessToken(timeoutMs = 8000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const auth = readAuth();
+    if (!auth.accessToken) throw new Error('missing session');
+    if (isStoredAuthFresh(auth)) return auth.accessToken;
+    if (Date.now() >= deadline) throw new Error('stale session');
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+}
+
 async function rest(path, params) {
-  const token = readAuth().accessToken;
-  if (!token) throw new Error('missing session');
+  const token = await freshAccessToken();
   const url = new URL(`${SUPABASE_URL}/rest/v1/${path}`);
   for (const [key, value] of params) url.searchParams.append(key, value);
   const response = await fetch(url, {

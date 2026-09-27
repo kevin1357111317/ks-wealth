@@ -10,12 +10,12 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.37.7';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.37.7';
-import { calculateUsd } from './usd-core.js?v=V3.37.7';
-import { calculateGold } from './gold-core.js?v=V3.37.7';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.37.7';
-import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.37.7';
+} from './financial-core.js?v=V3.37.8';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.37.8';
+import { calculateUsd } from './usd-core.js?v=V3.37.8';
+import { calculateGold } from './gold-core.js?v=V3.37.8';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.37.8';
+import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.37.8';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -24,8 +24,8 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.37.7';
-import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.37.7';
+} from './health-core.js?v=V3.37.8';
+import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.37.8';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -488,14 +488,59 @@ function joinScreen() {
   root.querySelector('#signout').onclick = () => sb.auth.signOut();
 }
 
+// 家庭成員資格記在這台裝置上：開 App 時「換 token → 查家庭 → 抓資料」三輪是串起來跑的，
+// 查家庭那一輪冷的時候要 700 ms 上下，而同一個帳號幾乎不會換家庭。記得的話就直接抓資料，
+// 同時在背景重查；查到的跟記得的不一樣（被移出、換家庭、角色變了）就整頁重來，走沒有快取
+// 的那條路。只存 household_id 與 role，不存任何金額；資料讀不讀得到仍然由 RLS 決定。
+const MEMBER_CACHE_PREFIX = 'ks-member|';
+
+function readCachedMember(userId) {
+  try {
+    const cached = JSON.parse(localStorage.getItem(`${MEMBER_CACHE_PREFIX}${userId}`) ?? 'null');
+    return cached?.household_id ? { household_id: cached.household_id, role: cached.role ?? null } : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedMember(userId, found) {
+  try {
+    if (found) {
+      localStorage.setItem(`${MEMBER_CACHE_PREFIX}${userId}`,
+        JSON.stringify({ household_id: found.household_id, role: found.role ?? null }));
+    } else {
+      localStorage.removeItem(`${MEMBER_CACHE_PREFIX}${userId}`);
+    }
+  } catch { /* 私密瀏覽或 storage 被關：下次照舊先查再進 */ }
+}
+
+async function verifyCachedMember(userId, cached, lookup) {
+  const { data, error } = await lookup;
+  // 查失敗就先沿用；資料本身有 RLS 擋，下次開 App 會再驗一次。
+  if (error || session?.user?.id !== userId) return;
+  const found = data?.[0] ?? null;
+  writeCachedMember(userId, found);
+  if (found?.household_id === cached.household_id && (found?.role ?? null) === cached.role) return;
+  location.reload();
+}
+
 async function resolveMembership() {
   lifecycle = 'checking-household';
-  const { data, error } = await sb.from('household_members')
+  const userId = session.user.id;
+  const lookup = sb.from('household_members')
     .select('household_id,role')
-    .eq('user_id', session.user.id)
+    .eq('user_id', userId)
     .limit(1);
-  if (error) return showBlockingError(error.message);
-  member = data?.[0] ?? null;
+  const cached = readCachedMember(userId);
+  if (cached) {
+    void verifyCachedMember(userId, cached, lookup);
+    member = cached;
+  } else {
+    const { data, error } = await lookup;
+    if (error) return showBlockingError(error.message);
+    member = data?.[0] ?? null;
+    writeCachedMember(userId, member);
+  }
   if (!member) return joinScreen();
   // 登入後先看自己的資產：老公開起來是老公頁，老婆開起來是老婆頁。
   // 放在這裡，重新登入換人時也會跟著換過去。

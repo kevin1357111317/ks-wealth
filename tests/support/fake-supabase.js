@@ -115,7 +115,12 @@ function builder(table, rows) {
     limit(n) { filtered = filtered.slice(0, n); return api; },
     single() { return Promise.resolve({ data: filtered[0] ?? null, error: null }); },
     maybeSingle() { return Promise.resolve({ data: filtered[0] ?? null, error: null }); },
-    then(resolve) { return Promise.resolve({ data: filtered.slice(0, MAX_ROWS), error: null }).then(resolve); },
+    // 測試可以設 globalThis.__gates[table] 為一個 Promise，讓那張表的查詢卡住直到它 resolve，
+    // 用來證明某個請求「不在」首屏的關鍵路徑上。
+    then(resolve) {
+      const gate = globalThis.__gates?.[table];
+      return Promise.resolve(gate).then(() => ({ data: filtered.slice(0, MAX_ROWS), error: null })).then(resolve);
+    },
   };
   return api;
 }
