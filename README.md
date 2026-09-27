@@ -970,6 +970,21 @@ Twelve Data 免費方案是每分鐘 8 credits、一個 symbol 算一個。這�
 沒做長期快取（`Cache-Control: immutable`）：內部 import 的 `?v=` 不是全部跟著版號走
 （`loan-month-core.js?v=V2P4` 之類），設了會讓忘記改字串的檔案在手機上卡一年。
 
+### 先顯示上次的首頁
+
+換 token 那一秒省不掉，所以改成把它藏起來：每次線上載入成功，就把 `performDataLoad()` 拿到的
+原始列存進 `localStorage` 的 `ks-home-cache|<user_id>`（`home-cache-core.js`）。下次打開時，在
+`sb.auth.getSession()` 之前就從 SDK 存的 session 讀出 user id、套用快取、畫出首頁，狀態列寫
+「顯示上次的資料，同步中…」；線上資料回來後整包換掉。
+
+- 快取與線上資料走同一支 `applyHomeRows()`，算法不會分岔。
+- **裝置上會有財務數字**（資產、負債、淨值歷史、美金與黃金交易、貸款帳戶；約 200 KB）。
+  健康資料不存。換帳號時清掉別人的快取，登出時全部清掉。這是屋主 2026-09 明確選的取捨。
+- 快取期間**不能開編輯表單、不能進分析頁**：表單要拿最新的 `updated_at` 做 compare-and-set、
+  股票表單要私帳，拿舊資料開只會在存檔時撞衝突或寫錯。點下去只會在狀態列提示稍等。
+- 快取格式改了就把 `HOME_CACHE_VERSION` 加一；版本或 user id 對不上、內容壞掉都當沒有。
+
+`tests/home-cache.test.mjs` 守住：卡住線上資料時先畫快取、快取期間不能編輯、回來後整個換掉、別人的快取不畫且被清掉。
 `tests/startup-latency.test.mjs` 守住：記得家庭時 `household_members` 卡住也照樣開出首屏、
 記錯家庭會改正並重來、過期 token 不送出去且換新後補查。
 

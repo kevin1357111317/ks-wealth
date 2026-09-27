@@ -10,12 +10,12 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.37.8';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.37.8';
-import { calculateUsd } from './usd-core.js?v=V3.37.8';
-import { calculateGold } from './gold-core.js?v=V3.37.8';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.37.8';
-import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.37.8';
+} from './financial-core.js?v=V3.37.9';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.37.9';
+import { calculateUsd } from './usd-core.js?v=V3.37.9';
+import { calculateGold } from './gold-core.js?v=V3.37.9';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.37.9';
+import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.37.9';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -24,12 +24,14 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.37.8';
-import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.37.8';
+} from './health-core.js?v=V3.37.9';
+import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.37.9';
+import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.37.9';
 
 // App / Supabase -------------------------------------------------------------
 
 const SUPABASE_URL = 'https://gbxsnwqbjmgfikpblyot.supabase.co';
+const SUPABASE_AUTH_STORAGE_KEY = 'sb-gbxsnwqbjmgfikpblyot-auth-token';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_VtGM8w7CqxDB_3NaROR8OA_H0txX-_I';
 const sb = window.KS_SUPABASE_CLIENT ?? createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
@@ -74,6 +76,10 @@ const automaticCategoryByMode = {
 };
 
 let lifecycle = 'booting';
+// 先顯示上次的首頁，再換成最新資料。token 過期時 SDK 要先花一秒左右換新，這段時間畫面
+// 不再是轉圈圈，而是上次的數字加上「同步中」。快取期間不能編輯、不能進分析頁：那些動作
+// 要拿最新的 updated_at 與私帳，用舊資料開表單只會在存檔時撞到衝突或寫錯。
+let showingCachedHome = false;
 let session = null;
 let member = null;
 let items = [];
@@ -402,6 +408,7 @@ function personalTrendRows(ownerScope, currentNetWorth) {
 
 function showBlockingError(message) {
   lifecycle = 'error';
+  showingCachedHome = false;
   root.className = 'center';
   root.innerHTML = `<div class="logo big">KS</div><p>${escapeHtml(message)}</p><button class="primary" style="padding:0 18px" data-retry>重新載入</button>`;
   root.querySelector('[data-retry]').onclick = () => location.reload();
@@ -709,12 +716,20 @@ async function applySession(nextSession) {
   const previousUserId = session?.user?.id ?? null;
   const nextUserId = nextSession?.user?.id ?? null;
   if (previousUserId === nextUserId && member && lifecycle === 'ready') return;
+  // 畫面上是這個人的快取首頁：不清狀態，直接接著查家庭、抓最新資料蓋過去。
+  if (showingCachedHome && nextUserId && previousUserId === nextUserId) {
+    session = nextSession;
+    await resolveMembership();
+    return;
+  }
+  showingCachedHome = false;
 
   if (previousUserId !== nextUserId) {
     // 同一個瀏覽器換帳號時，不能讓下一位先看到上一位的摘要或行情時間。
     for (let index = localStorage.length - 1; index >= 0; index -= 1) {
       const key = localStorage.key(index) ?? '';
-      if (key.startsWith('ks-loan-month-summary|') || key.startsWith('ks:last-quote:')) {
+      if (key.startsWith('ks-loan-month-summary|') || key.startsWith('ks:last-quote:')
+        || (key.startsWith(HOME_CACHE_PREFIX) && key !== homeCacheKey(nextUserId))) {
         localStorage.removeItem(key);
       }
     }
@@ -863,6 +878,73 @@ function scheduleLedgerWarmup() {
   else window.setTimeout(warm, 250);
 }
 
+// 首頁要的狀態從「一包原始列」套進來。線上載入與快取還原都走這一支，兩邊算法不會分岔。
+// 某張表這一輪沒抓成功就傳 null，沿用手上的舊值（跟以前一樣）。
+function applyHomeRows(rows) {
+  items = (rows.items ?? []).map(normalizeFinancialItem);
+  history = (rows.history ?? []).map(row => ({ ...row, net_worth_twd: toFiniteNumber(row.net_worth_twd) }));
+  scopeHistory = (rows.scopeHistory ?? []).map(row => ({ ...row, total_twd: toFiniteNumber(row.total_twd) }));
+  householdName = rows.householdName || '布布一二的家';
+  fxRate = items.find(item => item.fx_rate_twd > 1 && item.quote_currency === 'USD')?.fx_rate_twd ?? fxRate;
+  if (rows.usd) usdTransactions = rows.usd;
+  if (rows.gold) goldTransactions = rows.gold;
+  if (rows.loanAccounts) loanAccounts = rows.loanAccounts;
+  if (rows.nextDue) {
+    loanNextDue = {};
+    for (const row of rows.nextDue) {
+      // 已經按 due_date 排好，每一筆貸款第一次遇到的就是下一期
+      if (!loanNextDue[row.loan_account_id]) {
+        loanNextDue[row.loan_account_id] = { date: String(row.due_date), amount: Math.abs(toFiniteNumber(row.amount_twd)) };
+      }
+    }
+  }
+}
+
+function writeHomeCache(rows) {
+  const userId = session?.user?.id;
+  if (!userId || !member) return;
+  try {
+    localStorage.setItem(homeCacheKey(userId), encodeHomeCache({
+      userId, member: { household_id: member.household_id, role: member.role ?? null }, rows,
+    }));
+  } catch { /* 空間不夠或 storage 被關：下次照舊等線上資料 */ }
+}
+
+function paintCachedHome() {
+  let user = null;
+  try {
+    user = readStoredUser(localStorage.getItem(SUPABASE_AUTH_STORAGE_KEY));
+    const cached = user && decodeHomeCache(localStorage.getItem(homeCacheKey(user.id)), user.id);
+    if (!cached) return;
+    session = { user };
+    member = cached.member;
+    applyHomeRows(cached.rows);
+    tab = memberOwnerScope();
+    showingCachedHome = true;
+    lifecycle = 'cached';
+    restoreQuoteTimestamp();
+    render();
+  } catch {
+    // 快取壞掉就當沒有：清掉、回到原本的轉圈圈，照正常流程等線上資料。
+    try { if (user?.id) localStorage.removeItem(homeCacheKey(user.id)); } catch { /* 略過 */ }
+    session = null;
+    member = null;
+    showingCachedHome = false;
+    lifecycle = 'booting';
+    items = [];
+    history = [];
+    scopeHistory = [];
+    root.className = 'center';
+    root.innerHTML = '<div class="logo big">KS</div><div class="spinner"></div><p>啟動安全登入中…</p>';
+  }
+}
+
+function blockedByCachedHome() {
+  if (!showingCachedHome) return false;
+  setNonBlockingStatus('還在同步最新資料，好了再點一次', 'updating');
+  return true;
+}
+
 async function performDataLoad({ blocking = false } = {}) {
   if (!member) return false;
   const householdId = member.household_id;
@@ -887,27 +969,23 @@ async function performDataLoad({ blocking = false } = {}) {
     if (failure) throw failure;
     if (!member || member.household_id !== householdId) return false;
 
-    items = (itemResult.data ?? []).map(normalizeFinancialItem);
-    history = (familyHistoryResult.data ?? []).map(row => ({ ...row, net_worth_twd: toFiniteNumber(row.net_worth_twd) }));
-    scopeHistory = (scopeHistoryResult.data ?? []).map(row => ({ ...row, total_twd: toFiniteNumber(row.total_twd) }));
-    householdName = householdResult.data?.name || '布布一二的家';
-    fxRate = items.find(item => item.fx_rate_twd > 1 && item.quote_currency === 'USD')?.fx_rate_twd ?? fxRate;
-    if (!usdResult.error) usdTransactions = usdResult.data ?? [];
-    if (!goldResult.error) goldTransactions = goldResult.data ?? [];
-    if (!loanResult.error) loanAccounts = loanResult.data ?? [];
+    const rows = {
+      items: itemResult.data ?? [],
+      history: familyHistoryResult.data ?? [],
+      scopeHistory: scopeHistoryResult.data ?? [],
+      householdName: householdResult.data?.name ?? null,
+      usd: usdResult.error ? null : usdResult.data ?? [],
+      gold: goldResult.error ? null : goldResult.data ?? [],
+      loanAccounts: loanResult.error ? null : loanResult.data ?? [],
+      nextDue: nextDueResult.error ? null : nextDueResult.data ?? [],
+    };
+    applyHomeRows(rows);
     if (!healthCheckupResult.error && !healthMetricResult.error) {
       healthCheckups = healthCheckupResult.data ?? [];
       healthMetrics = healthMetricResult.data ?? [];
     }
-    if (!nextDueResult.error) {
-      loanNextDue = {};
-      for (const row of nextDueResult.data ?? []) {
-        // 已經按 due_date 排好，每一筆貸款第一次遇到的就是下一期
-        if (!loanNextDue[row.loan_account_id]) {
-          loanNextDue[row.loan_account_id] = { date: String(row.due_date), amount: Math.abs(toFiniteNumber(row.amount_twd)) };
-        }
-      }
-    }
+    showingCachedHome = false;
+    writeHomeCache(rows);
     // 已經載過才重載 —— 完整重載的觸發時機是交易真的變了。
     if (ledgerLoaded) {
       ledgerLoaded = false;
@@ -1068,6 +1146,7 @@ function describeQuoteFailures(results) {
 }
 
 function quoteStatusCopy() {
+  if (showingCachedHome) return '顯示上次的資料，同步中…';
   const lastUpdate = formatClock(quoteLastUpdatedAt);
   const suffix = lastUpdate ? ` · 更新於 ${lastUpdate}` : '';
   const liveUpdates = [
@@ -2068,6 +2147,7 @@ function usdTransactionRow(row) {
 
 // 美金的買賣只寫 usd_transactions，不碰資產頁的任何一列。
 function editUsdTransaction() {
+  if (blockedByCachedHome()) return;
   let saving = false;
   const backdrop = document.createElement('div');
   backdrop.className = 'backdrop';
@@ -2242,6 +2322,7 @@ function firstLoanTypeWithRows(ownerScope) {
 }
 
 function openAnalysis(screen, ownerScope) {
+  if (blockedByCachedHome()) return;
   const needsStockLedger = screen === 'stocks' && !ledgerLoaded;
   const needsLoanSchedule = screen === 'loans' && !loanScheduleLoaded;
   expandedLoan = null;
@@ -2462,6 +2543,7 @@ function assetAttributeForItem(item) {
 }
 
 async function editItem(item, defaultOwner, defaultKind) {
+  if (blockedByCachedHome()) return;
   // 這一列是私帳連動的股票的話，表單要列出它的交易紀錄，得先把私帳載進來。
   if (item?.portfolio_stock_key) await ensureLedger();
   // 台股／美股的股數與市值是從交易推算出來的（klfan_transactions 一動，
@@ -2931,6 +3013,7 @@ async function editItem(item, defaultOwner, defaultKind) {
 
 // Bootstrap ------------------------------------------------------------------
 
+paintCachedHome();
 const { data: { session: initialSession }, error: initialSessionError } = await sb.auth.getSession();
 if (initialSessionError) showBlockingError(initialSessionError.message);
 else await applySession(initialSession);
