@@ -505,7 +505,7 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     await addUsd('buy', '1000', '32');
     const summary = await page.textContent('.portfolioSummary');
     assert.match(summary, /US\$ 2,000\.00/, '目前美元部位要是兩筆相加');
-    assert.match(summary, /加權平均成本 31\.000/, '成本走移動加權平均');
+    assert.match(summary, /平均換匯匯率31\.000/, '平均換匯匯率走移動加權平均');
     assert.match(summary, /NT\$ 62,000/, '剩餘成本＝30,000＋32,000');
     assert.equal(await page.locator('.portfolioTx').count(), 2);
 
