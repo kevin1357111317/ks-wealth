@@ -5,7 +5,7 @@ import {
   loanMonthDataKey,
   loanMonthStorageKey,
   readStoredAuth,
-} from './loan-month-cache-core.js?v=V3.37.10';
+} from './loan-month-cache-core.js?v=V3.37.11';
 
 const root = document.querySelector('#root');
 const SUPABASE_URL = 'https://gbxsnwqbjmgfikpblyot.supabase.co';

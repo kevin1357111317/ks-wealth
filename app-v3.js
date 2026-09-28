@@ -10,12 +10,12 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.37.10';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.37.10';
-import { calculateUsd } from './usd-core.js?v=V3.37.10';
-import { calculateGold } from './gold-core.js?v=V3.37.10';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.37.10';
-import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.37.10';
+} from './financial-core.js?v=V3.37.11';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.37.11';
+import { calculateUsd } from './usd-core.js?v=V3.37.11';
+import { calculateGold } from './gold-core.js?v=V3.37.11';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.37.11';
+import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.37.11';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -24,10 +24,10 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.37.10';
-import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.37.10';
-import { withClockSkewRetry } from './supabase-fetch.js?v=V3.37.10';
-import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.37.10';
+} from './health-core.js?v=V3.37.11';
+import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.37.11';
+import { withClockSkewRetry } from './supabase-fetch.js?v=V3.37.11';
+import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.37.11';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -2120,6 +2120,13 @@ function pinLoanCard(id, topBefore) {
 const usdFormat = value => masked
   ? '\u2022\u2022\u2022\u2022\u2022\u2022'
   : new Intl.NumberFormat('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(toFiniteNumber(value));
+// 換匯時拿來比的基準：目前匯率跟手上美元的移動加權平均成本差多少。
+const usdRateGapCopy = (current, average) => {
+  if (!(Number(current) > 0) || !(Number(average) > 0)) return '移動加權平均';
+  const gap = Number(current) - Number(average);
+  if (Math.abs(gap) < 0.0005) return '目前匯率與平均相同';
+  return `目前匯率${gap > 0 ? '高' : '低'}於平均 ${Math.abs(gap).toFixed(3)}`;
+};
 const rateFormat = value => Number.isFinite(Number(value)) && Number(value) > 0
   ? Number(value).toFixed(3)
   : '\u2014';
@@ -2129,7 +2136,7 @@ function usdPage() {
   const model = ownerUsdModel(analysisOwner);
   const tone = value => value >= 0 ? 'up' : 'down';
   const rows = [...model.rows].reverse();
-  shell(`<div class="portfolioView"><div class="portfolioSummary"><div class="portfolioMetric"><span>目前美元部位</span><b>US$ ${usdFormat(model.balance)}</b><small>加權平均成本 ${rateFormat(model.averageCost)}</small></div><div class="portfolioMetric"><span>目前台幣市值</span><b>NT$ ${formatNumber(model.marketValueTwd)}</b><small>目前匯率 ${rateFormat(model.currentRate)}</small></div><div class="portfolioMetric"><span>累計淨投入</span><b>NT$ ${formatNumber(model.netInvestedTwd)}</b><small>買進－賣出</small></div><div class="portfolioMetric"><span>剩餘美元成本</span><b>NT$ ${formatNumber(model.remainingCostTwd)}</b><small>移動加權平均</small></div><div class="portfolioMetric"><span>已實現匯兌損益</span><b class="${tone(model.realizedTwd)}">NT$ ${formatNumber(model.realizedTwd)}</b><small>賣出時認列</small></div><div class="portfolioMetric"><span>未實現匯兌損益</span><b class="${tone(model.unrealizedTwd)}">NT$ ${formatNumber(model.unrealizedTwd)}</b><small>市值－剩餘成本</small></div><div class="portfolioMetric"><span>總匯兌損益</span><b class="${tone(model.totalProfitTwd)}">NT$ ${formatNumber(model.totalProfitTwd)}</b><small>已實現＋未實現</small></div><div class="portfolioMetric"><span>年化報酬率</span><b>${formatPercent(model.xirr)}</b><small>計入每筆買賣的時點</small></div></div><div class="sectionHead"><span>交易紀錄${model.firstTradeDate ? ` · 自 ${escapeHtml(model.firstTradeDate)}` : ''}</span><b>${model.transactions} 筆</b></div><div class="portfolioTxList">${rows.length ? rows.map(usdTransactionRow).join('') : '<div class="portfolioEmpty">還沒有美金交易，按右下角 ＋ 記第一筆。</div>'}</div></div>`, `${ownerName(analysisOwner)}美金分析`, true);
+  shell(`<div class="portfolioView"><div class="portfolioSummary"><div class="portfolioMetric"><span>目前美元部位</span><b>US$ ${usdFormat(model.balance)}</b><small>剩餘成本 NT$ ${formatNumber(model.remainingCostTwd)}</small></div><div class="portfolioMetric"><span>目前台幣市值</span><b>NT$ ${formatNumber(model.marketValueTwd)}</b><small>目前匯率 ${rateFormat(model.currentRate)}</small></div><div class="portfolioMetric"><span>累計淨投入</span><b>NT$ ${formatNumber(model.netInvestedTwd)}</b><small>買進－賣出</small></div><div class="portfolioMetric"><span>平均換匯匯率</span><b>${rateFormat(model.averageCost)}</b><small>${usdRateGapCopy(model.currentRate, model.averageCost)}</small></div><div class="portfolioMetric"><span>已實現匯兌損益</span><b class="${tone(model.realizedTwd)}">NT$ ${formatNumber(model.realizedTwd)}</b><small>賣出時認列</small></div><div class="portfolioMetric"><span>未實現匯兌損益</span><b class="${tone(model.unrealizedTwd)}">NT$ ${formatNumber(model.unrealizedTwd)}</b><small>市值－剩餘成本</small></div><div class="portfolioMetric"><span>總匯兌損益</span><b class="${tone(model.totalProfitTwd)}">NT$ ${formatNumber(model.totalProfitTwd)}</b><small>已實現＋未實現</small></div><div class="portfolioMetric"><span>年化報酬率</span><b>${formatPercent(model.xirr)}</b><small>計入每筆買賣的時點</small></div></div><div class="sectionHead"><span>交易紀錄${model.firstTradeDate ? ` · 自 ${escapeHtml(model.firstTradeDate)}` : ''}</span><b>${model.transactions} 筆</b></div><div class="portfolioTxList">${rows.length ? rows.map(usdTransactionRow).join('') : '<div class="portfolioEmpty">還沒有美金交易，按右下角 ＋ 記第一筆。</div>'}</div></div>`, `${ownerName(analysisOwner)}美金分析`, true);
 
   root.querySelector('#add').onclick = () => editUsdTransaction();
   root.querySelectorAll('[data-delete-usd-tx]').forEach(button => { button.onclick = async () => {
