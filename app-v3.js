@@ -10,12 +10,12 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.37.9';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.37.9';
-import { calculateUsd } from './usd-core.js?v=V3.37.9';
-import { calculateGold } from './gold-core.js?v=V3.37.9';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.37.9';
-import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.37.9';
+} from './financial-core.js?v=V3.37.10';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.37.10';
+import { calculateUsd } from './usd-core.js?v=V3.37.10';
+import { calculateGold } from './gold-core.js?v=V3.37.10';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.37.10';
+import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.37.10';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -24,9 +24,10 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.37.9';
-import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.37.9';
-import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.37.9';
+} from './health-core.js?v=V3.37.10';
+import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.37.10';
+import { withClockSkewRetry } from './supabase-fetch.js?v=V3.37.10';
+import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.37.10';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -35,6 +36,7 @@ const SUPABASE_AUTH_STORAGE_KEY = 'sb-gbxsnwqbjmgfikpblyot-auth-token';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_VtGM8w7CqxDB_3NaROR8OA_H0txX-_I';
 const sb = window.KS_SUPABASE_CLIENT ?? createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+  global: { fetch: withClockSkewRetry((...args) => fetch(...args)) },
 });
 window.KS_SUPABASE_CLIENT = sb;
 
