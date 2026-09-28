@@ -1,7 +1,8 @@
 import{createClient}from'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.95.0/+esm';
+import{withClockSkewRetry}from'./supabase-fetch.js?v=V3.37.10';
 
 const APP_URL='https://ks-bubu-yier.vercel.app';
-const sbAuth=window.KS_SUPABASE_CLIENT??createClient('https://gbxsnwqbjmgfikpblyot.supabase.co','sb_publishable_VtGM8w7CqxDB_3NaROR8OA_H0txX-_I',{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});window.KS_SUPABASE_CLIENT=sbAuth;
+const sbAuth=window.KS_SUPABASE_CLIENT??createClient('https://gbxsnwqbjmgfikpblyot.supabase.co','sb_publishable_VtGM8w7CqxDB_3NaROR8OA_H0txX-_I',{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true},global:{fetch:withClockSkewRetry((...args)=>fetch(...args))}});window.KS_SUPABASE_CLIENT=sbAuth;
 
 const validEmail=v=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 function helperMessage(text,error=false){let box=document.querySelector('#authhelpermsg');if(!box)return;box.className=error?'message error':'message';box.textContent=text}

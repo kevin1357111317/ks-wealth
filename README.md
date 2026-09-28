@@ -984,6 +984,16 @@ Twelve Data 免費方案是每分鐘 8 credits、一個 symbol 算一個。這�
   股票表單要私帳，拿舊資料開只會在存檔時撞衝突或寫錯。點下去只會在狀態列提示稍等。
 - 快取格式改了就把 `HOME_CACHE_VERSION` 加一；版本或 user id 對不上、內容壞掉都當沒有。
 
+### token 剛換好會撞到伺服器時鐘誤差
+
+Supabase 各台伺服器的時鐘會差一兩秒。2026-09-28 13:08:52 換的 token，53.1 秒送出的 11 個請求
+只有 `financial_items` 拿到 401 `PGRST303`「JWT issued at future」，首頁就變成錯誤畫面。以前
+「查家庭」那一輪排在前面，剛好把這一秒吸收掉；改成並行之後才浮出來。
+
+兩個 supabase client（`auth-tools.js` 先建、`app-v3.js` 沿用 `window.KS_SUPABASE_CLIENT`）都用
+`supabase-fetch.js` 的 `withClockSkewRetry()`：只認這一種 401，等 1 秒、再 2 秒各重送一次。
+401 是在驗 JWT 時就被拒、資料庫沒執行，所以寫入重送也安全。其他 401 原樣回去。
+
 `tests/home-cache.test.mjs` 守住：卡住線上資料時先畫快取、快取期間不能編輯、回來後整個換掉、別人的快取不畫且被清掉。
 `tests/startup-latency.test.mjs` 守住：記得家庭時 `household_members` 卡住也照樣開出首屏、
 記錯家庭會改正並重來、過期 token 不送出去且換新後補查。
