@@ -1,5 +1,5 @@
 export const LOAN_OWNERS = ['husband', 'wife'];
-export const LOAN_TYPES = ['personal', 'topup', 'mortgage'];
+export const LOAN_TYPES = ['personal', 'topup', 'mortgage', 'pledge'];
 
 export function loanMonthBucketKey(owner, loanType) {
   return `${owner}|${loanType}`;

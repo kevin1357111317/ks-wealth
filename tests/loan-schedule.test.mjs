@@ -90,7 +90,7 @@ db.loan_schedule.push(...${JSON.stringify(schedule)});`;
   });
 
   await t.test('預設顯示信貸，切換後摘要與清單只留下同類貸款', async () => {
-    assert.equal(await page.locator('[data-loan-type]').count(), 3);
+    assert.equal(await page.locator('[data-loan-type]').count(), 4, '信貸／增貸／房貸／質押');
     assert.equal(await page.locator('[data-loan-type="personal"].on').count(), 1);
     assert.match(await page.textContent('.loanSummary'), /目前貸款餘額NT\$ 1,030,000.*已結清2 筆/s);
     assert.match(await page.textContent('.portfolioView'), /進行中信貸1 筆/);
