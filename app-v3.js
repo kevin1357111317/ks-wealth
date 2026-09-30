@@ -10,12 +10,12 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.37.11';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.37.11';
-import { calculateUsd } from './usd-core.js?v=V3.37.11';
-import { calculateGold } from './gold-core.js?v=V3.37.11';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.37.11';
-import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.37.11';
+} from './financial-core.js?v=V3.38.0';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.38.0';
+import { calculateUsd } from './usd-core.js?v=V3.38.0';
+import { calculateGold } from './gold-core.js?v=V3.38.0';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.38.0';
+import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.38.0';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -24,10 +24,10 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.37.11';
-import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.37.11';
-import { withClockSkewRetry } from './supabase-fetch.js?v=V3.37.11';
-import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.37.11';
+} from './health-core.js?v=V3.38.0';
+import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.38.0';
+import { withClockSkewRetry } from './supabase-fetch.js?v=V3.38.0';
+import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.38.0';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -65,11 +65,11 @@ const tabs = [
 const memberOwnerScope = () => member?.role === 'member' ? 'wife' : 'husband';
 const categories = {
   asset: ['現金及存款', '台股', '美股', '不動產', '黃金', '保險', '其他'],
-  liability: ['房貸', '增貸', '信貸', '信用卡', '其他負債'],
+  liability: ['房貸', '增貸', '信貸', '質押', '信用卡', '其他負債'],
 };
 const colors = {
   台股: '#72d7a7', 美股: '#8b94ff', 現金及存款: '#67c8db', 不動產: '#f0b467',
-  保險: '#bb8cff', 黃金: '#e5ae4f', 其他: '#ee8f73', 房貸: '#ff7f91', 增貸: '#f0a76b', 信貸: '#df788a',
+  保險: '#bb8cff', 黃金: '#e5ae4f', 其他: '#ee8f73', 房貸: '#ff7f91', 增貸: '#f0a76b', 信貸: '#df788a', 質押: '#c98bd0',
 };
 const automaticCategoryByMode = {
   'stock-tw': '台股',
