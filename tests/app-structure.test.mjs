@@ -129,3 +129,9 @@ test('loan detail reads applied payment state and invalidates its schedule cache
   assert.match(invalidator, /loanScheduleLoaded = false/);
   assert.match(source, /table: 'loan_accounts'.*\n\s*\}, scheduleLoanReload\)/);
 });
+
+// 股票質押（2026-09 元大質借）是獨立的負債分類，排在信貸後面，有自己的顏色。
+test('負債分類有「質押」而且有自己的顏色', () => {
+  assert.match(source, /liability: \['房貸', '增貸', '信貸', '質押', '信用卡', '其他負債'\]/);
+  assert.match(source, /質押: '#[0-9a-f]{6}'/);
+});
