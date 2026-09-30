@@ -1,11 +1,11 @@
-import { LOAN_OWNERS, LOAN_TYPES, loanMonthBucketKey, summarizeRemainingMonth } from './loan-month-core.js?v=V2P4';
+import { LOAN_OWNERS, LOAN_TYPES, loanMonthBucketKey, summarizeRemainingMonth } from './loan-month-core.js?v=V3.39.0';
 import {
   LOAN_MONTH_CACHE_PREFIX,
   isStoredAuthFresh,
   loanMonthDataKey,
   loanMonthStorageKey,
   readStoredAuth,
-} from './loan-month-cache-core.js?v=V3.38.0';
+} from './loan-month-cache-core.js?v=V3.39.0';
 
 const root = document.querySelector('#root');
 const SUPABASE_URL = 'https://gbxsnwqbjmgfikpblyot.supabase.co';
@@ -67,7 +67,7 @@ function remainingMonthContext() {
 
   const owner = title.startsWith('老公') ? 'husband' : title.startsWith('老婆') ? 'wife' : null;
   const selected = document.querySelector('.loanTypeSeg button.on')?.textContent?.trim() || '';
-  const loanType = ({ 信貸: 'personal', 增貸: 'topup', 房貸: 'mortgage' })[selected];
+  const loanType = ({ 信貸: 'personal', 增貸: 'topup', 房貸: 'mortgage', 質押: 'pledge' })[selected];
   if (!owner || !loanType) return null;
 
   const summary = document.querySelector('.portfolioSummary.loanSummary');

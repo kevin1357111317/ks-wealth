@@ -10,12 +10,12 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.38.0';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.38.0';
-import { calculateUsd } from './usd-core.js?v=V3.38.0';
-import { calculateGold } from './gold-core.js?v=V3.38.0';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.38.0';
-import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.38.0';
+} from './financial-core.js?v=V3.39.0';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.39.0';
+import { calculateUsd } from './usd-core.js?v=V3.39.0';
+import { calculateGold } from './gold-core.js?v=V3.39.0';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.39.0';
+import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.39.0';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -24,10 +24,10 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.38.0';
-import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.38.0';
-import { withClockSkewRetry } from './supabase-fetch.js?v=V3.38.0';
-import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.38.0';
+} from './health-core.js?v=V3.39.0';
+import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.39.0';
+import { withClockSkewRetry } from './supabase-fetch.js?v=V3.39.0';
+import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.39.0';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -150,7 +150,7 @@ let expandedLoan = null;   // 就地展開的那一筆，一次只開一個
 // 最早一期」，由 loadData() 抓一小段回來組成 { 貸款 id: { date, amount } }。
 let loanNextDue = {};
 let autopayCheckedOn = null;
-let loanTypeFilter = 'personal';   // 貸款分析預設先看信貸，可切換增貸／房貸
+let loanTypeFilter = 'personal';   // 貸款分析預設先看信貸，可切換增貸／房貸／質押
 let analysisScreen = null;   // 'stocks'｜'usd'｜'gold'｜'loans'｜'insurance'｜'health'，null 就是一般的資產頁
 let analysisOwner = 'husband';   // 分析頁看的是誰的部位
 let expandedStock = null;   // 私帳清單裡就地展開的那一檔，一次只開一個
@@ -1974,11 +1974,12 @@ function ownerLoanRows(ownerScope) {
     });
 }
 
-const normalizedLoanType = account => account.loan_type === 'topup'
-  ? 'topup'
-  : account.loan_type === 'mortgage' ? 'mortgage' : 'personal';
+// 質押（股票質借）不是按月攤還：到期一次還本付息，所以排程只有一筆撥款、一筆到期還款，
+// 而且 autopay 關掉 —— 到期可以續借，不能讓 apply_due_loan_payments 自動把負債扣到 0。
+const LOAN_TYPE_NAMES = { personal: '信貸', topup: '增貸', mortgage: '房貸', pledge: '質押' };
+const normalizedLoanType = account => LOAN_TYPE_NAMES[account.loan_type] ? account.loan_type : 'personal';
 
-const loanTypeName = type => type === 'topup' ? '增貸' : type === 'mortgage' ? '房貸' : '信貸';
+const loanTypeName = type => LOAN_TYPE_NAMES[type] ?? '信貸';
 
 // actual_date 只代表銀行 App 已核對的實際扣款日；applied_at 則表示系統已把本期
 // 本金套用到負債餘額。兩者任一成立即可列入過往繳款，但沒有 actual_date 時仍明確
@@ -2045,7 +2046,7 @@ function loanPage() {
     : 0;
   const daily = totalMonthly * 12 / 365;
   const typeName = loanTypeName(loanTypeFilter);
-  shell(`<div class="portfolioView"><div class="seg loanTypeSeg"><button data-loan-type="personal" class="${loanTypeFilter === 'personal' ? 'on' : ''}">信貸</button><button data-loan-type="topup" class="${loanTypeFilter === 'topup' ? 'on' : ''}">增貸</button><button data-loan-type="mortgage" class="${loanTypeFilter === 'mortgage' ? 'on' : ''}">房貸</button></div><div class="portfolioSummary loanSummary"><div class="portfolioMetric"><span>目前貸款餘額</span><b>NT$ ${formatNumber(totalBalance)}</b><small>${active.length} 筆進行中</small></div><div class="portfolioMetric"><span>每月還款</span><b>NT$ ${formatNumber(totalMonthly)}</b><small>平均每天 NT$ ${formatNumber(daily)}</small></div><div class="portfolioMetric"><span>加權平均利率</span><b>${weightedRate.toFixed(2)}%</b><small>按目前本金加權</small></div><div class="portfolioMetric"><span>已結清</span><b>${closed.length} 筆</b><small>保留歷史紀錄</small></div></div><div class="sectionHead"><span>進行中${typeName}</span><b>${active.length} 筆</b></div><div class="loanList">${active.length ? active.map(account => loanAccountCard(account, account.id === expandedLoan)).join('') : `<div class="portfolioEmpty">目前沒有進行中的${typeName}。</div>`}</div>${closed.length ? `<div class="sectionHead"><span>已結清${typeName}</span><b>${closed.length} 筆</b></div><div class="loanList">${closed.map(account => loanAccountCard(account, account.id === expandedLoan)).join('')}</div>` : ''}</div>`, `${ownerName(analysisOwner)}貸款分析`);
+  shell(`<div class="portfolioView"><div class="seg loanTypeSeg"><button data-loan-type="personal" class="${loanTypeFilter === 'personal' ? 'on' : ''}">信貸</button><button data-loan-type="topup" class="${loanTypeFilter === 'topup' ? 'on' : ''}">增貸</button><button data-loan-type="mortgage" class="${loanTypeFilter === 'mortgage' ? 'on' : ''}">房貸</button><button data-loan-type="pledge" class="${loanTypeFilter === 'pledge' ? 'on' : ''}">質押</button></div><div class="portfolioSummary loanSummary"><div class="portfolioMetric"><span>目前貸款餘額</span><b>NT$ ${formatNumber(totalBalance)}</b><small>${active.length} 筆進行中</small></div><div class="portfolioMetric"><span>每月還款</span><b>NT$ ${formatNumber(totalMonthly)}</b><small>平均每天 NT$ ${formatNumber(daily)}</small></div><div class="portfolioMetric"><span>加權平均利率</span><b>${weightedRate.toFixed(2)}%</b><small>按目前本金加權</small></div><div class="portfolioMetric"><span>已結清</span><b>${closed.length} 筆</b><small>保留歷史紀錄</small></div></div><div class="sectionHead"><span>進行中${typeName}</span><b>${active.length} 筆</b></div><div class="loanList">${active.length ? active.map(account => loanAccountCard(account, account.id === expandedLoan)).join('') : `<div class="portfolioEmpty">目前沒有進行中的${typeName}。</div>`}</div>${closed.length ? `<div class="sectionHead"><span>已結清${typeName}</span><b>${closed.length} 筆</b></div><div class="loanList">${closed.map(account => loanAccountCard(account, account.id === expandedLoan)).join('')}</div>` : ''}</div>`, `${ownerName(analysisOwner)}貸款分析`);
 
   root.querySelectorAll('[data-loan-type]').forEach(button => { button.onclick = () => {
     loanTypeFilter = button.dataset.loanType;
@@ -2326,7 +2327,7 @@ function renderKeepingAnchor(attribute, value) {
 // 會看到整頁的 0。都沒有的話還是回信貸，空狀態的文案本來就寫給那種情況。
 function firstLoanTypeWithRows(ownerScope) {
   const mine = loanAccounts.filter(account => account.owner_scope === ownerScope && account.status === 'active');
-  return ['personal', 'topup', 'mortgage'].find(type =>
+  return ['personal', 'topup', 'mortgage', 'pledge'].find(type =>
     mine.some(account => normalizedLoanType(account) === type)) ?? 'personal';
 }
 
