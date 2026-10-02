@@ -64,11 +64,13 @@ const ENV = {
 const LIVE = Object.keys(KLFAN_KEYS);
 
 // Yahoo 一分鐘線（含盤前盤後）。最後一根是 null 的情況真的會發生，要往前找。
+// 照 2026-10-02 盤前實測的形狀：regularMarketPrice 是最近一次正規收盤（昨收），
+// chartPreviousClose 卻是更前一天的收盤 —— 漲跌拿它當基準就會多算一天。
 function yahooChart(code, barAt) {
   const last = US_PRICE[code] + 5;
   return {
     chart: { result: [{
-      meta: { regularMarketPrice: US_PRICE[code], regularMarketTime: 1, chartPreviousClose: US_PRICE[code] - 10, previousClose: US_PRICE[code] - 10 },
+      meta: { regularMarketPrice: US_PRICE[code], regularMarketTime: barAt / 1000 - 3600, chartPreviousClose: US_PRICE[code] - 10, previousClose: US_PRICE[code] - 10 },
       timestamp: [barAt / 1000 - 60, barAt / 1000, barAt / 1000 + 60],
       indicators: { quote: [{ close: [last - 1, last, null] }] },
     }] },
@@ -367,7 +369,7 @@ test('盤後改用 Yahoo 的最新一筆，寫進市值並標成盤後', async (
     const voo = body.results.find(r => r.symbol === 'VOO');
     assert.equal(voo.price, US_PRICE.VOO + 5, '最後一根是 null 時取前一根');
     assert.equal(voo.session, 'post');
-    assert.equal(voo.changePercent.toFixed(4), (15 / (US_PRICE.VOO - 10) * 100).toFixed(4), '漲跌對前一交易日收盤');
+    assert.equal(voo.changePercent.toFixed(4), (5 / US_PRICE.VOO * 100).toFixed(4), '漲跌對最近一次正規收盤，不是 chartPreviousClose');
     const row = written.find(r => r.id === voo.id);
     assert.equal(row.amount_twd, Math.round((US_PRICE.VOO + 5) * 100 * FX));
     assert.equal(row.quote_source, 'twelve_data', 'yahoo 不在 CHECK 允許值裡，要收斂');
@@ -384,6 +386,8 @@ test('盤前的美股快車道也走 Yahoo，標成盤前', async () => {
     assert.equal(used.finnhub, 0);
     assert.deepEqual(written, []);
     assert.deepEqual([...new Set(body.results.map(r => r.session))], ['pre']);
+    const voo = body.results.find(r => r.symbol === 'VOO');
+    assert.equal(voo.change, 5, '盤前漲跌對昨收');
   } finally {
     mock.timers.setTime(REGULAR);
   }

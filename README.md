@@ -857,7 +857,10 @@ Yahoo 失敗才退回 Finnhub。盤中維持 Finnhub —— Yahoo 不是正式 A
 
 - Yahoo 的美股報價是即時的（Nasdaq Real Time Price），不是 15 分鐘延遲；Supabase 那邊連得到
   （2026-10-02 用 `http_get` 從資料庫實測 200，VOO 盤後 705.32 / 收盤 702.35）。
-- 漲跌一律對 `chartPreviousClose`（前一交易日收盤）：盤後看到的是整天加盤後，盤前看到的是隔夜。
+- 漲跌對**最近一次正規收盤**（K 棒時間晚於 `regularMarketTime` 就用 `regularMarketPrice`）：盤前比昨收、
+  盤後比今天收盤，跟券商 App 同口徑。**不能用 `chartPreviousClose`** —— 盤前時 `range=1d` 給的是「前天」收盤
+  （2026-10-02 盤前 VOO：chartPreviousClose 700.86，昨收 702.35），V3.41.0 因此把漲跌多算了一天。
+- 「盤前／盤後」標籤放在代號旁邊，不放報價那一行：那一行在 375~430px 寬已經滿了，V3.41.0 塞進去被擠成直排。
 - 每一筆帶 `session`（`pre`／`regular`／`post`，依那根 K 棒的美東時間判斷），卡片上標「盤前」「盤後」。
 - **畫面上的市值與淨資產跟著盤前盤後動**；`financial_items.amount_twd` 與 `klfan_quotes` 寫的也是這個價。
 - **每日快照（06:00 台北）與績效（TWR／XIRR）不受影響**：快照用 Twelve Data 的 `close`（正規收盤），
