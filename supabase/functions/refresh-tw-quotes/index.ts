@@ -25,6 +25,22 @@ const ALLOWED_QUOTE_SOURCES = ["manual", "fugle", "twelve_data"];
 const goldAmountTwd = (grams: number, xauUsd: number, usdTwd: number) =>
   Math.round((grams / TROY_OUNCE_GRAMS) * xauUsd * usdTwd);
 
+// 美東時間的交易時段：盤前 04:00、盤中 09:30、盤後 16:00、20:00 收工。夏令時間由
+// America/New_York 自己處理。國定假日不另外判斷 —— Yahoo 那天就沒有新的 K 棒，
+// 回的是上一個交易日最後一筆，結果一樣對。
+function usSession(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York", weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(date);
+  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "";
+  const minutes = Number(part("hour")) * 60 + Number(part("minute"));
+  if (part("weekday") === "Sat" || part("weekday") === "Sun") return "closed";
+  if (minutes >= 570 && minutes < 960) return "regular";
+  if (minutes >= 240 && minutes < 570) return "pre";
+  if (minutes >= 960 && minutes < 1200) return "post";
+  return "closed";
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
@@ -130,6 +146,48 @@ Deno.serve(async (req: Request) => {
     }
   };
 
+  // 盤前、盤後與收工時段 Finnhub 只會停在收盤價，改抓 Yahoo 的一分鐘線（含盤前盤後）。
+  // Yahoo 的美股報價是即時的（Nasdaq Real Time Price），不用金鑰。盤中維持 Finnhub。
+  // 漲跌一律對「前一個交易日收盤」：盤後看到的是整天加盤後的變化，盤前看到的是隔夜的變化。
+  const yahooQuote = async (symbol: string) => {
+    try {
+      const response = await fetch(
+        `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1m&range=1d&includePrePost=true`,
+        { headers: { "Accept": "application/json", "User-Agent": "KS-Wealth/1.0" } },
+      );
+      if (!response.ok) return null;
+      const result = (await response.json())?.chart?.result?.[0];
+      const meta = result?.meta ?? {};
+      const stamps: number[] = result?.timestamp ?? [];
+      const closes: (number | null)[] = result?.indicators?.quote?.[0]?.close ?? [];
+      let index = closes.length - 1;
+      while (index >= 0 && !(Number(closes[index]) > 0)) index -= 1;
+      const price = index >= 0 ? Number(closes[index]) : Number(meta.regularMarketPrice);
+      const at = index >= 0 ? Number(stamps[index]) : Number(meta.regularMarketTime);
+      const previousClose = Number(meta.chartPreviousClose ?? meta.previousClose);
+      if (!(price > 0) || !(previousClose > 0) || !Number.isFinite(at)) return null;
+      const change = price - previousClose;
+      return {
+        provider: "yahoo",
+        currency: "USD",
+        price,
+        change,
+        changePercent: change / previousClose * 100,
+        // 這一筆成交落在哪個時段，前端據此標「盤前」「盤後」。
+        session: usSession(new Date(at * 1000)),
+        quotedAt: new Date(at * 1000).toISOString(),
+        updatedAt: new Date().toISOString(),
+        cached: false,
+      } as const;
+    } catch {
+      return null;   // 改走 Finnhub
+    }
+  };
+  const extendedHours = usSession() !== "regular";
+  const liveUsQuote = async (symbol: string) => extendedHours
+    ? (await yahooQuote(symbol)) ?? (await finnhubQuote(symbol))
+    : await finnhubQuote(symbol);
+
   // 台股走獨立快車道：前端每 5 秒呼叫，只回價格、不寫資料庫。
   if (scope === "tw") {
     const entries = await Promise.all(twSymbols.map(fetchTw));
@@ -147,17 +205,17 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // 美股快車道：前端每 15 秒呼叫，只打 Finnhub、只回價格、不寫資料庫。理由跟台股同一條 ——
+  // 美股快車道：前端每 15 秒呼叫，只打 Finnhub（盤前盤後改 Yahoo）、只回價格、不寫資料庫。理由跟台股同一條 ——
   // 寫 financial_items 會觸發 realtime 訂閱，每 15 秒把整本私帳重載一次。
   // 也不讀 klfan_quotes 的快取：快車道要的就是當下的價，讀快取反而拿到最多 14 秒前的值。
   // 台幣市值由前端用手上的匯率換算；匯率是慢變數，沿用 60 秒那輪的值就夠。
   if (scope === "us") {
     const entries = await Promise.all(usSymbols.map(async (symbol) =>
-      [symbol, await finnhubQuote(symbol)] as const));
+      [symbol, await liveUsQuote(symbol)] as const));
     const bySymbol = new Map(entries);
     return json({
       scope: "us",
-      source: "finnhub",
+      source: extendedHours ? "yahoo" : "finnhub",
       requestedAt: new Date().toISOString(),
       results: marketItems.filter((item) => item.market === "US").map((item) => {
         const quote = bySymbol.get(String(item.symbol).toUpperCase());
@@ -267,10 +325,15 @@ Deno.serve(async (req: Request) => {
 
   const fetchUs = async (symbol: string) => {
     const fresh = cachedUsFresh.get(symbol);
-    if (fresh) return [`US:${symbol}`, { currency: "USD", ...fresh, cached: true }] as const;
+    // 快取裡沒存時段；盤前盤後寫進去的也是那個時段的價，照現在的時段標（收工後沿用盤後）。
+    if (fresh) return [`US:${symbol}`, { currency: "USD", ...fresh, cached: true, session: extendedHours ? (usSession() === "pre" ? "pre" : "post") : "regular" }] as const;
     // Finnhub 為主、Twelve Data 為備援：Finnhub 的免費額度高很多，撐得起 14 秒的快取。
     // 沒有 Finnhub key 時不要 await —— 多一個 microtask 會讓 Twelve Data 的請求晚一拍發出，
     // 額度用完時被餓死的就從黃金變成美股，那是既有行為，不該被這次重構改掉。
+    if (extendedHours) {
+      const extended = await yahooQuote(symbol);
+      if (extended) return [`US:${symbol}`, extended] as const;
+    }
     if (finnhubKey) {
       const live = await finnhubQuote(symbol);
       if (live) return [`US:${symbol}`, live] as const;

@@ -9,7 +9,12 @@ import assert from 'node:assert/strict';
 import { readFile, writeFile, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import test from 'node:test';
+import test, { mock } from 'node:test';
+
+// 美股報價要看美東時段（盤中 Finnhub、盤前盤後 Yahoo），所以把時鐘釘住，測試結果才不會
+// 隨跑的時間變。預設是 2026-10-01（週四）美東 11:00，盤中。
+const REGULAR = Date.parse('2026-10-01T15:00:00Z');
+mock.timers.enable({ apis: ['Date'], now: REGULAR });
 
 const FUGLE_PRICE = { '0050': 106.2, '00631L': 35.41, '2330': 2390, '2454': 4340 };
 const US_PRICE = { QQQ: 717.67, SOXX: 502.2, VOO: 710.72 };
@@ -58,11 +63,23 @@ const ENV = {
 // 仍持有的標的，預設就是快取裡那幾檔
 const LIVE = Object.keys(KLFAN_KEYS);
 
-async function refresh({ cache, gold = null, twelveBudget = 8, live = LIVE, requestBody = {}, env = ENV }) {
+// Yahoo 一分鐘線（含盤前盤後）。最後一根是 null 的情況真的會發生，要往前找。
+function yahooChart(code, barAt) {
+  const last = US_PRICE[code] + 5;
+  return {
+    chart: { result: [{
+      meta: { regularMarketPrice: US_PRICE[code], regularMarketTime: 1, chartPreviousClose: US_PRICE[code] - 10, previousClose: US_PRICE[code] - 10 },
+      timestamp: [barAt / 1000 - 60, barAt / 1000, barAt / 1000 + 60],
+      indicators: { quote: [{ close: [last - 1, last, null] }] },
+    }] },
+  };
+}
+
+async function refresh({ cache, gold = null, twelveBudget = 8, live = LIVE, requestBody = {}, env = ENV, yahooOk = true }) {
   let stored = cache;
   const pruned = [];
   let storedGold = gold;   // ks_quote_cache 裡的 XAU/USD，null = 沒有或已過期
-  const used = { fugle: 0, twelve: 0, finnhub: 0 };
+  const used = { fugle: 0, twelve: 0, finnhub: 0, yahoo: 0 };
   const written = [];      // 這一輪往 financial_items 寫進去的每一筆
   let fxDaily = null;      // 寫進 klfan_fx_daily 的那一列
 
@@ -112,6 +129,12 @@ async function refresh({ cache, gold = null, twelveBudget = 8, live = LIVE, requ
       used.fugle += 1;
       const code = decodeURIComponent(u.split('/').pop());
       return Response.json({ lastPrice: FUGLE_PRICE[code], change: 1, changePercent: 1, date: '2026-09-04' });
+    }
+    if (u.includes('query1.finance.yahoo.com')) {
+      used.yahoo += 1;
+      if (!yahooOk) return new Response('rate limited', { status: 429 });
+      const code = decodeURIComponent(/chart\/([^?]*)/.exec(u)[1]);
+      return Response.json(yahooChart(code, Date.now() - 60_000));
     }
     if (u.includes('finnhub.io')) {
       used.finnhub += 1;
@@ -319,4 +342,62 @@ test('沒有 Finnhub 時美股快車道要明講抓不到，不要回舊價', as
   assert.equal(used.twelve, 0, '快車道不該去吃 Twelve Data 的 credit');
   assert.deepEqual([...new Set(body.results.map(r => r.status))], ['error']);
   assert.deepEqual([...new Set(body.results.map(r => r.error))], ['finnhub_key_missing']);
+});
+
+// ---- 盤前盤後走 Yahoo ----
+//
+// Finnhub 收盤後就停在收盤價，盤前盤後要動只能靠 Yahoo 的一分鐘線。盤中維持 Finnhub，
+// Yahoo 不是正式 API，不拿它扛每 15 秒的主流量。
+const POST = Date.parse('2026-10-01T22:00:00Z');   // 美東 18:00，盤後
+const PRE = Date.parse('2026-10-02T12:00:00Z');    // 美東 08:00，盤前
+
+test('盤中不打 Yahoo', async () => {
+  const { used } = await refresh({ cache: cacheRows(28 * 60_000), env: ENV_FINNHUB });
+  assert.equal(used.yahoo, 0);
+  assert.equal(used.finnhub, 3);
+});
+
+test('盤後改用 Yahoo 的最新一筆，寫進市值並標成盤後', async () => {
+  mock.timers.setTime(POST);
+  try {
+    const { body, used, written } = await refresh({ cache: cacheRows(28 * 60_000), env: ENV_FINNHUB });
+    assert.equal(used.yahoo, 3);
+    assert.equal(used.finnhub, 0, 'Yahoo 有回就不必再問 Finnhub');
+    assert.equal(used.twelve, 2, '美股一個 credit 都不花，只剩匯率與黃金');
+    const voo = body.results.find(r => r.symbol === 'VOO');
+    assert.equal(voo.price, US_PRICE.VOO + 5, '最後一根是 null 時取前一根');
+    assert.equal(voo.session, 'post');
+    assert.equal(voo.changePercent.toFixed(4), (15 / (US_PRICE.VOO - 10) * 100).toFixed(4), '漲跌對前一交易日收盤');
+    const row = written.find(r => r.id === voo.id);
+    assert.equal(row.amount_twd, Math.round((US_PRICE.VOO + 5) * 100 * FX));
+    assert.equal(row.quote_source, 'twelve_data', 'yahoo 不在 CHECK 允許值裡，要收斂');
+  } finally {
+    mock.timers.setTime(REGULAR);
+  }
+});
+
+test('盤前的美股快車道也走 Yahoo，標成盤前', async () => {
+  mock.timers.setTime(PRE);
+  try {
+    const { body, used, written } = await refresh({ cache: cacheRows(28 * 60_000), env: ENV_FINNHUB, requestBody: { scope: 'us' } });
+    assert.equal(used.yahoo, 3);
+    assert.equal(used.finnhub, 0);
+    assert.deepEqual(written, []);
+    assert.deepEqual([...new Set(body.results.map(r => r.session))], ['pre']);
+  } finally {
+    mock.timers.setTime(REGULAR);
+  }
+});
+
+test('Yahoo 掛掉時退回 Finnhub，不能整排抓不到', async () => {
+  mock.timers.setTime(POST);
+  try {
+    const { body, used } = await refresh({ cache: cacheRows(28 * 60_000), env: ENV_FINNHUB, yahooOk: false });
+    assert.equal(used.yahoo, 3);
+    assert.equal(used.finnhub, 3);
+    assert.equal(body.failed, 0);
+    assert.equal(body.results.find(r => r.symbol === 'VOO').price, US_PRICE.VOO);
+  } finally {
+    mock.timers.setTime(REGULAR);
+  }
 });

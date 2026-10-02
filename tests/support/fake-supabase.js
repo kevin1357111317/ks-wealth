@@ -216,8 +216,10 @@ export function makeClient() {
       globalThis.__invokes[name] = (globalThis.__invokes[name] ?? 0) + 1;
       globalThis.__scopes = globalThis.__scopes ?? { tw: 0, us: 0, all: 0 };
       globalThis.__scopes[scope] += 1;
-      if (scope !== 'all') return { data: { scope, results: [] }, error: null };
-      return { data: { results: [], updated: 1, priceOnly: 0, failed: 0, fx: { symbol: 'USD/TWD', rate: FX }, gold: {} }, error: null };
+      // 測試可以設 globalThis.__quoteResults[scope] 決定這一輪回哪些報價。
+      const results = globalThis.__quoteResults?.[scope] ?? [];
+      if (scope !== 'all') return { data: { scope, results }, error: null };
+      return { data: { results, updated: 1, priceOnly: 0, failed: 0, fx: { symbol: 'USD/TWD', rate: FX }, gold: {} }, error: null };
     } },
     rpc: async name => {
       if (name === 'apply_due_loan_payments') {

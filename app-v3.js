@@ -10,12 +10,12 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.40.0';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.40.0';
-import { calculateUsd } from './usd-core.js?v=V3.40.0';
-import { calculateGold } from './gold-core.js?v=V3.40.0';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.40.0';
-import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.40.0';
+} from './financial-core.js?v=V3.41.0';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.41.0';
+import { calculateUsd } from './usd-core.js?v=V3.41.0';
+import { calculateGold } from './gold-core.js?v=V3.41.0';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.41.0';
+import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.41.0';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -24,10 +24,10 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.40.0';
-import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.40.0';
-import { withClockSkewRetry } from './supabase-fetch.js?v=V3.40.0';
-import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.40.0';
+} from './health-core.js?v=V3.41.0';
+import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.41.0';
+import { withClockSkewRetry } from './supabase-fetch.js?v=V3.41.0';
+import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.41.0';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -680,6 +680,8 @@ async function refreshUsQuotes() {
     for (const result of data.results ?? []) {
       const price = toFiniteNumber(result.price);
       const item = price > 0 ? items.find(row => row.id === result.id) : null;
+      // 卡片上的報價、漲跌與盤前盤後標籤跟著 15 秒這輪走，不要等 60 秒那輪。
+      if (price > 0) quoteData = { ...quoteData, [result.id]: result };
       const quantity = toFiniteNumber(item?.quantity);
       if (!item || !(quantity > 0) || !(rate > 0)) continue;
       const amountTwd = Math.round(price * quantity * rate);
@@ -2295,8 +2297,10 @@ function itemCard(item, total) {
     : `NT$ ${formatNumber(quote?.price)}`;
   const change = toFiniteNumber(quote?.changePercent);
   const tone = change > 0 ? 'up' : change < 0 ? 'down' : 'flat';
+  // 美股盤前盤後的價（Yahoo）要標出來，不然會以為是盤中成交。
+  const sessionTag = { pre: '盤前', post: '盤後' }[quote?.session] ?? '';
   const quoteLine = quote
-    ? `<span class="quoteLive"><i></i>${price}<b class="${tone}">${change > 0 ? '+' : ''}${change.toFixed(2)}%</b></span>`
+    ? `<span class="quoteLive"><i></i>${sessionTag ? `<em class="quoteSession">${sessionTag}</em>` : ''}${price}<b class="${tone}">${change > 0 ? '+' : ''}${change.toFixed(2)}%</b></span>`
     : item.symbol ? '<span class="quotePending">沿用最近市值</span>' : '';
   const due = item.kind === 'liability' ? loanNextDueForItem(item.id) : null;
   const dueLine = due

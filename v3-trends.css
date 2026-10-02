@@ -63,6 +63,7 @@
 .compactMeta>span+span{padding-left:12px;border-left:1px solid #2a323e}
 .quoteLive{display:flex;align-items:center;gap:6px}
 .quoteLive i{width:7px;height:7px;border-radius:50%;background:#72d7a7;box-shadow:0 0 9px #72d7a755}
+.quoteSession{font-style:normal;font-size:11px;font-weight:700;padding:1px 6px;border-radius:999px;background:#f3e3c3;color:#8a5a1c}
 .quoteLive b{font-size:12px}.quoteLive b.up{color:#ff7f91}.quoteLive b.down{color:#72d7a7}.quoteLive b.flat{color:#aab2bf}
 .quotePending{color:#7f8999}
 .status.updating i{background:var(--orange);box-shadow:0 0 9px #e5ae4f77;animation:pulse 1s ease-in-out infinite alternate}
