@@ -848,6 +848,24 @@ App 開著的時候會用 Screen Wake Lock 讓螢幕不要自己關掉，行情�
 台幣市值由前端用手上的匯率換算；匯率是慢變數（一分鐘動 0.01 上下），沿用 60 秒那輪的值就夠。
 前端拿不到匯率時直接不更新，寧可停在舊數字也不要拿 0 乘出一排歸零的市值。
 
+### 盤前盤後（2026-10-02 起）
+
+Finnhub 的 `/quote` 收盤後就停在收盤價，Twelve Data 的 `prepost` 要付費方案。所以**美東盤中以外**
+（盤前 04:00–09:30、盤後 16:00–20:00、以及收工到隔天盤前、週末），美股報價改抓 Yahoo 的一分鐘線
+（`v8/finance/chart/{symbol}?interval=1m&range=1d&includePrePost=true`），取最後一根非 null 的收盤價；
+Yahoo 失敗才退回 Finnhub。盤中維持 Finnhub —— Yahoo 不是正式 API，不拿它扛每 15 秒的主流量。
+
+- Yahoo 的美股報價是即時的（Nasdaq Real Time Price），不是 15 分鐘延遲；Supabase 那邊連得到
+  （2026-10-02 用 `http_get` 從資料庫實測 200，VOO 盤後 705.32 / 收盤 702.35）。
+- 漲跌一律對 `chartPreviousClose`（前一交易日收盤）：盤後看到的是整天加盤後，盤前看到的是隔夜。
+- 每一筆帶 `session`（`pre`／`regular`／`post`，依那根 K 棒的美東時間判斷），卡片上標「盤前」「盤後」。
+- **畫面上的市值與淨資產跟著盤前盤後動**；`financial_items.amount_twd` 與 `klfan_quotes` 寫的也是這個價。
+- **每日快照（06:00 台北）與績效（TWR／XIRR）不受影響**：快照用 Twelve Data 的 `close`（正規收盤），
+  績效用 Yahoo 日線收盤。盤後量小、價格跳，拿來記歷史只會多雜訊。
+- 時段判斷不處理國定假日：那天 Yahoo 沒有新 K 棒，回的就是上一個交易日最後一筆，結果一樣對。
+- `quote_source` 有 CHECK 約束，`yahoo` 不在允許值裡，照 Finnhub 的做法收斂成 `twelve_data`；
+  真正來源留在 `klfan_quotes.source`。
+
 匯率與黃金搬不到 Finnhub：2026-09-19 用正式環境的 key 實測，`forex/rates`、`OANDA:USD_TWD`、
 `OANDA:XAU_USD` 全部回 403（免費方案只開美股），所以這兩項維持 60 秒。
 
