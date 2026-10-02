@@ -48,7 +48,7 @@ globalThis.__quoteResults = { all: [${quote('fi-voo', 'VOO', 'post')}, ${quote('
   const browser = await chromium.launch({ executablePath: BROWSER });
   t.after(async () => { await browser.close(); server.close(); });
 
-  const page = await browser.newPage({ viewport: { width: 390, height: 900 }, locale: 'zh-TW' });
+  const page = await browser.newPage({ viewport: { width: 375, height: 900 }, locale: 'zh-TW' });
   await page.route('**/cdn.jsdelivr.net/**', route =>
     route.fulfill({ status: 200, contentType: 'text/javascript', body: stub }));
   await page.route('**fonts.g**', route => route.abort());
@@ -59,7 +59,18 @@ globalThis.__quoteResults = { all: [${quote('fi-voo', 'VOO', 'post')}, ${quote('
   if (!(await page.isVisible('.itemCard[data-id="fi-voo"]'))) await page.click('.categoryHead');
   await page.waitForSelector('.itemCard[data-id="fi-voo"] .quoteLive', { timeout: 10_000 });
 
-  assert.equal(await page.textContent('.itemCard[data-id="fi-voo"] .quoteSession'), '盤後');
+  assert.equal(await page.textContent('.itemCard[data-id="fi-voo"] .compactIdentity .quoteSession'), '盤後', '標籤放在代號旁邊');
+  assert.equal(await page.$('.itemCard[data-id="fi-voo"] .quoteLive .quoteSession'), null, '報價那一行太擠，不放標籤');
   assert.match(await page.textContent('.itemCard[data-id="fi-voo"] .quoteLive'), /US\$ 705\.32.*\+0\.64%/);
   assert.equal(await page.$('.itemCard[data-id="fi-soxx"] .quoteSession'), null, '盤中不加標籤');
+  // 2026-10-02 第一版把標籤塞在報價那一行，手機上被擠成直排「盤／前」、價格也折行。
+  const layout = await page.evaluate(() => {
+    const tag = document.querySelector('.itemCard[data-id="fi-voo"] .quoteSession').getBoundingClientRect();
+    const card = document.querySelector('.itemCard[data-id="fi-voo"]').getBoundingClientRect();
+    return { tagW: tag.width, tagH: tag.height, cardRight: card.right, viewport: document.documentElement.clientWidth,
+      scroll: document.documentElement.scrollWidth };
+  });
+  assert.ok(layout.tagW > layout.tagH, `標籤要是橫的，實際 ${layout.tagW}x${layout.tagH}`);
+  assert.ok(layout.cardRight <= layout.viewport, '卡片不能被撐出畫面');
+  assert.equal(layout.scroll, layout.viewport, '不能出現水平捲動');
 });

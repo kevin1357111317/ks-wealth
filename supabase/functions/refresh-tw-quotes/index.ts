@@ -148,7 +148,9 @@ Deno.serve(async (req: Request) => {
 
   // 盤前、盤後與收工時段 Finnhub 只會停在收盤價，改抓 Yahoo 的一分鐘線（含盤前盤後）。
   // Yahoo 的美股報價是即時的（Nasdaq Real Time Price），不用金鑰。盤中維持 Finnhub。
-  // 漲跌一律對「前一個交易日收盤」：盤後看到的是整天加盤後的變化，盤前看到的是隔夜的變化。
+  // 漲跌對「最近一次正規收盤」：盤前、盤後的成交比的是最近那根收盤（盤前 = 昨收、盤後 = 今天收盤），
+  // 跟券商 App 的盤前盤後漲跌同一個口徑。注意不能用 chartPreviousClose：盤前時 range=1d 的
+  // chartPreviousClose 是「前天」收盤（2026-10-02 盤前 VOO 給 700.86，昨收其實是 702.35）。
   const yahooQuote = async (symbol: string) => {
     try {
       const response = await fetch(
@@ -164,7 +166,11 @@ Deno.serve(async (req: Request) => {
       while (index >= 0 && !(Number(closes[index]) > 0)) index -= 1;
       const price = index >= 0 ? Number(closes[index]) : Number(meta.regularMarketPrice);
       const at = index >= 0 ? Number(stamps[index]) : Number(meta.regularMarketTime);
-      const previousClose = Number(meta.chartPreviousClose ?? meta.previousClose);
+      const regularClose = Number(meta.regularMarketPrice);
+      const regularTime = Number(meta.regularMarketTime);
+      const previousClose = at > regularTime && regularClose > 0
+        ? regularClose
+        : Number(meta.chartPreviousClose ?? meta.previousClose);
       if (!(price > 0) || !(previousClose > 0) || !Number.isFinite(at)) return null;
       const change = price - previousClose;
       return {
