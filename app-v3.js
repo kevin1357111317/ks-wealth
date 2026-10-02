@@ -10,12 +10,12 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.39.0';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.39.0';
-import { calculateUsd } from './usd-core.js?v=V3.39.0';
-import { calculateGold } from './gold-core.js?v=V3.39.0';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.39.0';
-import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.39.0';
+} from './financial-core.js?v=V3.40.0';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.40.0';
+import { calculateUsd } from './usd-core.js?v=V3.40.0';
+import { calculateGold } from './gold-core.js?v=V3.40.0';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.40.0';
+import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.40.0';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -24,10 +24,10 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.39.0';
-import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.39.0';
-import { withClockSkewRetry } from './supabase-fetch.js?v=V3.39.0';
-import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.39.0';
+} from './health-core.js?v=V3.40.0';
+import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.40.0';
+import { withClockSkewRetry } from './supabase-fetch.js?v=V3.40.0';
+import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.40.0';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -121,6 +121,10 @@ let liveQuoteUpdatedAt = { tw: null, us: null };
 let quoteValuePulseUntil = 0;
 let quoteData = {};
 let fxRate = null;
+// 日圓存款的 JPY/TWD。只有 refresh-tw-quotes 算得出來（USD/TWD ÷ USD/JPY），
+// 前端從日圓那一列的 fx_rate_twd 讀回來，給編輯表單即時換算用。
+let jpyRate = null;
+const latestJpyRate = rows => rows.find(item => item.native_currency === 'JPY' && item.fx_rate_twd > 0)?.fx_rate_twd ?? null;
 // 私帳（39 檔標的、1489 筆交易、92 KB）只有股票分析頁與編輯表單的交易紀錄要用。
 // 資產列的股數與市值是觸發器算好存在 financial_items 的，開 App 根本不需要私帳，
 // 所以改成第一次真的要用時才載。
@@ -888,6 +892,7 @@ function applyHomeRows(rows) {
   scopeHistory = (rows.scopeHistory ?? []).map(row => ({ ...row, total_twd: toFiniteNumber(row.total_twd) }));
   householdName = rows.householdName || '布布一二的家';
   fxRate = items.find(item => item.fx_rate_twd > 1 && item.quote_currency === 'USD')?.fx_rate_twd ?? fxRate;
+  jpyRate = latestJpyRate(items) ?? jpyRate;
   if (rows.usd) usdTransactions = rows.usd;
   if (rows.gold) goldTransactions = rows.gold;
   if (rows.loanAccounts) loanAccounts = rows.loanAccounts;
@@ -1046,6 +1051,7 @@ async function reloadItems() {
   if (error || generation !== itemReloadGeneration || !member || member.household_id !== householdId) return;
   items = (data ?? []).map(normalizeFinancialItem);
   fxRate = items.find(item => item.fx_rate_twd > 1 && item.quote_currency === 'USD')?.fx_rate_twd ?? fxRate;
+  jpyRate = latestJpyRate(items) ?? jpyRate;
   render();
 }
 
@@ -1206,6 +1212,7 @@ async function refreshQuotes({ force = false } = {}) {
       ...Object.fromEntries(successfulQuotes.map(result => [result.id, result])),
     };
     if (data?.fx?.rate) fxRate = toFiniteNumber(data.fx.rate, fxRate);
+    if (data?.jpy?.rate) jpyRate = toFiniteNumber(data.jpy.rate, jpyRate);
     const failed = toFiniteNumber(data?.failed);
     const succeeded = toFiniteNumber(data?.updated) + toFiniteNumber(data?.priceOnly);
     quoteStatus = failed > 0 ? (succeeded > 0 ? 'partial' : 'error') : 'success';
@@ -2280,6 +2287,7 @@ function itemCard(item, total) {
   const percent = total ? item.amount_twd / total * 100 : 0;
   const percentLabel = percent > 0 && percent < 1 ? '&lt;1' : Math.round(percent);
   const isNativeUsd = item.native_currency === 'USD' && item.native_amount !== null;
+  const isNativeJpy = item.native_currency === 'JPY' && item.native_amount !== null;
   const subtitle = item.symbol ? escapeHtml(item.symbol) : escapeHtml(item.native_currency || '');
   const quantity = item.quantity === null ? '待設定' : formatNumber(item.quantity);
   const price = quote?.currency === 'USD'
@@ -2300,7 +2308,9 @@ function itemCard(item, total) {
     : `<span>利率 ${item.interest_rate !== null ? item.interest_rate.toFixed(2) + '%' : '待設定'}</span>${dueLine || `<span>月付 ${item.monthly_payment_twd !== null ? 'NT$ ' + formatNumber(item.monthly_payment_twd) : '待設定'}</span>`}`;
   const original = isNativeUsd
     ? `<span>US$ ${masked ? '••••••' : new Intl.NumberFormat('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(item.native_amount)}</span>`
-    : '';
+    : isNativeJpy
+      ? `<span>¥ ${masked ? '••••••' : new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 }).format(item.native_amount)}</span>`
+      : '';
   return `<button class="itemCard compactCard" data-id="${item.id}"><div class="compactMain"><div class="allocationRing ${item.kind}" style="--pct:${Math.max(0, Math.min(100, percent))}%"><span>${percentLabel}%</span></div><div class="compactIdentity"><b>${escapeHtml(item.name)}</b>${subtitle ? `<span>${subtitle}</span>` : ''}</div><div class="compactAmount"><b>NT$ ${formatNumber(item.amount_twd)}</b>${original}</div></div>${meta ? `<div class="compactMeta ${item.kind}">${meta}</div>` : ''}</button>`;
 }
 
@@ -2523,7 +2533,7 @@ function modeForItem(item, kind) {
   if (item?.market === 'US') return 'stock-us';
   if (item?.market === 'GOLD') return 'gold';
   const currency = item?.native_currency ?? item?.original_currency ?? 'TWD';
-  return currency === 'USD' ? 'manual-usd' : 'manual-twd';
+  return currency === 'USD' ? 'manual-usd' : currency === 'JPY' ? 'manual-jpy' : 'manual-twd';
 }
 
 // 這幾類沒有行情可抓，金額是手打的，但可能是美金計價 —— 給它們一個幣別選單，
@@ -2533,6 +2543,7 @@ const CURRENCY_CHOICE_ATTRIBUTES = new Set(['insurance', 'other']);
 const assetAttributes = [
   { value: 'cash-twd', label: '台幣', category: '現金及存款', mode: 'manual-twd' },
   { value: 'cash-usd', label: '美金', category: '現金及存款', mode: 'manual-usd' },
+  { value: 'cash-jpy', label: '日圓', category: '現金及存款', mode: 'manual-jpy' },
   { value: 'stock-tw', label: '台股', category: '台股', mode: 'stock-tw' },
   { value: 'stock-us', label: '美股', category: '美股', mode: 'stock-us' },
   { value: 'real-estate', label: '不動產', category: '不動產', mode: 'manual-twd' },
@@ -2544,7 +2555,7 @@ const assetAttributes = [
 function assetAttributeForItem(item) {
   const mode = modeForItem(item, 'asset');
   if (mode === 'stock-tw' || mode === 'stock-us' || mode === 'gold') return mode;
-  if (item?.category === '現金及存款') return mode === 'manual-usd' ? 'cash-usd' : 'cash-twd';
+  if (item?.category === '現金及存款') return mode === 'manual-usd' ? 'cash-usd' : mode === 'manual-jpy' ? 'cash-jpy' : 'cash-twd';
   if (item?.category === '不動產') return 'real-estate';
   if (item?.category === '黃金') return 'gold';
   if (item?.category === '保險') return 'insurance';
@@ -2572,7 +2583,7 @@ async function editItem(item, defaultOwner, defaultKind) {
   const initialNativeAmount = item?.native_amount ?? item?.original_amount ?? item?.amount_twd ?? '';
   const backdrop = document.createElement('div');
   backdrop.className = 'backdrop';
-  backdrop.innerHTML = `<section class="sheet"><div class="handle"></div><div class="sheetHead"><div><h2>${item ? '編輯' : '新增'}財務項目</h2></div>${item ? '<button id="del" class="trash">刪除</button>' : ''}</div><form id="editform" class="form" novalidate><label>歸屬<select id="owner"><option value="husband">老公</option><option value="wife">老婆</option></select></label><div class="seg"><button type="button" data-kind="asset">資產</button><button type="button" data-kind="liability">負債</button></div><label><span id="categoryLabel">資產屬性</span><select id="cat"></select></label><label id="nameBox">名稱<input id="nm" required value="${escapeHtml(item?.name || '')}"></label><label id="currencyBox" class="hide">幣別<select id="manualCurrency"><option value="TWD">台幣（TWD）</option><option value="USD">美金（USD）</option></select></label><label id="modeBox">資料型態<select id="mode"><option value="manual-twd">手動台幣資產</option><option value="manual-usd">手動美元資產</option><option value="stock-tw">台股</option><option value="stock-us">美股</option><option value="gold">黃金（自動行情）</option></select><small id="modeHint" class="quoteHint"></small></label><div id="manualFields"><label id="amountLabel">台幣金額<input id="amt" inputmode="decimal" value="${initialNativeAmount}"></label><div id="usdFields" class="two hide"><label>USD/TWD 匯率<input id="fx" inputmode="decimal" readonly></label><label>自動換算台幣<input id="converted" readonly></label></div></div><div id="stockFields" class="hide"><div class="two"><label>代號或名稱<input id="symbol" value="${escapeHtml(ledgerStock ? ledgerStock.display : item?.symbol || '')}" placeholder="2330 或 台積電" autocapitalize="characters"></label><label id="qtyBox">持有股數<input id="qty" inputmode="decimal" value="${item?.quantity ?? ''}"></label><label id="txActionBox" class="hide">類型<select id="txAction"><option value="buy">買進</option><option value="sell">賣出</option><option value="dividend">股息</option></select></label></div><div class="quoteHint hide" id="stockHint"></div><div id="ledgerFields" class="hide"><div class="two"><label id="txAmountBox">總金額<input id="txAmount" inputmode="decimal"></label><label id="txSharesBox">股數<input id="txShares" inputmode="decimal"></label></div><div class="two"><label>日期<input id="txDate" type="date" value="${taipeiDate()}"></label><label>銀行／券商<input id="txBank"></label></div><div id="txHistoryBox" class="hide"><div class="sectionHead"><b>交易紀錄</b><span id="txCount"></span></div><div class="portfolioTxList" id="txHistory"></div></div></div></div><div id="goldFields" class="hide"><div class="two"><label>持有重量<input id="goldWeight" inputmode="decimal" value="${item?.market === 'GOLD' ? item.quantity ?? '' : ''}"></label><label>單位<select disabled><option>g 公克</option></select></label></div></div><div id="loanFields" class="hide"><label>剩餘本金（TWD）<input id="principal" inputmode="decimal" value="${item?.amount_twd ?? ''}"></label><div class="two"><label>年利率 %<input id="rate" inputmode="decimal" value="${item?.interest_rate ?? ''}"></label><label>每月還款（TWD）<input id="pay" inputmode="decimal" value="${item?.monthly_payment_twd ?? ''}"></label></div></div><label>備註（選填）<input id="note" value="${escapeHtml(item?.notes || '')}"></label><div id="emsg"></div><button id="save" class="primary">儲存並同步</button></form></section>`;
+  backdrop.innerHTML = `<section class="sheet"><div class="handle"></div><div class="sheetHead"><div><h2>${item ? '編輯' : '新增'}財務項目</h2></div>${item ? '<button id="del" class="trash">刪除</button>' : ''}</div><form id="editform" class="form" novalidate><label>歸屬<select id="owner"><option value="husband">老公</option><option value="wife">老婆</option></select></label><div class="seg"><button type="button" data-kind="asset">資產</button><button type="button" data-kind="liability">負債</button></div><label><span id="categoryLabel">資產屬性</span><select id="cat"></select></label><label id="nameBox">名稱<input id="nm" required value="${escapeHtml(item?.name || '')}"></label><label id="currencyBox" class="hide">幣別<select id="manualCurrency"><option value="TWD">台幣（TWD）</option><option value="USD">美金（USD）</option></select></label><label id="modeBox">資料型態<select id="mode"><option value="manual-twd">手動台幣資產</option><option value="manual-usd">手動美元資產</option><option value="manual-jpy">手動日圓資產</option><option value="stock-tw">台股</option><option value="stock-us">美股</option><option value="gold">黃金（自動行情）</option></select><small id="modeHint" class="quoteHint"></small></label><div id="manualFields"><label id="amountLabel">台幣金額<input id="amt" inputmode="decimal" value="${initialNativeAmount}"></label><div id="usdFields" class="two hide"><label><span id="fxLabel">USD/TWD 匯率</span><input id="fx" inputmode="decimal" readonly></label><label>自動換算台幣<input id="converted" readonly></label></div></div><div id="stockFields" class="hide"><div class="two"><label>代號或名稱<input id="symbol" value="${escapeHtml(ledgerStock ? ledgerStock.display : item?.symbol || '')}" placeholder="2330 或 台積電" autocapitalize="characters"></label><label id="qtyBox">持有股數<input id="qty" inputmode="decimal" value="${item?.quantity ?? ''}"></label><label id="txActionBox" class="hide">類型<select id="txAction"><option value="buy">買進</option><option value="sell">賣出</option><option value="dividend">股息</option></select></label></div><div class="quoteHint hide" id="stockHint"></div><div id="ledgerFields" class="hide"><div class="two"><label id="txAmountBox">總金額<input id="txAmount" inputmode="decimal"></label><label id="txSharesBox">股數<input id="txShares" inputmode="decimal"></label></div><div class="two"><label>日期<input id="txDate" type="date" value="${taipeiDate()}"></label><label>銀行／券商<input id="txBank"></label></div><div id="txHistoryBox" class="hide"><div class="sectionHead"><b>交易紀錄</b><span id="txCount"></span></div><div class="portfolioTxList" id="txHistory"></div></div></div></div><div id="goldFields" class="hide"><div class="two"><label>持有重量<input id="goldWeight" inputmode="decimal" value="${item?.market === 'GOLD' ? item.quantity ?? '' : ''}"></label><label>單位<select disabled><option>g 公克</option></select></label></div></div><div id="loanFields" class="hide"><label>剩餘本金（TWD）<input id="principal" inputmode="decimal" value="${item?.amount_twd ?? ''}"></label><div class="two"><label>年利率 %<input id="rate" inputmode="decimal" value="${item?.interest_rate ?? ''}"></label><label>每月還款（TWD）<input id="pay" inputmode="decimal" value="${item?.monthly_payment_twd ?? ''}"></label></div></div><label>備註（選填）<input id="note" value="${escapeHtml(item?.notes || '')}"></label><div id="emsg"></div><button id="save" class="primary">儲存並同步</button></form></section>`;
   document.body.append(backdrop);
 
   const form = backdrop.querySelector('#editform');
@@ -2591,6 +2602,7 @@ async function editItem(item, defaultOwner, defaultKind) {
   const amountInput = backdrop.querySelector('#amt');
   const usdFields = backdrop.querySelector('#usdFields');
   const fxInput = backdrop.querySelector('#fx');
+  const fxLabel = backdrop.querySelector('#fxLabel');
   const convertedInput = backdrop.querySelector('#converted');
   const stockFields = backdrop.querySelector('#stockFields');
   const symbolInput = backdrop.querySelector('#symbol');
@@ -2623,15 +2635,18 @@ async function editItem(item, defaultOwner, defaultKind) {
   modeInput.value = mode;
   if (ledgerStock?.display) nameInput.value = ledgerStock.display;
 
-  const currentFxRate = () => toFiniteNumber(fxRate || item?.fx_rate_twd);
+  // 日圓那一列自己的 fx_rate_twd 就是 JPY/TWD；別的列的 fx_rate_twd 是美金匯率，不能拿來用。
+  const currentFxRate = () => mode === 'manual-jpy'
+    ? toFiniteNumber(jpyRate || (item?.native_currency === 'JPY' ? item.fx_rate_twd : 0))
+    : toFiniteNumber(fxRate || item?.fx_rate_twd);
   const updateConversion = () => {
-    if (mode !== 'manual-usd') return;
+    if (mode !== 'manual-usd' && mode !== 'manual-jpy') return;
     const rate = currentFxRate();
-    fxInput.value = rate > 0 ? rate.toFixed(4) : '尚未取得';
+    fxInput.value = rate > 0 ? rate.toFixed(mode === 'manual-jpy' ? 6 : 4) : '尚未取得';
     const amount = Number(String(amountInput.value).replace(/,/g, ''));
     convertedInput.value = Number.isFinite(amount) && amount >= 0 && rate > 0
       ? `NT$ ${new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 }).format(Math.round(amount * rate))}`
-      : '等待有效美元金額與匯率';
+      : `等待有效${mode === 'manual-jpy' ? '日圓' : '美元'}金額與匯率`;
   };
   // 私帳只認帶交易所前綴的代號（TPE:2330 / NASDAQ:QQQ），sync_klfan_financial_item
   // 也是靠這個前綴把裸代號切出來寫進 financial_items.symbol。使用者只打 2330 的話
@@ -2745,8 +2760,9 @@ async function editItem(item, defaultOwner, defaultKind) {
     if (ledger) updateLedgerFields();
     goldFields.classList.toggle('hide', !gold);
     loanFields.classList.toggle('hide', kind !== 'liability');
-    usdFields.classList.toggle('hide', mode !== 'manual-usd');
-    amountLabel.firstChild.textContent = mode === 'manual-usd' ? '美元金額（USD）' : '台幣金額（TWD）';
+    usdFields.classList.toggle('hide', mode !== 'manual-usd' && mode !== 'manual-jpy');
+    fxLabel.textContent = mode === 'manual-jpy' ? 'JPY/TWD 匯率' : 'USD/TWD 匯率';
+    amountLabel.firstChild.textContent = mode === 'manual-usd' ? '美元金額（USD）' : mode === 'manual-jpy' ? '日圓金額（JPY）' : '台幣金額（TWD）';
     stockHint.textContent = '';
     backdrop.querySelectorAll('[data-kind]').forEach(button => button.classList.toggle('on', button.dataset.kind === kind));
     updateConversion();
@@ -2898,13 +2914,13 @@ async function editItem(item, defaultOwner, defaultKind) {
         amountTwd = calculateTwdAmount({ nativeCurrency: 'TWD', nativeAmount, fxRateTwd: 1 });
         interestRate = parseNonNegative(rateInput.value, '年利率', { required: false });
         monthlyPayment = parseNonNegative(paymentInput.value, '每月還款', { required: false });
-      } else if (mode === 'manual-twd' || mode === 'manual-usd') {
-        nativeCurrency = mode === 'manual-usd' ? 'USD' : 'TWD';
-        nativeAmount = parseNonNegative(amountInput.value, nativeCurrency === 'USD' ? '美元金額' : '台幣金額');
-        exchangeRate = nativeCurrency === 'USD' ? currentFxRate() : 1;
+      } else if (mode === 'manual-twd' || mode === 'manual-usd' || mode === 'manual-jpy') {
+        nativeCurrency = mode === 'manual-usd' ? 'USD' : mode === 'manual-jpy' ? 'JPY' : 'TWD';
+        nativeAmount = parseNonNegative(amountInput.value, { USD: '美元金額', JPY: '日圓金額', TWD: '台幣金額' }[nativeCurrency]);
+        exchangeRate = nativeCurrency === 'TWD' ? 1 : currentFxRate();
         amountTwd = calculateTwdAmount({ nativeCurrency, nativeAmount, fxRateTwd: exchangeRate });
         quoteCurrency = nativeCurrency;
-        quoteSource = nativeCurrency === 'USD' ? 'twelve_data' : 'manual';
+        quoteSource = nativeCurrency === 'TWD' ? 'manual' : 'twelve_data';
       } else if (mode === 'stock-tw' || mode === 'stock-us') {
         market = mode === 'stock-us' ? 'US' : 'TW';
         symbol = symbolInput.value.trim().toUpperCase();
@@ -2969,7 +2985,7 @@ async function editItem(item, defaultOwner, defaultKind) {
       tab = owner;
       pageKind[owner] = kind;
       await loadData({ blocking: false });
-      if (kind === 'asset' && (mode.startsWith('stock-') || mode === 'manual-usd' || mode === 'gold')) {
+      if (kind === 'asset' && (mode.startsWith('stock-') || mode === 'manual-usd' || mode === 'manual-jpy' || mode === 'gold')) {
         void refreshQuotes({ force: true });
       }
     } catch (error) {

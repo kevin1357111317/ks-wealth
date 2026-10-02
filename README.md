@@ -809,6 +809,25 @@ USD/TWD，最後寫的那個就是當下的匯率，這正是我們要的「兩�
 要新增別的類別到這個名單，只要把 value 加進 `CURRENCY_CHOICE_ATTRIBUTES`；儲存那段是照
 `mode` 分支的，不必動。
 
+### 日圓存款
+
+現金及存款多一個「日圓」屬性（`manual-jpy`），存法跟美金活存一樣：`native_currency='JPY'`、
+`native_amount` 是日圓金額、`fx_rate_twd` 是 **JPY/TWD**（0.2 上下），卡片右下角顯示 `¥ 金額`。
+
+匯率不另外找來源，用 Twelve Data 的 **USD/JPY 跟既有的 USD/TWD 交叉**：
+`JPY/TWD = USD/TWD ÷ USD/JPY`。這是市場中價，比國泰網銀牌告的買入價高約 0.5%
+（2026-10-02：中價約 0.2024、網銀買入 0.2014），所以畫面上的台幣是「市值」，不是「現在換回台幣拿得到的錢」。
+
+USD/JPY 存在 `ks_quote_cache`（跟 XAU/USD 同一張），快取 **10 分鐘** —— Twelve Data 免費每分鐘
+只有 8 credits，日圓一天動不了幾次，不值得每輪跟美股搶額度。`daily-wealth-snapshot` 每天也會用同一個
+算法重估一次，沒開 App 的日子淨值走勢也照樣跟著日圓動。
+
+寫回時 `quote_currency='JPY'`。前端是靠 `fx_rate_twd > 1 && quote_currency === 'USD'` 找美金匯率的，
+日圓列兩個條件都不會中，不會把 0.2 當成美金匯率；編輯表單的日圓換算只讀日圓列自己的匯率。
+
+`native_currency` 的 CHECK 約束原本只收 TWD/USD，2026-10-02 在 production 直接放寬成多收 JPY
+（見 `supabase/proposals/20261002_native_currency_jpy.sql`）。
+
 ## 螢幕恆亮與自動更新
 
 App 開著的時候會用 Screen Wake Lock 讓螢幕不要自己關掉，行情分成**兩條快慢不同的路徑**，

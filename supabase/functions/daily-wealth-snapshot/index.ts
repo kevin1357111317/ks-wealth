@@ -54,6 +54,9 @@ Deno.serve(async (req: Request) => {
   const usdCashItems = (items ?? []).filter((item) =>
     item.kind === "asset" && item.market === "MANUAL" && item.native_currency === "USD" && Number(item.native_amount) >= 0
   );
+  const jpyCashItems = (items ?? []).filter((item) =>
+    item.kind === "asset" && item.market === "MANUAL" && item.native_currency === "JPY" && Number(item.native_amount) >= 0
+  );
   const validSymbol = (symbol: string) => /^[0-9A-Z.-]{1,16}$/.test(symbol);
   const twSymbols = [...new Set(marketItems.filter((item) => item.market === "TW").map((item) => String(item.symbol).toUpperCase()))].filter(validSymbol);
   const usSymbols = [...new Set(marketItems.filter((item) => item.market === "US").map((item) => String(item.symbol).toUpperCase()))].filter(validSymbol);
@@ -74,12 +77,25 @@ Deno.serve(async (req: Request) => {
   }));
 
   let fxRate: number | null = null;
-  if ((usSymbols.length || usdCashItems.length) && twelveKey) {
+  if ((usSymbols.length || usdCashItems.length || jpyCashItems.length) && twelveKey) {
     try {
       const response = await fetch(`https://api.twelvedata.com/exchange_rate?symbol=USD%2FTWD&apikey=${encodeURIComponent(twelveKey)}`);
       const data = await response.json();
       const rate = Number(data.rate);
       if (response.ok && data.status !== "error" && Number.isFinite(rate) && rate > 0) fxRate = rate;
+    } catch { /* keep the previous stored values when FX is unavailable */ }
+  }
+
+  // 日圓存款：JPY/TWD = (USD/TWD) ÷ (USD/JPY)，跟 refresh-tw-quotes 同一個算法。
+  let jpyTwd: number | null = null;
+  if (jpyCashItems.length && fxRate && twelveKey) {
+    try {
+      const response = await fetch(`https://api.twelvedata.com/exchange_rate?symbol=USD%2FJPY&apikey=${encodeURIComponent(twelveKey)}`);
+      const data = await response.json();
+      const usdJpy = Number(data.rate);
+      if (response.ok && data.status !== "error" && Number.isFinite(usdJpy) && usdJpy > 0) {
+        jpyTwd = Number((fxRate / usdJpy).toFixed(6));
+      }
     } catch { /* keep the previous stored values when FX is unavailable */ }
   }
 
@@ -128,6 +144,21 @@ Deno.serve(async (req: Request) => {
       amount_twd: amountTwd,
       fx_rate_twd: fxRate,
       quote_currency: "USD",
+      quote_source: "twelve_data",
+    }).eq("id", item.id);
+    if (error) failed += 1;
+    else updated += 1;
+  }
+
+  for (const item of jpyCashItems) {
+    if (!jpyTwd) {
+      failed += 1;
+      continue;
+    }
+    const { error } = await client.from("financial_items").update({
+      amount_twd: Math.round(Number(item.native_amount) * jpyTwd),
+      fx_rate_twd: jpyTwd,
+      quote_currency: "JPY",
       quote_source: "twelve_data",
     }).eq("id", item.id);
     if (error) failed += 1;
@@ -228,6 +259,6 @@ Deno.serve(async (req: Request) => {
   const { data: autopay, error: autopayError } = await client.rpc("apply_due_loan_payments");
   if (autopayError) console.error("autopay_failed", autopayError.message);
 
-  return json({ ok: true, recordedOn, updated, failed, fxRate, households: households.size,
+  return json({ ok: true, recordedOn, updated, failed, fxRate, jpyTwd, households: households.size,
     loanPayments: autopay?.length ?? 0 });
 });

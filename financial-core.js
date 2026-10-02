@@ -1,6 +1,7 @@
 export const OWNER_SCOPES = Object.freeze(['husband', 'wife']);
 export const ITEM_KINDS = Object.freeze(['asset', 'liability']);
-export const NATIVE_CURRENCIES = Object.freeze(['TWD', 'USD']);
+export const NATIVE_CURRENCIES = Object.freeze(['TWD', 'USD', 'JPY']);
+const CURRENCY_LABELS = Object.freeze({ TWD: '台幣', USD: '美元', JPY: '日圓' });
 export const STOCK_MARKETS = Object.freeze(['TW', 'US']);
 
 export function toFiniteNumber(value, fallback = 0) {
@@ -27,9 +28,10 @@ export function parseNonNegative(value, label, { required = true, positive = fal
 
 export function calculateTwdAmount({ nativeCurrency, nativeAmount, fxRateTwd }) {
   if (!NATIVE_CURRENCIES.includes(nativeCurrency)) throw new Error('不支援的幣別。');
-  const amount = parseNonNegative(nativeAmount, nativeCurrency === 'USD' ? '美元金額' : '台幣金額');
+  const label = CURRENCY_LABELS[nativeCurrency];
+  const amount = parseNonNegative(nativeAmount, `${label}金額`);
   if (nativeCurrency === 'TWD') return Math.round(amount);
-  const rate = parseNonNegative(fxRateTwd, '美元匯率', { positive: true });
+  const rate = parseNonNegative(fxRateTwd, `${label}匯率`, { positive: true });
   return Math.round(amount * rate);
 }
 

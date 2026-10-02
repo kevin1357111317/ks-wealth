@@ -17,6 +17,9 @@ const TROY_OUNCE_GRAMS = 31.1034768;
 // 匯率與黃金走 Twelve Data（免費額度較緊），維持 59 秒。
 const US_QUOTE_TTL_MS = 14 * 1000;
 const AUX_QUOTE_TTL_MS = 59 * 1000;
+// 日圓存款用 USD/JPY 跟 USD/TWD 交叉出 JPY/TWD。日圓活存一天動不了幾次、金額也小，
+// 不值得跟美股搶 Twelve Data 每分鐘 8 credits 的額度，快取放到 10 分鐘。
+const JPY_QUOTE_TTL_MS = 10 * 60 * 1000;
 // 對應 financial_items_quote_source_check；新增上游來源時要先改資料庫約束再加進來。
 const ALLOWED_QUOTE_SOURCES = ["manual", "fugle", "twelve_data"];
 const goldAmountTwd = (grams: number, xauUsd: number, usdTwd: number) =>
@@ -70,6 +73,7 @@ Deno.serve(async (req: Request) => {
   const marketItems = allItems.filter((item) => ["TW", "US"].includes(item.market) && item.symbol && Number(item.quantity) > 0);
   const goldItems = allItems.filter((item) => item.market === "GOLD");
   const usdCashItems = allItems.filter((item) => item.market === "MANUAL" && item.native_currency === "USD" && Number(item.native_amount) >= 0);
+  const jpyCashItems = allItems.filter((item) => item.market === "MANUAL" && item.native_currency === "JPY" && Number(item.native_amount) >= 0);
   const validSymbol = (symbol: string) => /^[0-9A-Z.-]{1,16}$/.test(symbol);
   const twSymbols = [...new Set(marketItems.filter((x) => x.market === "TW").map((x) => String(x.symbol).toUpperCase()))].filter(validSymbol);
   const usSymbols = [...new Set(marketItems.filter((x) => x.market === "US").map((x) => String(x.symbol).toUpperCase()))].filter(validSymbol);
@@ -180,12 +184,14 @@ Deno.serve(async (req: Request) => {
   let cachedFxRow: Record<string, unknown> | null = null;
   let cachedGoldFresh: number | null = null;
   let cachedGoldStale: number | null = null;
+  let cachedUsdJpyFresh: number | null = null;
+  let cachedUsdJpyStale: number | null = null;
   let cacheError: string | null = null;
 
   if (cache) {
     const [quotesResult, goldResult] = await Promise.all([
       cache.from("klfan_quotes").select("symbol,price,change,change_percent,source,quoted_at,updated_at"),
-      cache.from("ks_quote_cache").select("price,updated_at").eq("symbol", "XAU/USD").maybeSingle(),
+      cache.from("ks_quote_cache").select("symbol,price,updated_at").in("symbol", ["XAU/USD", "USD/JPY"]),
     ]);
     if (quotesResult.error) cacheError = quotesResult.error.message;
     // 14 秒的短快取是靠 Finnhub 的額度撐的。沒有 Finnhub 就會退回 Twelve Data，
@@ -222,16 +228,23 @@ Deno.serve(async (req: Request) => {
       cachedUsStale.set(code, hit);
       if (Date.parse(updatedAt) >= usFreshFloor) cachedUsFresh.set(code, hit);
     }
-    const goldPrice = Number(goldResult.data?.price);
-    if (Number.isFinite(goldPrice) && goldPrice > 0) {
-      cachedGoldStale = goldPrice;
-      if (Date.parse(String(goldResult.data?.updated_at ?? "")) >= auxFreshFloor) cachedGoldFresh = goldPrice;
+    for (const row of goldResult.data ?? []) {
+      const price = Number(row.price);
+      if (!Number.isFinite(price) || price <= 0) continue;
+      const updatedAt = Date.parse(String(row.updated_at ?? ""));
+      if (row.symbol === "XAU/USD") {
+        cachedGoldStale = price;
+        if (updatedAt >= auxFreshFloor) cachedGoldFresh = price;
+      } else if (row.symbol === "USD/JPY") {
+        cachedUsdJpyStale = price;
+        if (updatedAt >= Date.now() - JPY_QUOTE_TTL_MS) cachedUsdJpyFresh = price;
+      }
     }
   }
 
   let fxFetched = false;
   let fxError: string | null = null;
-  const needsUsdFx = usSymbols.length > 0 || usdCashItems.length > 0 || goldItems.length > 0;
+  const needsUsdFx = usSymbols.length > 0 || usdCashItems.length > 0 || goldItems.length > 0 || jpyCashItems.length > 0;
   const fetchFx = async () => {
     if (!needsUsdFx) return { rate: null as number | null, fetched: false, error: null as string | null };
     if (cachedFxFresh !== null) return { rate: cachedFxFresh, fetched: false, error: null as string | null };
@@ -319,12 +332,33 @@ Deno.serve(async (req: Request) => {
     }
   };
 
+  const fetchUsdJpy = async () => {
+    if (jpyCashItems.length === 0) return { rate: null as number | null, fetched: false, error: null as string | null, cached: false };
+    if (cachedUsdJpyFresh !== null) return { rate: cachedUsdJpyFresh, fetched: false, error: null as string | null, cached: true };
+    if (!twelveKey) return { rate: cachedUsdJpyStale, fetched: false, error: "twelve_key_missing", cached: cachedUsdJpyStale !== null };
+    try {
+      const response = await fetch(
+        `https://api.twelvedata.com/exchange_rate?symbol=USD%2FJPY&apikey=${encodeURIComponent(twelveKey)}`,
+        { headers: { "Accept": "application/json" } },
+      );
+      const data = await response.json();
+      const rate = Number(data.rate);
+      if (!response.ok || data.status === "error" || !Number.isFinite(rate) || rate <= 0) {
+        return { rate: cachedUsdJpyStale, fetched: false, error: data.code ? `twelve_${data.code}` : "jpy_unavailable", cached: cachedUsdJpyStale !== null };
+      }
+      return { rate, fetched: true, error: null as string | null, cached: false };
+    } catch {
+      return { rate: cachedUsdJpyStale, fetched: false, error: "twelve_unreachable", cached: cachedUsdJpyStale !== null };
+    }
+  };
+
   // 台股、匯率、美股、黃金同時發出去，避免原本串行等待造成的延遲。
-  const [twEntries, fxResult, usEntries, goldResult] = await Promise.all([
+  const [twEntries, fxResult, usEntries, goldResult, usdJpyResult] = await Promise.all([
     Promise.all(twSymbols.map(fetchTw)),
     fetchFx(),
     Promise.all(usSymbols.map(fetchUs)),
     fetchGold(),
+    fetchUsdJpy(),
   ]);
 
   const fxRate = fxResult.rate;
@@ -332,10 +366,18 @@ Deno.serve(async (req: Request) => {
   fxError = fxResult.error;
   const xauUsd = goldResult.price;
   const goldError = goldResult.error;
+  const usdJpy = usdJpyResult.rate;
+  // 交叉匯率：1 JPY = (USD/TWD) ÷ (USD/JPY) TWD。
+  const jpyTwd = fxRate && usdJpy ? Number((fxRate / usdJpy).toFixed(6)) : null;
+  const jpyError = usdJpyResult.error ?? (usdJpy && !fxRate ? fxError ?? "fx_unavailable" : null);
 
   if (cache && goldResult.fetched && xauUsd) {
     await cache.from("ks_quote_cache")
       .upsert({ symbol: "XAU/USD", price: xauUsd, updated_at: new Date().toISOString() }, { onConflict: "symbol" });
+  }
+  if (cache && usdJpyResult.fetched && usdJpy) {
+    await cache.from("ks_quote_cache")
+      .upsert({ symbol: "USD/JPY", price: usdJpy, updated_at: new Date().toISOString() }, { onConflict: "symbol" });
   }
 
   let fxDailyError: string | null = null;
@@ -394,6 +436,23 @@ Deno.serve(async (req: Request) => {
       return error
         ? { id: item.id, name: item.name, market: "MANUAL", status: "error", error: error.message }
         : { id: item.id, name: item.name, market: "MANUAL", status: "updated", currency: "USD", nativeAmount, amountTwd, fxRate };
+    })());
+  }
+
+  for (const item of jpyCashItems) {
+    pendingUpdates.push((async () => {
+      if (!jpyTwd) return { id: item.id, name: item.name, market: "MANUAL", status: "error", error: jpyError ?? "jpy_unavailable" };
+      const nativeAmount = Number(item.native_amount);
+      const amountTwd = Math.round(nativeAmount * jpyTwd);
+      const { error } = await quoteWriter.from("financial_items").update({
+        amount_twd: amountTwd,
+        fx_rate_twd: jpyTwd,
+        quote_currency: "JPY",
+        quote_source: "twelve_data",
+      }).eq("id", item.id);
+      return error
+        ? { id: item.id, name: item.name, market: "MANUAL", status: "error", error: error.message }
+        : { id: item.id, name: item.name, market: "MANUAL", status: "updated", currency: "JPY", nativeAmount, amountTwd, fxRate: jpyTwd };
     })());
   }
 
@@ -492,6 +551,7 @@ Deno.serve(async (req: Request) => {
     cache: { read: cachedUsFresh.size + (cachedFxFresh === null ? 0 : 1) + (cachedGoldFresh === null ? 0 : 1), write: cacheWrite, error: cacheError, usTtlMs: US_QUOTE_TTL_MS, auxTtlMs: AUX_QUOTE_TTL_MS },
     fx: { symbol: "USD/TWD", rate: fxRate, error: fxError, dailyError: fxDailyError, cached: !fxFetched && fxRate !== null },
     gold: { symbol: "XAU/USD", price: xauUsd, error: goldError, cached: goldResult.cached },
+    jpy: { symbol: "JPY/TWD", rate: jpyTwd, usdJpy, error: jpyError, cached: usdJpyResult.cached },
     updated: results.filter((x) => x.status === "updated").length,
     priceOnly: results.filter((x) => x.status === "price_only").length,
     failed: results.filter((x) => x.status === "error").length,

@@ -71,7 +71,7 @@ async function refresh({ cache, gold = null, twelveBudget = 8, live = LIVE, requ
     from: (table) => ({
       select: () => {
         if (table === 'financial_items') return { eq: () => Promise.resolve({ data: ITEMS, error: null }) };
-        if (table === 'ks_quote_cache') return { eq: () => ({ maybeSingle: () => Promise.resolve({ data: storedGold, error: null }) }) };
+        if (table === 'ks_quote_cache') return { in: () => Promise.resolve({ data: storedGold ? [{ symbol: 'XAU/USD', ...storedGold }] : [], error: null }) };
         // 仍持有的標的。KLFAN 的函式讀的也是這個 view，現在寫回與修剪都照它走。
         if (table === 'klfan_live_symbols') return Promise.resolve({ data: live.map(symbol => ({ symbol })), error: null });
         return Promise.resolve({ data: stored, error: null });
