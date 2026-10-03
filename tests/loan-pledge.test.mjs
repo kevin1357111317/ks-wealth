@@ -88,4 +88,46 @@ db.loan_schedule.push(
     assert.match(card, /元大證金 · 質押/);
     assert.match(card, /NT\$ 1,000,000/);
   });
+
+});
+
+test('首頁的質押卡片標「到期」，跨年要帶年份', { skip }, async t => {
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei' }).format(new Date());
+  const maturity = `${Number(today.slice(0, 4)) + 1}-03-30`;
+  const stub = `${await readFile(new URL('./support/fake-supabase.js', import.meta.url), 'utf8')}
+db.financial_items.push({ id: 'fi-pledge', household_id: 'H1', kind: 'liability', category: '質押',
+  name: '元大股票質押', owner_scope: 'husband', amount_twd: 1000000, monthly_payment_twd: null,
+  interest_rate: 3.98, sort_order: 1 });
+db.loan_accounts.push({ id: 'P1', household_id: 'H1', owner_scope: 'husband', financial_item_id: 'fi-pledge',
+  source_key: 'pledge', lender: '元大證金', name: '元大股票質押', loan_type: 'pledge',
+  original_principal_twd: 1000000, nominal_annual_rate: 3.98, contractual_monthly_payment_twd: null,
+  start_date: '${today}', maturity_date: '${maturity}', projected_total_repayment_twd: 1019518,
+  status: 'active', autopay: false, last_payment_applied_on: null, grace_until: null });
+db.loan_schedule.push({ loan_account_id: 'P1', due_date: '${maturity}', amount_twd: -1019518, entry_type: 'payment' });`;
+
+  const types = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html', '.png': 'image/png' };
+  const server = http.createServer((req, res) => {
+    const file = join(REPO, req.url.split('?')[0].replace(/^\/+/, '') || 'index.html');
+    if (!file.startsWith(REPO) || !existsSync(file)) { res.writeHead(404); return res.end(); }
+    res.writeHead(200, { 'Content-Type': types[extname(file)] ?? 'text/plain' });
+    createReadStream(file).pipe(res);
+  });
+  await new Promise(resolve => server.listen(0, resolve));
+  const browser = await chromium.launch({ executablePath: BROWSER });
+  t.after(async () => { await browser.close(); server.close(); });
+
+  const page = await browser.newPage({ viewport: { width: 390, height: 900 }, locale: 'zh-TW' });
+  await page.route('**/cdn.jsdelivr.net/**', route =>
+    route.fulfill({ status: 200, contentType: 'text/javascript', body: stub }));
+  await page.route('**fonts.g**', route => route.abort());
+  await page.goto(`http://127.0.0.1:${server.address().port}/index.html`);
+  await page.waitForSelector('[data-tab]', { timeout: 20_000 });
+  await page.click('[data-tab="husband"]');
+  await page.click('#personSeg [data-kind="liability"]');
+  await page.waitForSelector('.categoryHead');
+  if (!(await page.isVisible('.itemCard[data-id="fi-pledge"]'))) await page.click('.categoryHead');
+  await page.waitForSelector('.itemCard[data-id="fi-pledge"] .compactMeta');
+  const line = await page.textContent('.itemCard[data-id="fi-pledge"] .compactMeta');
+  assert.match(line, new RegExp(`到期 ${maturity.replace(/-/g, '/')} NT\\$ 1,019,518`), `實際：${line}`);
+  assert.doesNotMatch(line, /下次/);
 });
