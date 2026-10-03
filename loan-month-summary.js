@@ -1,11 +1,11 @@
-import { LOAN_OWNERS, LOAN_TYPES, loanMonthBucketKey, summarizeRemainingMonth } from './loan-month-core.js?v=V3.41.1';
+import { LOAN_OWNERS, LOAN_TYPES, loanMonthBucketKey, summarizeRemainingMonth } from './loan-month-core.js?v=V3.41.2';
 import {
   LOAN_MONTH_CACHE_PREFIX,
   isStoredAuthFresh,
   loanMonthDataKey,
   loanMonthStorageKey,
   readStoredAuth,
-} from './loan-month-cache-core.js?v=V3.41.1';
+} from './loan-month-cache-core.js?v=V3.41.2';
 
 const root = document.querySelector('#root');
 const SUPABASE_URL = 'https://gbxsnwqbjmgfikpblyot.supabase.co';
