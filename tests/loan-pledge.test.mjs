@@ -91,7 +91,7 @@ db.loan_schedule.push(
 
 });
 
-test('首頁的質押卡片標「到期」，跨年要帶年份', { skip }, async t => {
+test('首頁的質押卡片只寫利息，不寫含本金的本息合計', { skip }, async t => {
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei' }).format(new Date());
   const maturity = `${Number(today.slice(0, 4)) + 1}-03-30`;
   const stub = `${await readFile(new URL('./support/fake-supabase.js', import.meta.url), 'utf8')}
@@ -128,6 +128,6 @@ db.loan_schedule.push({ loan_account_id: 'P1', due_date: '${maturity}', amount_t
   if (!(await page.isVisible('.itemCard[data-id="fi-pledge"]'))) await page.click('.categoryHead');
   await page.waitForSelector('.itemCard[data-id="fi-pledge"] .compactMeta');
   const line = await page.textContent('.itemCard[data-id="fi-pledge"] .compactMeta');
-  assert.match(line, new RegExp(`到期 ${maturity.replace(/-/g, '/')} NT\\$ 1,019,518`), `實際：${line}`);
-  assert.doesNotMatch(line, /下次/);
+  assert.match(line, /下次 03\/30 利息 NT\$ 19,518/, `實際：${line}`);
+  assert.doesNotMatch(line, /1,019,518/);
 });
