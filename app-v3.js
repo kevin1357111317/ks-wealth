@@ -10,12 +10,12 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.41.2';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.41.2';
-import { calculateUsd } from './usd-core.js?v=V3.41.2';
-import { calculateGold } from './gold-core.js?v=V3.41.2';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.41.2';
-import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.41.2';
+} from './financial-core.js?v=V3.41.3';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.41.3';
+import { calculateUsd } from './usd-core.js?v=V3.41.3';
+import { calculateGold } from './gold-core.js?v=V3.41.3';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.41.3';
+import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.41.3';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -24,10 +24,10 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.41.2';
-import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.41.2';
-import { withClockSkewRetry } from './supabase-fetch.js?v=V3.41.2';
-import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.41.2';
+} from './health-core.js?v=V3.41.3';
+import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.41.3';
+import { withClockSkewRetry } from './supabase-fetch.js?v=V3.41.3';
+import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.41.3';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -2282,14 +2282,9 @@ function personPage(ownerScope) {
 function loanNextDueForItem(itemId) {
   const account = loanAccounts.find(row => row.financial_item_id === itemId && row.status === 'active');
   const due = account ? loanNextDue[account.id] ?? null : null;
-  // 質押不是按月攤還，那一期是到期一次還本付息，標「到期」不標「下次」。
-  return due ? { ...due, final: account.loan_type === 'pledge' } : null;
+  // 質押是到期一次還本付息，那一期的金額含 100 萬本金；卡片上只看利息。
+  return due ? { ...due, pledge: account.loan_type === 'pledge' } : null;
 }
-
-// 今年的期數只寫月日；跨年的要帶年份，不然 03/30 看不出是哪一年。
-const dueDateLabel = date => date.slice(0, 4) === taipeiDate().slice(0, 4)
-  ? date.slice(5).replace('-', '/')
-  : date.replace(/-/g, '/');
 
 function itemCard(item, total) {
   const quote = quoteData[item.id];
@@ -2314,7 +2309,7 @@ function itemCard(item, total) {
     : item.symbol ? '<span class="quotePending">沿用最近市值</span>' : '';
   const due = item.kind === 'liability' ? loanNextDueForItem(item.id) : null;
   const dueLine = due
-    ? `<span>${due.final ? '到期' : '下次'} ${escapeHtml(dueDateLabel(due.date))} NT$ ${formatNumber(due.amount)}</span>`
+    ? `<span>下次 ${escapeHtml(due.date.slice(5).replace('-', '/'))} ${due.pledge ? '利息 ' : ''}NT$ ${formatNumber(due.pledge ? Math.max(0, due.amount - toFiniteNumber(item.amount_twd)) : due.amount)}</span>`
     : '';
   const insurancePolicies = decodeInsuranceNote(item.notes)?.policies ?? [];
   const meta = item.kind === 'asset'
