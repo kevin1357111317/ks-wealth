@@ -5,8 +5,9 @@ import { buildHistoricalSnapshots, buildPerformanceSeries, downsampleSeries, sum
 // Edge Function 不在 Vercel 的部署範圍：推 main 只會更新前端，這支要另外 deploy。
 // 以前只能靠人工撈線上原始碼才知道有沒有漏，2026-09-18 就出現過「畫面版號是新的、
 // 數字卻是舊的」。把版號跟著回應送出去，前端一比就知道。
-// 這個常數必須跟 app-version.js 的 APP_VERSION 一致，tests/app-version.test.mjs 會擋。
-const FN_VERSION = "V3.41.3";
+// 只有這支 Function 的程式碼改了才升（改成當次的 APP_VERSION，前端 PERFORMANCE_ENGINE_VERSION
+// 一起改，再部署）；前端單純改版不用動它。tests/app-version.test.mjs 用原始碼指紋擋漏升。
+const FN_VERSION = "V3.42.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",

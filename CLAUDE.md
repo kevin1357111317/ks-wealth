@@ -205,6 +205,12 @@ do sleep 20; done
 
 目前的 function：`portfolio-performance`（TWR／XIRR）、`daily-wealth-snapshot`、`refresh-tw-quotes`。
 
+**前端單純改版不用重新部署 `portfolio-performance`**。它的 `FN_VERSION` 只在那支 Function 的程式碼
+改了才升（連同 `app-v3.js` 的 `PERFORMANCE_ENGINE_VERSION`），`tests/app-version.test.mjs` 用原始碼
+指紋擋漏升。所以升 App 版號時只改 `?v=`、`APP_VERSION`、`VERSIONING.md`，不要全域取代版號字串 ——
+會連引擎版本一起改掉。
+
+
 ## 資料
 
 貸款、股票私帳、美金這幾塊的數字都跟 KLFAN 試算表或銀行 App 核對過，`README.md` 裡有

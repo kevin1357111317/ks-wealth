@@ -8,6 +8,7 @@ import { readFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LOAN_TYPES, summarizeRemainingMonth } from '../loan-month-core.js';
+import { maintenanceRatio, parseCollateral } from '../pledge-core.js';
 
 let chromium = null;
 for (const specifier of [process.env.PLAYWRIGHT_PATH, 'playwright'].filter(Boolean)) {
@@ -33,6 +34,20 @@ test('本月剩餘還款的分桶包含質押', () => {
     [{ id: 'r1', loan_account_id: 'P1', due_date: '2027-03-30', amount_twd: -1019518 }],
   );
   assert.deepEqual(result['husband|pledge'], { total: 1019518, count: 1, nextDue: '2027-03-30' });
+});
+
+test('擔保維持率：元大證金 140% 追繳，股價算出追繳價', () => {
+  const parsed = parseCollateral('擔保品：2330 × 1,000 股；追繳維持率 140%');
+  assert.deepEqual(parsed, { collateral: [{ symbol: '2330', shares: 1000 }], marginCall: 1.4 });
+  assert.equal(parseCollateral('沒寫').marginCall, 1.4, '沒寫追繳線就用證金的 140%');
+  const status = maintenanceRatio({ principal: 1000000, ...parsed, priceOf: () => 2500 });
+  assert.equal(status.ratio, 2.5);
+  assert.equal(status.callPrice, 1400);
+  assert.equal(status.cushion.toFixed(2), '0.44');
+  assert.equal(status.level, 'ok');
+  assert.equal(maintenanceRatio({ principal: 1000000, ...parsed, priceOf: () => 1600 }).level, 'warn');
+  assert.equal(maintenanceRatio({ principal: 1000000, ...parsed, priceOf: () => 1300 }).level, 'danger');
+  assert.equal(maintenanceRatio({ principal: 1000000, ...parsed, priceOf: () => null }), null, '抓不到價就不顯示');
 });
 
 test('貸款分析有質押分頁，到期日當天也不會自動扣款', { skip }, async t => {
@@ -103,7 +118,10 @@ db.loan_accounts.push({ id: 'P1', household_id: 'H1', owner_scope: 'husband', fi
   original_principal_twd: 1000000, nominal_annual_rate: 3.98, contractual_monthly_payment_twd: null,
   start_date: '${today}', maturity_date: '${maturity}', projected_total_repayment_twd: 1019518,
   status: 'active', autopay: false, last_payment_applied_on: null, grace_until: null });
-db.loan_schedule.push({ loan_account_id: 'P1', due_date: '${maturity}', amount_twd: -1019518, entry_type: 'payment' });`;
+db.loan_schedule.push({ loan_account_id: 'P1', due_date: '${maturity}', amount_twd: -1019518, entry_type: 'payment' });
+db.loan_accounts[0].source_note = '擔保品：2330 × 1000 股；追繳維持率 140%';
+db.financial_items.push({ id: 'fi-2330', household_id: 'H1', kind: 'asset', category: '台股', name: '台積電',
+  owner_scope: 'husband', amount_twd: 10000000, symbol: '2330', market: 'TW', quantity: 4000, sort_order: 2 });`;
 
   const types = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html', '.png': 'image/png' };
   const server = http.createServer((req, res) => {
@@ -130,4 +148,12 @@ db.loan_schedule.push({ loan_account_id: 'P1', due_date: '${maturity}', amount_t
   const line = await page.textContent('.itemCard[data-id="fi-pledge"] .compactMeta');
   assert.match(line, /下次 03\/30 利息 NT\$ 19,518/, `實際：${line}`);
   assert.doesNotMatch(line, /1,019,518/);
+  assert.match(line, /維持率 250%/, '台積電 2,500 × 1000 股 ÷ 100 萬');
+  assert.doesNotMatch(line, /利率/, '質押卡片的第一格換成維持率');
+
+  await page.click('[data-open-loans]');
+  await page.waitForSelector('.loanCard');
+  const card = await page.textContent('.loanCard');
+  assert.match(card, /擔保維持率250%/);
+  assert.match(card, /追繳線 140%股價 1,400，再跌 44%/);
 });

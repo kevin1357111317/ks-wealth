@@ -77,14 +77,18 @@ function moveCardFactsToExpandedDetail(scope = document) {
     }
 
     // 第一層只留每月還款與合併後的利率；目前本金餘額仍維持卡片主數字。
+    // 質押另外留「擔保維持率」與「追繳線 N%」：那是質押唯一會天天變、而且有風險的數字。
+    const kept = label => keepLabels.has(label) || label === '擔保維持率' || label.startsWith('追繳線');
     const keepLabels = new Set(['每月還款', '表定利率／實際年化成本']);
     [...facts.children].forEach(item => {
       const label = item.querySelector('span')?.textContent?.trim() || '';
-      if (!keepLabels.has(label)) item.remove();
+      if (!kept(label)) item.remove();
     });
 
-    const ordered = ['每月還款', '表定利率／實際年化成本']
-      .map(label => [...facts.children].find(item => item.querySelector('span')?.textContent?.trim() === label))
+    const pledgeItems = [...facts.children]
+      .filter(item => { const label = item.querySelector('span')?.textContent?.trim() || ''; return label === '擔保維持率' || label.startsWith('追繳線'); });
+    const ordered = [...['每月還款', '表定利率／實際年化成本']
+      .map(label => [...facts.children].find(item => item.querySelector('span')?.textContent?.trim() === label)), ...pledgeItems]
       .filter(Boolean);
     const current = [...facts.children];
     const unchanged = current.length === ordered.length && current.every((item, index) => item === ordered[index]);

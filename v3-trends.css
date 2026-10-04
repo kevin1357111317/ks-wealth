@@ -269,3 +269,5 @@ body::before{
 }
 
 .bottomNav button.on .navCharacter{transform:translateY(-1px) scale(1.04)}
+/* 質押擔保維持率：離追繳線 30 個百分點內轉橘、跌破轉紅。 */
+.pledgeRatio.warn{color:#c47a1c}.pledgeRatio.danger{color:#d95f68;font-weight:700}
