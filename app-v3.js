@@ -10,12 +10,13 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.41.3';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.41.3';
-import { calculateUsd } from './usd-core.js?v=V3.41.3';
-import { calculateGold } from './gold-core.js?v=V3.41.3';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.41.3';
-import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.41.3';
+} from './financial-core.js?v=V3.42.0';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.42.0';
+import { calculateUsd } from './usd-core.js?v=V3.42.0';
+import { calculateGold } from './gold-core.js?v=V3.42.0';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.42.0';
+import { maintenanceRatio, parseCollateral } from './pledge-core.js?v=V3.42.0';
+import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.42.0';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -24,10 +25,10 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.41.3';
-import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.41.3';
-import { withClockSkewRetry } from './supabase-fetch.js?v=V3.41.3';
-import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.41.3';
+} from './health-core.js?v=V3.42.0';
+import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.42.0';
+import { withClockSkewRetry } from './supabase-fetch.js?v=V3.42.0';
+import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.42.0';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -121,6 +122,10 @@ let liveQuoteUpdatedAt = { tw: null, us: null };
 let quoteValuePulseUntil = 0;
 let quoteData = {};
 let fxRate = null;
+// 前端預期的 portfolio-performance 引擎版本，必須等於那支 Edge Function 的 FN_VERSION。
+// 只有真的改了 supabase/functions/portfolio-performance/ 才要動（兩邊改成當次的 APP_VERSION，
+// 再部署）；單純的前端改版不用重新部署它。tests/app-version.test.mjs 用原始碼指紋擋漏改。
+const PERFORMANCE_ENGINE_VERSION = 'V3.42.0';
 // 日圓存款的 JPY/TWD。只有 refresh-tw-quotes 算得出來（USD/TWD ÷ USD/JPY），
 // 前端從日圓那一列的 fx_rate_twd 讀回來，給編輯表單即時換算用。
 let jpyRate = null;
@@ -1750,9 +1755,8 @@ function portfolioPerformanceCard() {
   // 正常、數字卻是舊演算法算的。版號一致就不顯示；沒帶 fnVersion 代表線上還是加這個欄位之前
   // 的舊版，一樣要提醒。
   const engineVersion = data.fnVersion ?? null;
-  const appVersion = window.KS_APP_VERSION ?? document.documentElement.dataset.appVersion ?? null;
-  const engineNote = !appVersion || engineVersion === appVersion ? ''
-    : ` · ⚠ 計算引擎停在 ${escapeHtml(engineVersion ?? '舊版')}，畫面是 ${escapeHtml(appVersion)}`;
+  const engineNote = engineVersion === PERFORMANCE_ENGINE_VERSION ? ''
+    : ` · ⚠ 計算引擎停在 ${escapeHtml(engineVersion ?? '舊版')}，畫面要的是 ${escapeHtml(PERFORMANCE_ENGINE_VERSION)}`;
   const selection = `<rect class="portfolioPerformanceHit" x="82" y="8" width="572" height="192"/><g class="portfolioPerformanceSelection" data-portfolio-performance-selection hidden><line data-portfolio-performance-guide y1="12" y2="192"/><circle class="mine" data-portfolio-performance-mine r="7"/><circle class="benchmark" data-portfolio-performance-benchmark r="7"/><g class="portfolioPerformanceTooltip" data-portfolio-performance-tooltip><rect x="-140" y="0" width="280" height="76" rx="13"/><text class="date" data-portfolio-performance-date x="0" y="19" text-anchor="middle"></text><text class="values" data-portfolio-performance-values x="0" y="43" text-anchor="middle"></text><text class="excess" data-portfolio-performance-excess x="0" y="64" text-anchor="middle"></text></g></g>`;
   return `<section class="portfolioPerformance"><div class="portfolioPerformanceHead"><div><span>TWR 績效趨勢</span><h2>我的投資組合 vs 大盤</h2></div><b>起始＝100</b></div>${periodControls}${benchmarkControl}<div class="portfolioPerformanceStats"><div><span>我的 TWR</span><b class="${portfolioTone(portfolioReturn)}">${signed(portfolioReturn)}</b></div><div><span>大盤 TWR</span><b class="${portfolioTone(benchmarkReturn)}">${benchmarkReturn === null ? '—' : signed(benchmarkReturn)}</b></div><div><span>超額報酬</span><b class="${portfolioTone(excess)}">${excess === null ? '—' : `${excess >= 0 ? '+' : ''}${excess.toFixed(2)}pp`}</b></div></div>${annualComparison}${moneyWeightedComparison}<div class="portfolioPerformanceLegend"><span class="mine"><i></i>我的投資組合</span><span class="market"><i></i>${escapeHtml(benchmarkLabel)}｜含息總報酬</span><small><span class="range">${period}</span> · 已排除入金與提款${coverageNote}${engineNote}</small></div><svg class="portfolioPerformanceChart" data-trend-chart data-trend-kind="portfolio" viewBox="0 0 680 238" role="img" aria-label="投資組合與${escapeHtml(benchmarkLabel)}累積TWR趨勢，點選或左右滑動可查看每日數值，起始為100"><g class="portfolioPerformanceAxis">${ticks}${dates}</g><path class="benchmark" d="${path('benchmark')}"/><path class="mine" d="${path('portfolio')}"/>${selection}</svg><p>採每日收盤計算TWR；持股股息依私帳計入，Benchmark使用股息再投入的含息總報酬。全部頁比較單一美股基準時包含匯率。</p></section>`;
 }
@@ -2034,10 +2038,14 @@ function loanAccountCard(account, expanded = false) {
   const dateValue = active ? account.maturity_date : account.closed_on;
   const loanTypeLabel = loanTypeName(normalizedLoanType(account));
   const showNominalRate = active || normalizedLoanType(account) !== 'personal';
+  const pledge = active ? pledgeMaintenance(account, account.currentBalance) : null;
+  const pledgeFacts = pledge
+    ? `<div><span>擔保維持率</span><b class="pledgeRatio ${pledge.level}">${Math.round(pledge.ratio * 100)}%</b></div><div><span>追繳線 ${Math.round(pledge.marginCall * 100)}%</span><b>${pledge.callPrice ? `股價 ${formatNumber(Math.round(pledge.callPrice))}，` : ''}再跌 ${Math.max(0, pledge.cushion * 100).toFixed(0)}%</b></div>`
+    : '';
   const nominalRateFact = showNominalRate
     ? `<div><span>表定利率</span><b>${account.annualRate > 0 ? account.annualRate.toFixed(2) + '%' : '—'}</b></div>`
     : '';
-  return `<article class="loanCard ${expanded ? 'open' : ''}" data-loan-card="${escapeHtml(account.id)}"><button type="button" class="loanCardTap" data-loan-account="${escapeHtml(account.id)}"><div class="loanCardHead"><div><b>${escapeHtml(account.name)}</b><small>${escapeHtml(account.lender)} · ${escapeHtml(loanTypeLabel)}</small></div><span class="loanStatus ${active ? 'active' : ''}">${active ? '進行中' : '已結清'}</span></div><div class="loanBalance"><span>${active ? '目前本金餘額' : '原貸款金額'}</span><b>NT$ ${formatNumber(active ? account.currentBalance : original)}</b></div><div class="loanProgress"><i style="--progress:${progress}%"></i></div><div class="loanFacts"><div><span>原貸款</span><b>NT$ ${formatNumber(original)}</b></div>${nominalRateFact}<div><span>${active ? '每月還款' : '總還款'}</span><b>${active ? 'NT$ ' + formatNumber(account.monthlyPayment) : totalRepayment ? 'NT$ ' + formatNumber(totalRepayment) : '—'}</b></div><div><span>實際年化成本</span><b>${annualCost !== null && Number.isFinite(annualCost) ? (annualCost * 100).toFixed(2) + '%' : '—'}</b></div><div><span>${dateLabel}</span><b>${dateValue ? escapeHtml(dateValue) : '—'}</b></div><div><span>全期利息與費用</span><b>${feesPending ? '—' : 'NT$ ' + formatNumber(plan.totalInterestAndFees || borrowingCost)}</b></div></div>${active ? `<small class="loanFoot">已償還本金約 NT$ ${formatNumber(paidPrincipal)} · ${progress.toFixed(1)}%</small>` : `<small class="loanFoot">實際年化成本已納入開辦費、提前清償與每筆現金流日期</small>`}</button>${expanded ? loanScheduleDetail(account) : ''}</article>`;
+  return `<article class="loanCard ${expanded ? 'open' : ''}" data-loan-card="${escapeHtml(account.id)}"><button type="button" class="loanCardTap" data-loan-account="${escapeHtml(account.id)}"><div class="loanCardHead"><div><b>${escapeHtml(account.name)}</b><small>${escapeHtml(account.lender)} · ${escapeHtml(loanTypeLabel)}</small></div><span class="loanStatus ${active ? 'active' : ''}">${active ? '進行中' : '已結清'}</span></div><div class="loanBalance"><span>${active ? '目前本金餘額' : '原貸款金額'}</span><b>NT$ ${formatNumber(active ? account.currentBalance : original)}</b></div><div class="loanProgress"><i style="--progress:${progress}%"></i></div><div class="loanFacts"><div><span>原貸款</span><b>NT$ ${formatNumber(original)}</b></div>${nominalRateFact}<div><span>${active ? '每月還款' : '總還款'}</span><b>${active ? 'NT$ ' + formatNumber(account.monthlyPayment) : totalRepayment ? 'NT$ ' + formatNumber(totalRepayment) : '—'}</b></div><div><span>實際年化成本</span><b>${annualCost !== null && Number.isFinite(annualCost) ? (annualCost * 100).toFixed(2) + '%' : '—'}</b></div><div><span>${dateLabel}</span><b>${dateValue ? escapeHtml(dateValue) : '—'}</b></div><div><span>全期利息與費用</span><b>${feesPending ? '—' : 'NT$ ' + formatNumber(plan.totalInterestAndFees || borrowingCost)}</b></div>${pledgeFacts}</div>${active ? `<small class="loanFoot">已償還本金約 NT$ ${formatNumber(paidPrincipal)} · ${progress.toFixed(1)}%</small>` : `<small class="loanFoot">實際年化成本已納入開辦費、提前清償與每筆現金流日期</small>`}</button>${expanded ? loanScheduleDetail(account) : ''}</article>`;
 }
 
 function loanPage() {
@@ -2279,6 +2287,22 @@ function personPage(ownerScope) {
 }
 
 // 主畫面的負債列跟貸款分析看的是同一份排程：這裡回傳這筆負債下一期還沒扣的款。
+// 台股目前價：盤中有即時報價就用即時的，否則用財務項目裡的市值 ÷ 股數（每分鐘那輪寫回的）。
+function twPriceOf(symbol) {
+  const code = String(symbol).toUpperCase();
+  const item = items.find(row => row.market === 'TW' && String(row.symbol).toUpperCase() === code && toFiniteNumber(row.quantity) > 0);
+  if (!item) return null;
+  const live = toFiniteNumber(quoteData[item.id]?.price);
+  return live > 0 ? live : toFiniteNumber(item.amount_twd) / toFiniteNumber(item.quantity);
+}
+
+// 質押的擔保維持率（擔保品市值 ÷ 本金）。擔保品寫在 loan_accounts.source_note，見 pledge-core.js。
+function pledgeMaintenance(account, principal) {
+  if (account?.loan_type !== 'pledge') return null;
+  const { collateral, marginCall } = parseCollateral(account.source_note);
+  return maintenanceRatio({ principal, collateral, marginCall, priceOf: twPriceOf });
+}
+
 function loanNextDueForItem(itemId) {
   const account = loanAccounts.find(row => row.financial_item_id === itemId && row.status === 'active');
   const due = account ? loanNextDue[account.id] ?? null : null;
@@ -2311,10 +2335,17 @@ function itemCard(item, total) {
   const dueLine = due
     ? `<span>下次 ${escapeHtml(due.date.slice(5).replace('-', '/'))} ${due.pledge ? '利息 ' : ''}NT$ ${formatNumber(due.pledge ? Math.max(0, due.amount - toFiniteNumber(item.amount_twd)) : due.amount)}</span>`
     : '';
+  // 質押卡片的第一格換成維持率：利率固定、看貸款分析就有，會變的是離追繳線多遠。
+  const pledge = item.kind === 'liability'
+    ? pledgeMaintenance(loanAccounts.find(row => row.financial_item_id === item.id && row.status === 'active'), item.amount_twd)
+    : null;
+  const pledgeLine = pledge
+    ? `<span class="pledgeRatio ${pledge.level}">維持率 ${Math.round(pledge.ratio * 100)}%</span>`
+    : '';
   const insurancePolicies = decodeInsuranceNote(item.notes)?.policies ?? [];
   const meta = item.kind === 'asset'
     ? (insurancePolicies.length ? `<span>${insurancePolicies.length} 張有效主約</span><span>查看保障分析</span>` : item.market === 'GOLD' ? `<span>重量 ${quantity} g</span>${quoteLine}` : item.symbol ? `<span>持有 ${quantity} 股</span>${quoteLine}` : '')
-    : `<span>利率 ${item.interest_rate !== null ? item.interest_rate.toFixed(2) + '%' : '待設定'}</span>${dueLine || `<span>月付 ${item.monthly_payment_twd !== null ? 'NT$ ' + formatNumber(item.monthly_payment_twd) : '待設定'}</span>`}`;
+    : `${pledgeLine || `<span>利率 ${item.interest_rate !== null ? item.interest_rate.toFixed(2) + '%' : '待設定'}</span>`}${dueLine || `<span>月付 ${item.monthly_payment_twd !== null ? 'NT$ ' + formatNumber(item.monthly_payment_twd) : '待設定'}</span>`}`;
   const original = isNativeUsd
     ? `<span>US$ ${masked ? '••••••' : new Intl.NumberFormat('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(item.native_amount)}</span>`
     : isNativeJpy
