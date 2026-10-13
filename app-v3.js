@@ -10,13 +10,13 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.42.0';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.42.0';
-import { calculateUsd } from './usd-core.js?v=V3.42.0';
-import { calculateGold } from './gold-core.js?v=V3.42.0';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.42.0';
-import { maintenanceRatio, parseCollateral } from './pledge-core.js?v=V3.42.0';
-import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.42.0';
+} from './financial-core.js?v=V3.43.0';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.43.0';
+import { calculateUsd } from './usd-core.js?v=V3.43.0';
+import { calculateGold } from './gold-core.js?v=V3.43.0';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.43.0';
+import { maintenanceRatio, parseCollateral } from './pledge-core.js?v=V3.43.0';
+import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.43.0';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -25,10 +25,11 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.42.0';
-import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.42.0';
-import { withClockSkewRetry } from './supabase-fetch.js?v=V3.42.0';
-import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.42.0';
+} from './health-core.js?v=V3.43.0';
+import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.43.0';
+import { bodyCompositionModel, renderBodyComposition, bindBodyComposition } from './body-composition.js?v=V3.43.0';
+import { withClockSkewRetry } from './supabase-fetch.js?v=V3.43.0';
+import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.43.0';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -1599,6 +1600,8 @@ function healthComparisonPage() {
 
 function healthPage() {
   if (healthViewMode === 'compare') return healthComparisonPage();
+  const bodyModel = bodyCompositionModel(healthCheckups, healthMetrics, analysisOwner);
+  const bodySection = renderBodyComposition(bodyModel);
   const model = buildHealthModel(healthCheckups, healthMetrics, analysisOwner);
   if (!model.latest) {
     shell(`<div class="healthView">${healthOwnerControl()}<div class="healthEmpty"><b>尚未匯入${ownerName(analysisOwner)}健檢資料</b><span>提供報告並完成核對後，就會加入年度趨勢。</span></div></div>`, `${ownerName(analysisOwner)}健康報告`);
@@ -1618,8 +1621,9 @@ function healthPage() {
     .map(domain => healthDomainCard(model, report, domain.title, domain.status, domain.keys, domain.copy))
     .join('');
 
-  shell(`<div class="healthView">${healthOwnerControl()}${score}${advice}${yearControl}<div class="sectionHead"><span>${selectedYear} 年重點指標</span><b>${report.source_label ? escapeHtml(report.source_label) : '年度健檢'}</b></div><div class="healthDomainList">${domains}</div></div>`, `${ownerName(analysisOwner)}健康報告`);
+  shell(`<div class="healthView">${healthOwnerControl()}${bodySection}${score}${advice}${yearControl}<div class="sectionHead"><span>${selectedYear} 年重點指標</span><b>${report.source_label ? escapeHtml(report.source_label) : '年度健檢'}</b></div><div class="healthDomainList">${domains}</div></div>`, `${ownerName(analysisOwner)}健康報告`);
   bindHealthControls();
+  bindBodyComposition(root, bodyModel);
 }
 
 // 版本號或匯率一變就整包丟掉重來；同一版之內每個 scope 只算一次。
