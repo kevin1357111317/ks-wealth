@@ -11,6 +11,8 @@ const numeric = v => v !== '' && v !== null && v !== undefined && Number.isFinit
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt = v => Number.isFinite(v) ? v.toFixed(1) : '—';
 const dateMs = date => Date.parse(`${date}T00:00:00+08:00`);
+// Keep the user's choice through live-price rerenders, without persisting health data.
+const expandedCards = new Map();
 
 export function bodyCompositionModel(checkups, metrics, ownerScope) {
   const ids = new Set((checkups ?? []).filter(r => r.owner_scope === ownerScope).map(r => r.id));
@@ -44,9 +46,8 @@ export function bodyCompositionModel(checkups, metrics, ownerScope) {
       return [key, values.length ? values.reduce((s, v) => s + v, 0) / values.length : null];
     })),
   }));
-  return { records, daily, excluded, conditions, latest: records.at(-1) ?? null };
+  return { ownerScope, records, daily, excluded, conditions, latest: records.at(-1) ?? null };
 }
-
 function chart(model, key, label, unit) {
   const points = model.daily.filter(r => Number.isFinite(r[key]));
   if (!points.length) return '';
@@ -70,12 +71,17 @@ function chart(model, key, label, unit) {
 export function renderBodyComposition(model) {
   if (!model.latest) return '';
   const latest = model.latest;
+  const preview = BODY_FIELDS.slice(0, 3).map(([key, label, unit]) => `<span><small>${label}</small><b>${fmt(latest[key])} ${unit}</b></span>`).join('');
   const metrics = BODY_FIELDS.map(([key, label, unit]) => `<div class="healthValue"><span>${label}</span><b>${fmt(latest[key])} ${unit}</b></div>`).join('');
   const recent = model.daily.slice(-14).reverse().map(r => `<tr><td>${r.date.slice(5)}</td><td>${fmt(r.weight)}</td><td>${fmt(r.fatPercent)}</td><td>${fmt(r.muscleKg)}</td></tr>`).join('');
-  return `<section class="bodyComposition"><div class="sectionHead"><span>居家體組成趨勢</span><b>${model.records.length} 次量測</b></div><p>${esc(model.conditions)}</p><p>${esc(latest.model)} · 最新 ${esc(latest.at.slice(0,16).replace('T',' '))}（台北時間）</p><div class="healthValues">${metrics}</div><p>居家體脂計估計值，不與健檢儀器混算，也不影響年度健康評分；基礎代謝不是每日總熱量需求。</p>${model.excluded.length ? `<p>原始資料有 ${model.excluded.length} 筆非早晨時間，已保留，但未放入早晨趨勢；同日多次量測取平均。</p>` : '<p>早晨量測趨勢；同日多次量測取平均。</p>'}<div class="healthTrendGrid">${BODY_FIELDS.slice(0,3).map(([key,label,unit]) => chart(model,key,label,unit)).join('')}</div><details><summary>最近14個量測日</summary><table><thead><tr><th>日期</th><th>體重kg</th><th>體脂%</th><th>骨骼肌kg</th></tr></thead><tbody>${recent}</tbody></table></details></section>`;
+  return `<details class="bodyComposition" data-body-card${expandedCards.get(model.ownerScope) ? " open" : ""}><summary class="bodySummary"><span class="bodySummaryHead"><strong>居家體組成趨勢</strong><span>${model.records.length} 次量測 <i aria-hidden="true">⌄</i></span></span><span class="bodyPreview">${preview}</span><span class="bodySummaryFoot">最新 ${esc(latest.at.slice(0,16).replace("T"," "))} · <span class="bodyExpandLabel">查看趨勢</span><span class="bodyCollapseLabel">收起內容</span></span></summary><div class="bodyDetails"><p>${esc(model.conditions)}</p><p>${esc(latest.model)} · 最新 ${esc(latest.at.slice(0,16).replace('T',' '))}（台北時間）</p><div class="healthValues">${metrics}</div><p>居家體脂計估計值，不與健檢儀器混算，也不影響年度健康評分；基礎代謝不是每日總熱量需求。</p>${model.excluded.length ? `<p>原始資料有 ${model.excluded.length} 筆非早晨時間，已保留，但未放入早晨趨勢；同日多次量測取平均。</p>` : '<p>早晨量測趨勢；同日多次量測取平均。</p>'}<div class="healthTrendGrid">${BODY_FIELDS.slice(0,3).map(([key,label,unit]) => chart(model,key,label,unit)).join('')}</div><details><summary>最近14個量測日</summary><table><thead><tr><th>日期</th><th>體重kg</th><th>體脂%</th><th>骨骼肌kg</th></tr></thead><tbody>${recent}</tbody></table></details></div></details>`;
 }
 
 export function bindBodyComposition(root, model) {
+  const card = root.querySelector('[data-body-card]');
+  card?.addEventListener('toggle', () => {
+    if (card.isConnected) expandedCards.set(model.ownerScope, card.open);
+  });
   root.querySelectorAll('[data-body-scrub]').forEach(input => {
     input.addEventListener('input', () => {
       const points = model.daily.filter(r => Number.isFinite(r[input.dataset.key]));
@@ -84,3 +90,4 @@ export function bindBodyComposition(root, model) {
     });
   });
 }
+
