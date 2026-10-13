@@ -41,7 +41,7 @@ test('手機居家卡片收合高度、點擊／鍵盤切換及重繪', {
   await page.evaluate(() => window.redrawBody());
   assert.equal(await card.getAttribute('open'),'');
   const slider=page.locator('[data-body-scrub]').first();
-  await slider.fill('0');
+  await slider.evaluate(input => {input.value='0';});
   await slider.dispatchEvent('input');
   assert.match(await page.locator('[data-body-output]').first().textContent(),/2020-01-01/);
   await summary.focus();
