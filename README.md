@@ -859,6 +859,13 @@ USD/JPY 存在 `ks_quote_cache`（跟 XAU/USD 同一張），快取 **10 分鐘*
 `native_currency` 的 CHECK 約束原本只收 TWD/USD，2026-10-02 在 production 直接放寬成多收 JPY
 （見 `supabase/proposals/20261002_native_currency_jpy.sql`）。
 
+### 現金及存款的排序（V3.44.1）
+
+資產頁每個分類裡面照金額由大到小排，**只有現金及存款例外**：活存在前、定存在後，同一類再照幣別
+台幣 → 美金 → 日圓 → 歐元（屋主 2026-10-26 指定）。照金額排的話美金定存永遠在最上面，最常動用的台幣活存
+反而被擠到中間。活存／定存看名稱有沒有「定存」兩個字；不在名單裡的幣別排在同一類的最後。
+`tests/cash-order.test.mjs` 同時守住「其他分類仍照金額排」。
+
 ### 歐元存款（V3.44.0）
 
 做法跟日圓一樣：現金及存款多一個「歐元」屬性（`manual-eur`），`native_currency='EUR'`、

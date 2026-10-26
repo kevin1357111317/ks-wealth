@@ -10,13 +10,13 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.44.0';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.44.0';
-import { calculateUsd } from './usd-core.js?v=V3.44.0';
-import { calculateGold } from './gold-core.js?v=V3.44.0';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.44.0';
-import { maintenanceRatio, parseCollateral } from './pledge-core.js?v=V3.44.0';
-import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.44.0';
+} from './financial-core.js?v=V3.44.1';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.44.1';
+import { calculateUsd } from './usd-core.js?v=V3.44.1';
+import { calculateGold } from './gold-core.js?v=V3.44.1';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.44.1';
+import { maintenanceRatio, parseCollateral } from './pledge-core.js?v=V3.44.1';
+import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.44.1';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -25,11 +25,11 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.44.0';
-import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.44.0';
-import { bodyCompositionModel, renderBodyComposition, bindBodyComposition } from './body-composition.js?v=V3.44.0';
-import { withClockSkewRetry } from './supabase-fetch.js?v=V3.44.0';
-import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.44.0';
+} from './health-core.js?v=V3.44.1';
+import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.44.1';
+import { bodyCompositionModel, renderBodyComposition, bindBodyComposition } from './body-composition.js?v=V3.44.1';
+import { withClockSkewRetry } from './supabase-fetch.js?v=V3.44.1';
+import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.44.1';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -1336,13 +1336,24 @@ function groupedCards(list, ownerScope, kind) {
     .sort(([categoryA], [categoryB]) => categoryIndex(categoryA) - categoryIndex(categoryB))
     .map(([category, rows]) => {
     // 分類裡面照金額由大到小 —— 原本是 sort_order，等於建立的先後，
-    // 展開後最小的那筆常常排在最上面。
-    rows.sort((a, b) => b.amount_twd - a.amount_twd || a.name.localeCompare(b.name, 'zh-Hant'));
+    // 展開後最小的那筆常常排在最上面。現金及存款例外，見 cashOrder()。
+    rows.sort(category === '現金及存款'
+      ? (a, b) => cashOrder(a) - cashOrder(b) || b.amount_twd - a.amount_twd || a.name.localeCompare(b.name, 'zh-Hant')
+      : (a, b) => b.amount_twd - a.amount_twd || a.name.localeCompare(b.name, 'zh-Hant'));
     const key = encodeURIComponent(`${ownerScope}|${kind}|${category}`);
     const groupTotal = rows.reduce((sum, item) => sum + item.amount_twd, 0);
     const open = openGroups.has(key);
     return `<section class="categoryGroup ${open ? 'open' : ''}"><button class="categoryHead" data-group="${key}"><div><span>${escapeHtml(category)}</span><small>${rows.length} 筆</small></div><div class="categoryTotal"><b>NT$ ${formatNumber(groupTotal)}</b><i>⌄</i></div></button>${open ? `<div class="categoryItems">${rows.map(item => itemCard(item, total)).join('')}</div>` : ''}</section>`;
   }).join('');
+}
+
+// 現金及存款照「隨時能動用」排：活存在前、定存在後；同一類再照幣別台幣 → 美金 → 日圓 → 歐元。
+// 屋主 2026-10-26 指定。照金額排的話美金定存永遠在最上面，台幣活存反而被擠到中間。
+const CASH_CURRENCY_ORDER = ['TWD', 'USD', 'JPY', 'EUR'];
+function cashOrder(item) {
+  const fixed = /定存/.test(item.name ?? '') ? 1 : 0;
+  const currency = CASH_CURRENCY_ORDER.indexOf(item.native_currency ?? 'TWD');
+  return fixed * 100 + (currency === -1 ? CASH_CURRENCY_ORDER.length : currency);
 }
 
 // 資產頁上只放入口，數字留在分析頁裡面講。
