@@ -1,7 +1,7 @@
 export const OWNER_SCOPES = Object.freeze(['husband', 'wife']);
 export const ITEM_KINDS = Object.freeze(['asset', 'liability']);
-export const NATIVE_CURRENCIES = Object.freeze(['TWD', 'USD', 'JPY']);
-const CURRENCY_LABELS = Object.freeze({ TWD: '台幣', USD: '美元', JPY: '日圓' });
+export const NATIVE_CURRENCIES = Object.freeze(['TWD', 'USD', 'JPY', 'EUR']);
+const CURRENCY_LABELS = Object.freeze({ TWD: '台幣', USD: '美元', JPY: '日圓', EUR: '歐元' });
 export const STOCK_MARKETS = Object.freeze(['TW', 'US']);
 
 export function toFiniteNumber(value, fallback = 0) {

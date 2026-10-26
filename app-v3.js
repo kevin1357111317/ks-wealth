@@ -10,13 +10,13 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.43.1';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.43.1';
-import { calculateUsd } from './usd-core.js?v=V3.43.1';
-import { calculateGold } from './gold-core.js?v=V3.43.1';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.43.1';
-import { maintenanceRatio, parseCollateral } from './pledge-core.js?v=V3.43.1';
-import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.43.1';
+} from './financial-core.js?v=V3.44.0';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.44.0';
+import { calculateUsd } from './usd-core.js?v=V3.44.0';
+import { calculateGold } from './gold-core.js?v=V3.44.0';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.44.0';
+import { maintenanceRatio, parseCollateral } from './pledge-core.js?v=V3.44.0';
+import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.44.0';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -25,11 +25,11 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.43.1';
-import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.43.1';
-import { bodyCompositionModel, renderBodyComposition, bindBodyComposition } from './body-composition.js?v=V3.43.1';
-import { withClockSkewRetry } from './supabase-fetch.js?v=V3.43.1';
-import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.43.1';
+} from './health-core.js?v=V3.44.0';
+import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.44.0';
+import { bodyCompositionModel, renderBodyComposition, bindBodyComposition } from './body-composition.js?v=V3.44.0';
+import { withClockSkewRetry } from './supabase-fetch.js?v=V3.44.0';
+import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.44.0';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -131,6 +131,9 @@ const PERFORMANCE_ENGINE_VERSION = 'V3.42.0';
 // 前端從日圓那一列的 fx_rate_twd 讀回來，給編輯表單即時換算用。
 let jpyRate = null;
 const latestJpyRate = rows => rows.find(item => item.native_currency === 'JPY' && item.fx_rate_twd > 0)?.fx_rate_twd ?? null;
+// 歐元同理：EUR/TWD = EUR/USD × USD/TWD，只有 Edge Function 算得出來，前端從歐元那一列讀回來。
+let eurRate = null;
+const latestEurRate = rows => rows.find(item => item.native_currency === 'EUR' && item.fx_rate_twd > 0)?.fx_rate_twd ?? null;
 // 私帳（39 檔標的、1489 筆交易、92 KB）只有股票分析頁與編輯表單的交易紀錄要用。
 // 資產列的股數與市值是觸發器算好存在 financial_items 的，開 App 根本不需要私帳，
 // 所以改成第一次真的要用時才載。
@@ -901,6 +904,7 @@ function applyHomeRows(rows) {
   householdName = rows.householdName || '布布一二的家';
   fxRate = items.find(item => item.fx_rate_twd > 1 && item.quote_currency === 'USD')?.fx_rate_twd ?? fxRate;
   jpyRate = latestJpyRate(items) ?? jpyRate;
+  eurRate = latestEurRate(items) ?? eurRate;
   if (rows.usd) usdTransactions = rows.usd;
   if (rows.gold) goldTransactions = rows.gold;
   if (rows.loanAccounts) loanAccounts = rows.loanAccounts;
@@ -1060,6 +1064,7 @@ async function reloadItems() {
   items = (data ?? []).map(normalizeFinancialItem);
   fxRate = items.find(item => item.fx_rate_twd > 1 && item.quote_currency === 'USD')?.fx_rate_twd ?? fxRate;
   jpyRate = latestJpyRate(items) ?? jpyRate;
+  eurRate = latestEurRate(items) ?? eurRate;
   render();
 }
 
@@ -1221,6 +1226,7 @@ async function refreshQuotes({ force = false } = {}) {
     };
     if (data?.fx?.rate) fxRate = toFiniteNumber(data.fx.rate, fxRate);
     if (data?.jpy?.rate) jpyRate = toFiniteNumber(data.jpy.rate, jpyRate);
+    if (data?.eur?.rate) eurRate = toFiniteNumber(data.eur.rate, eurRate);
     const failed = toFiniteNumber(data?.failed);
     const succeeded = toFiniteNumber(data?.updated) + toFiniteNumber(data?.priceOnly);
     quoteStatus = failed > 0 ? (succeeded > 0 ? 'partial' : 'error') : 'success';
@@ -2320,6 +2326,7 @@ function itemCard(item, total) {
   const percentLabel = percent > 0 && percent < 1 ? '&lt;1' : Math.round(percent);
   const isNativeUsd = item.native_currency === 'USD' && item.native_amount !== null;
   const isNativeJpy = item.native_currency === 'JPY' && item.native_amount !== null;
+  const isNativeEur = item.native_currency === 'EUR' && item.native_amount !== null;
 
   const quantity = item.quantity === null ? '待設定' : formatNumber(item.quantity);
   const price = quote?.currency === 'USD'
@@ -2354,7 +2361,9 @@ function itemCard(item, total) {
     ? `<span>US$ ${masked ? '••••••' : new Intl.NumberFormat('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(item.native_amount)}</span>`
     : isNativeJpy
       ? `<span>¥ ${masked ? '••••••' : new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 }).format(item.native_amount)}</span>`
-      : '';
+      : isNativeEur
+        ? `<span>€ ${masked ? '••••••' : new Intl.NumberFormat('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(item.native_amount)}</span>`
+        : '';
   return `<button class="itemCard compactCard" data-id="${item.id}"><div class="compactMain"><div class="allocationRing ${item.kind}" style="--pct:${Math.max(0, Math.min(100, percent))}%"><span>${percentLabel}%</span></div><div class="compactIdentity"><b>${escapeHtml(item.name)}</b>${subtitle ? `<span>${subtitle}</span>` : ''}</div><div class="compactAmount"><b>NT$ ${formatNumber(item.amount_twd)}</b>${original}</div></div>${meta ? `<div class="compactMeta ${item.kind}">${meta}</div>` : ''}</button>`;
 }
 
@@ -2577,7 +2586,7 @@ function modeForItem(item, kind) {
   if (item?.market === 'US') return 'stock-us';
   if (item?.market === 'GOLD') return 'gold';
   const currency = item?.native_currency ?? item?.original_currency ?? 'TWD';
-  return currency === 'USD' ? 'manual-usd' : currency === 'JPY' ? 'manual-jpy' : 'manual-twd';
+  return currency === 'USD' ? 'manual-usd' : currency === 'JPY' ? 'manual-jpy' : currency === 'EUR' ? 'manual-eur' : 'manual-twd';
 }
 
 // 這幾類沒有行情可抓，金額是手打的，但可能是美金計價 —— 給它們一個幣別選單，
@@ -2588,6 +2597,7 @@ const assetAttributes = [
   { value: 'cash-twd', label: '台幣', category: '現金及存款', mode: 'manual-twd' },
   { value: 'cash-usd', label: '美金', category: '現金及存款', mode: 'manual-usd' },
   { value: 'cash-jpy', label: '日圓', category: '現金及存款', mode: 'manual-jpy' },
+  { value: 'cash-eur', label: '歐元', category: '現金及存款', mode: 'manual-eur' },
   { value: 'stock-tw', label: '台股', category: '台股', mode: 'stock-tw' },
   { value: 'stock-us', label: '美股', category: '美股', mode: 'stock-us' },
   { value: 'real-estate', label: '不動產', category: '不動產', mode: 'manual-twd' },
@@ -2599,7 +2609,7 @@ const assetAttributes = [
 function assetAttributeForItem(item) {
   const mode = modeForItem(item, 'asset');
   if (mode === 'stock-tw' || mode === 'stock-us' || mode === 'gold') return mode;
-  if (item?.category === '現金及存款') return mode === 'manual-usd' ? 'cash-usd' : mode === 'manual-jpy' ? 'cash-jpy' : 'cash-twd';
+  if (item?.category === '現金及存款') return mode === 'manual-usd' ? 'cash-usd' : mode === 'manual-jpy' ? 'cash-jpy' : mode === 'manual-eur' ? 'cash-eur' : 'cash-twd';
   if (item?.category === '不動產') return 'real-estate';
   if (item?.category === '黃金') return 'gold';
   if (item?.category === '保險') return 'insurance';
@@ -2679,18 +2689,20 @@ async function editItem(item, defaultOwner, defaultKind) {
   modeInput.value = mode;
   if (ledgerStock?.display) nameInput.value = ledgerStock.display;
 
-  // 日圓那一列自己的 fx_rate_twd 就是 JPY/TWD；別的列的 fx_rate_twd 是美金匯率，不能拿來用。
+  // 日圓／歐元那一列自己的 fx_rate_twd 就是 JPY/TWD、EUR/TWD；別的列的 fx_rate_twd 是美金匯率，不能拿來用。
   const currentFxRate = () => mode === 'manual-jpy'
     ? toFiniteNumber(jpyRate || (item?.native_currency === 'JPY' ? item.fx_rate_twd : 0))
-    : toFiniteNumber(fxRate || item?.fx_rate_twd);
+    : mode === 'manual-eur'
+      ? toFiniteNumber(eurRate || (item?.native_currency === 'EUR' ? item.fx_rate_twd : 0))
+      : toFiniteNumber(fxRate || item?.fx_rate_twd);
   const updateConversion = () => {
-    if (mode !== 'manual-usd' && mode !== 'manual-jpy') return;
+    if (mode !== 'manual-usd' && mode !== 'manual-jpy' && mode !== 'manual-eur') return;
     const rate = currentFxRate();
     fxInput.value = rate > 0 ? rate.toFixed(mode === 'manual-jpy' ? 6 : 4) : '尚未取得';
     const amount = Number(String(amountInput.value).replace(/,/g, ''));
     convertedInput.value = Number.isFinite(amount) && amount >= 0 && rate > 0
       ? `NT$ ${new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 }).format(Math.round(amount * rate))}`
-      : `等待有效${mode === 'manual-jpy' ? '日圓' : '美元'}金額與匯率`;
+      : `等待有效${{ 'manual-jpy': '日圓', 'manual-eur': '歐元' }[mode] ?? '美元'}金額與匯率`;
   };
   // 私帳只認帶交易所前綴的代號（TPE:2330 / NASDAQ:QQQ），sync_klfan_financial_item
   // 也是靠這個前綴把裸代號切出來寫進 financial_items.symbol。使用者只打 2330 的話
@@ -2804,9 +2816,9 @@ async function editItem(item, defaultOwner, defaultKind) {
     if (ledger) updateLedgerFields();
     goldFields.classList.toggle('hide', !gold);
     loanFields.classList.toggle('hide', kind !== 'liability');
-    usdFields.classList.toggle('hide', mode !== 'manual-usd' && mode !== 'manual-jpy');
-    fxLabel.textContent = mode === 'manual-jpy' ? 'JPY/TWD 匯率' : 'USD/TWD 匯率';
-    amountLabel.firstChild.textContent = mode === 'manual-usd' ? '美元金額（USD）' : mode === 'manual-jpy' ? '日圓金額（JPY）' : '台幣金額（TWD）';
+    usdFields.classList.toggle('hide', mode !== 'manual-usd' && mode !== 'manual-jpy' && mode !== 'manual-eur');
+    fxLabel.textContent = mode === 'manual-jpy' ? 'JPY/TWD 匯率' : mode === 'manual-eur' ? 'EUR/TWD 匯率' : 'USD/TWD 匯率';
+    amountLabel.firstChild.textContent = mode === 'manual-usd' ? '美元金額（USD）' : mode === 'manual-jpy' ? '日圓金額（JPY）' : mode === 'manual-eur' ? '歐元金額（EUR）' : '台幣金額（TWD）';
     stockHint.textContent = '';
     backdrop.querySelectorAll('[data-kind]').forEach(button => button.classList.toggle('on', button.dataset.kind === kind));
     updateConversion();
@@ -2958,9 +2970,9 @@ async function editItem(item, defaultOwner, defaultKind) {
         amountTwd = calculateTwdAmount({ nativeCurrency: 'TWD', nativeAmount, fxRateTwd: 1 });
         interestRate = parseNonNegative(rateInput.value, '年利率', { required: false });
         monthlyPayment = parseNonNegative(paymentInput.value, '每月還款', { required: false });
-      } else if (mode === 'manual-twd' || mode === 'manual-usd' || mode === 'manual-jpy') {
-        nativeCurrency = mode === 'manual-usd' ? 'USD' : mode === 'manual-jpy' ? 'JPY' : 'TWD';
-        nativeAmount = parseNonNegative(amountInput.value, { USD: '美元金額', JPY: '日圓金額', TWD: '台幣金額' }[nativeCurrency]);
+      } else if (mode === 'manual-twd' || mode === 'manual-usd' || mode === 'manual-jpy' || mode === 'manual-eur') {
+        nativeCurrency = { 'manual-usd': 'USD', 'manual-jpy': 'JPY', 'manual-eur': 'EUR' }[mode] ?? 'TWD';
+        nativeAmount = parseNonNegative(amountInput.value, { USD: '美元金額', JPY: '日圓金額', EUR: '歐元金額', TWD: '台幣金額' }[nativeCurrency]);
         exchangeRate = nativeCurrency === 'TWD' ? 1 : currentFxRate();
         amountTwd = calculateTwdAmount({ nativeCurrency, nativeAmount, fxRateTwd: exchangeRate });
         quoteCurrency = nativeCurrency;
@@ -3029,7 +3041,7 @@ async function editItem(item, defaultOwner, defaultKind) {
       tab = owner;
       pageKind[owner] = kind;
       await loadData({ blocking: false });
-      if (kind === 'asset' && (mode.startsWith('stock-') || mode === 'manual-usd' || mode === 'manual-jpy' || mode === 'gold')) {
+      if (kind === 'asset' && (mode.startsWith('stock-') || mode === 'manual-usd' || mode === 'manual-jpy' || mode === 'manual-eur' || mode === 'gold')) {
         void refreshQuotes({ force: true });
       }
     } catch (error) {
