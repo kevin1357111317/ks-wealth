@@ -859,6 +859,21 @@ USD/JPY 存在 `ks_quote_cache`（跟 XAU/USD 同一張），快取 **10 分鐘*
 `native_currency` 的 CHECK 約束原本只收 TWD/USD，2026-10-02 在 production 直接放寬成多收 JPY
 （見 `supabase/proposals/20261002_native_currency_jpy.sql`）。
 
+### 歐元存款（V3.44.0）
+
+做法跟日圓一樣：現金及存款多一個「歐元」屬性（`manual-eur`），`native_currency='EUR'`、
+`native_amount` 是歐元金額、`fx_rate_twd` 是 **EUR/TWD**（36 上下），卡片右下角顯示 `€ 金額`（兩位小數）。
+
+匯率用 Twelve Data 的 **EUR/USD 跟 USD/TWD 交叉**：`EUR/TWD = EUR/USD × USD/TWD`。
+**方向跟日圓相反** —— USD/JPY 是一美元換幾日圓所以用除的，EUR/USD 是一歐元換幾美元所以用乘的；
+照抄日圓那行會差一千多倍，`tests/eur-cash.test.mjs` 擋這個。EUR/USD 一樣放 `ks_quote_cache`、快取 10 分鐘。
+`daily-wealth-snapshot` 把歐元那一次呼叫排在美股報價之後，Twelve Data 額度不夠時先掉的是這筆小額外幣。
+
+前端找美金匯率靠 `quote_currency === 'USD'`，歐元列寫回時標 `quote_currency='EUR'`，36 這個數字不會被誤當成美金匯率。
+
+`native_currency` 的 CHECK 約束 2026-10-26 在 production 直接再放寬一次，多收 EUR
+（見 `supabase/proposals/20261026_native_currency_eur.sql`）。
+
 ## 螢幕恆亮與自動更新
 
 App 開著的時候會用 Screen Wake Lock 讓螢幕不要自己關掉，行情分成**兩條快慢不同的路徑**，
