@@ -25,7 +25,7 @@ const skip = !chromium ? 'playwright 未安裝'
   : !BROWSER || !existsSync(BROWSER) ? '找不到 Chromium'
   : false;
 
-test('美股卡片標出盤前盤後，盤中不標', { skip }, async t => {
+test('美股卡片標出盤前盤後與夜盤，盤中不標', { skip }, async t => {
   const item = (id, symbol) => `{ id: '${id}', household_id: 'H1', kind: 'asset', category: '美股', name: '${symbol}',
     owner_scope: 'husband', amount_twd: 100000, symbol: '${symbol}', market: 'US', quantity: 10, fx_rate_twd: 32,
     quote_currency: 'USD', quote_source: 'twelve_data', native_currency: null, native_amount: null, notes: null,
@@ -33,8 +33,8 @@ test('美股卡片標出盤前盤後，盤中不標', { skip }, async t => {
   const quote = (id, symbol, session) => `{ id: '${id}', symbol: '${symbol}', market: 'US', status: 'updated',
     provider: 'yahoo', currency: 'USD', price: 705.32, change: 4.46, changePercent: 0.64, session: '${session}' }`;
   const stub = `${await readFile(new URL('./support/fake-supabase.js', import.meta.url), 'utf8')}
-db.financial_items.push(${item('fi-voo', 'VOO')}, ${item('fi-soxx', 'SOXX')});
-globalThis.__quoteResults = { all: [${quote('fi-voo', 'VOO', 'post')}, ${quote('fi-soxx', 'SOXX', 'regular')}] };`;
+db.financial_items.push(${item('fi-voo', 'VOO')}, ${item('fi-soxx', 'SOXX')}, ${item('fi-qqq', 'QQQ')});
+globalThis.__quoteResults = { all: [${quote('fi-voo', 'VOO', 'post')}, ${quote('fi-soxx', 'SOXX', 'regular')}, ${quote('fi-qqq', 'QQQ', 'overnight')}] };`;
 
   const types = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html', '.png': 'image/png' };
   const server = http.createServer((req, res) => {
@@ -63,6 +63,7 @@ globalThis.__quoteResults = { all: [${quote('fi-voo', 'VOO', 'post')}, ${quote('
   assert.equal(await page.$('.itemCard[data-id="fi-voo"] .quoteLive .quoteSession'), null, '報價那一行太擠，不放標籤');
   assert.match(await page.textContent('.itemCard[data-id="fi-voo"] .quoteLive'), /US\$ 705\.32.*\+0\.64%/);
   assert.equal(await page.$('.itemCard[data-id="fi-soxx"] .quoteSession'), null, '盤中不加標籤');
+  assert.equal(await page.textContent('.itemCard[data-id="fi-qqq"] .compactIdentity .quoteSession'), '夜盤', 'Alpaca 夜盤價要標夜盤');
   // 2026-10-02 第一版把標籤塞在報價那一行，手機上被擠成直排「盤／前」、價格也折行。
   const layout = await page.evaluate(() => {
     const tag = document.querySelector('.itemCard[data-id="fi-voo"] .quoteSession').getBoundingClientRect();
