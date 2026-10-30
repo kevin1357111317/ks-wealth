@@ -10,13 +10,13 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.45.0';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.45.0';
-import { calculateUsd } from './usd-core.js?v=V3.45.0';
-import { calculateGold } from './gold-core.js?v=V3.45.0';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.45.0';
-import { maintenanceRatio, parseCollateral } from './pledge-core.js?v=V3.45.0';
-import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.45.0';
+} from './financial-core.js?v=V3.46.0';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.46.0';
+import { calculateUsd } from './usd-core.js?v=V3.46.0';
+import { calculateGold } from './gold-core.js?v=V3.46.0';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.46.0';
+import { maintenanceRatio, parseCollateral } from './pledge-core.js?v=V3.46.0';
+import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.46.0';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -25,11 +25,11 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.45.0';
-import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.45.0';
-import { bodyCompositionModel, renderBodyComposition, bindBodyComposition } from './body-composition.js?v=V3.45.0';
-import { withClockSkewRetry } from './supabase-fetch.js?v=V3.45.0';
-import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.45.0';
+} from './health-core.js?v=V3.46.0';
+import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.46.0';
+import { bodyCompositionModel, renderBodyComposition, bindBodyComposition } from './body-composition.js?v=V3.46.0';
+import { withClockSkewRetry } from './supabase-fetch.js?v=V3.46.0';
+import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.46.0';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -1827,6 +1827,29 @@ function portfolioStockCard(stock, expanded) {
   return `<article class="portfolioStockCard ${expanded ? 'open' : ''}"><button class="portfolioStockSummary" data-portfolio-stock="${escapeHtml(stock.key)}"><div class="portfolioStockTop"><div><b>${escapeHtml(stock.display)}</b></div><div><b>NT$ ${formatNumber(stock.currentValueTwd)}</b></div></div><div class="portfolioStockMeta"><div><span>累計損益</span><b class="${profitTone}">NT$ ${formatNumber(stock.profitTwd)}</b></div><div><span>XIRR 年化</span><b class="${xirrTone}">${formatPercent(stock.xirr)}</b></div></div></button>${expanded ? portfolioStockDetail(stock) : ''}</article>`;
 }
 
+// 股票分析頁的持股分布：跟資產頁的資產分布同一個圓餅樣式，切片是目前持有的每一檔，
+// 跟著上面的全部／台股／美股切換。前七大單獨列，其餘併成「其他」，避免小部位擠爆圖例。
+const HOLDING_COLORS = ['#8b94ff', '#72d7a7', '#f0b467', '#67c8db', '#bb8cff', '#ee8f73', '#e5ae4f'];
+const HOLDING_OTHER_COLOR = '#b8b2aa';
+function portfolioAllocationPanel(positions) {
+  const held = positions.filter(stock => stock.shares > 0.0000001 && stock.currentValueTwd > 0)
+    .sort((a, b) => b.currentValueTwd - a.currentValueTwd);
+  const total = held.reduce((sum, stock) => sum + stock.currentValueTwd, 0);
+  if (!total) return '';
+  const top = held.slice(0, HOLDING_COLORS.length);
+  const restValue = held.slice(HOLDING_COLORS.length).reduce((sum, stock) => sum + stock.currentValueTwd, 0);
+  const slices = top.map((stock, index) => ({ label: stock.display, value: stock.currentValueTwd, color: HOLDING_COLORS[index] }));
+  if (restValue > 0) slices.push({ label: `其他 ${held.length - top.length} 檔`, value: restValue, color: HOLDING_OTHER_COLOR });
+  let cursor = 0;
+  const segments = slices.map(({ value, color }) => {
+    const start = cursor;
+    cursor += value / total * 100;
+    return `${color} ${start}% ${cursor}%`;
+  }).join(',');
+  const legend = slices.map(({ label, value, color }) => `<div class="legendRow"><i style="background:${color}"></i><span>${escapeHtml(label)}</span><b>${(value / total * 100).toFixed(1)}%</b></div>`).join('');
+  return `<section class="panel distributionPanel portfolioAllocation"><div class="panelTitle"><div><h2>持股分布</h2></div><div class="distributionActions"><span>${held.length} 檔</span></div></div><div class="allocation"><div class="donut" data-label="持股分布" style="--segments:${segments}"></div><div class="legend">${legend}</div></div></section>`;
+}
+
 function portfolioListPage() {
   const model = portfolioModelFor(analysisOwner);
   const marketRows = portfolioMarket === 'all'
@@ -1850,7 +1873,7 @@ function portfolioListPage() {
   const directionLabel = ascending ? '低到高' : '高到低';
   // 雙向箭頭：兩支箭頭同時在，一眼看得出按了會反向；目前方向那一支才是實色。
   const sortArrow = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><g class="sortAsc"><path d="M8 19V5"/><path d="m4 9 4-4 4 4"/></g><g class="sortDesc"><path d="M16 5v14"/><path d="m20 15-4 4-4-4"/></g></svg>';
-  shell(`<div class="portfolioView"><div class="seg"><button data-portfolio-market="all" class="${portfolioMarket === 'all' ? 'on' : ''}">全部</button><button data-portfolio-market="台股" class="${portfolioMarket === '台股' ? 'on' : ''}">台股</button><button data-portfolio-market="美股" class="${portfolioMarket === '美股' ? 'on' : ''}">美股</button></div>${portfolioSummaryCards(bucket, portfolioMarket)}${portfolioPerformanceCard()}<div class="portfolioToolbar"><div class="portfolioFilters"><span class="portfolioCount">${rows.length} 檔標的</span><label class="portfolioExited"><input type="checkbox" data-show-exited ${portfolioShowExited ? 'checked' : ''}> 顯示已出清</label></div><div class="portfolioSort"><select data-portfolio-sort aria-label="排序依據">${sortOptions}</select><button type="button" class="portfolioSortDir" data-sort-direction="${sortDirection}" aria-label="切換排序方向，目前${directionLabel}" title="${directionLabel}">${sortArrow}</button></div></div><div class="portfolioList">${rows.length ? rows.map(stock => portfolioStockCard(stock, stock.key === expandedStock)).join('') : '<div class="portfolioEmpty">這個篩選條件目前沒有標的。</div>'}</div></div>`, `${ownerName(analysisOwner)}股票分析`);
+  shell(`<div class="portfolioView"><div class="seg"><button data-portfolio-market="all" class="${portfolioMarket === 'all' ? 'on' : ''}">全部</button><button data-portfolio-market="台股" class="${portfolioMarket === '台股' ? 'on' : ''}">台股</button><button data-portfolio-market="美股" class="${portfolioMarket === '美股' ? 'on' : ''}">美股</button></div>${portfolioSummaryCards(bucket, portfolioMarket)}${portfolioAllocationPanel(marketRows)}${portfolioPerformanceCard()}<div class="portfolioToolbar"><div class="portfolioFilters"><span class="portfolioCount">${rows.length} 檔標的</span><label class="portfolioExited"><input type="checkbox" data-show-exited ${portfolioShowExited ? 'checked' : ''}> 顯示已出清</label></div><div class="portfolioSort"><select data-portfolio-sort aria-label="排序依據">${sortOptions}</select><button type="button" class="portfolioSortDir" data-sort-direction="${sortDirection}" aria-label="切換排序方向，目前${directionLabel}" title="${directionLabel}">${sortArrow}</button></div></div><div class="portfolioList">${rows.length ? rows.map(stock => portfolioStockCard(stock, stock.key === expandedStock)).join('') : '<div class="portfolioEmpty">這個篩選條件目前沒有標的。</div>'}</div></div>`, `${ownerName(analysisOwner)}股票分析`);
   root.querySelectorAll('[data-portfolio-market]').forEach(button => { button.onclick = () => { portfolioMarket = button.dataset.portfolioMarket; render(); }; });
   root.querySelectorAll('[data-performance-period]').forEach(button => { button.onclick = () => { portfolioPerformancePeriod = button.dataset.performancePeriod; render(); }; });
   const benchmarkSelect = root.querySelector('[data-performance-benchmark]');
