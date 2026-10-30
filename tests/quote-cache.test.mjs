@@ -53,6 +53,9 @@ await writeFile(modulePath, source
     'export let createClient: any; export let ENV: Record<string,string> = {};\nexport const __stub = (f: any, e: Record<string,string>) => { createClient = f; ENV = e; };')
   .replace(/Deno\.env\.get\(([^)]*)\)/g, '(ENV[$1] as string | undefined)')
   .replace('Deno.serve(async (req: Request) => {', 'export const handler = (async (req: Request) => {'));
+// 時段判斷抽到旁邊的 us-session.js，要一起搬過去，相對路徑的 import 才找得到。
+await writeFile(join(dir, 'us-session.js'),
+  await readFile(new URL('../supabase/functions/refresh-tw-quotes/us-session.js', import.meta.url), 'utf8'));
 const fn = await import(`file://${modulePath}`);
 
 const ENV = {
@@ -81,7 +84,7 @@ async function refresh({ cache, gold = null, twelveBudget = 8, live = LIVE, requ
   let stored = cache;
   const pruned = [];
   let storedGold = gold;   // ks_quote_cache 裡的 XAU/USD，null = 沒有或已過期
-  const used = { fugle: 0, twelve: 0, finnhub: 0, yahoo: 0 };
+  const used = { fugle: 0, twelve: 0, finnhub: 0, yahoo: 0, alpaca: 0 };
   const written = [];      // 這一輪往 financial_items 寫進去的每一筆
   let fxDaily = null;      // 寫進 klfan_fx_daily 的那一列
 
@@ -137,6 +140,14 @@ async function refresh({ cache, gold = null, twelveBudget = 8, live = LIVE, requ
       if (!yahooOk) return new Response('rate limited', { status: 429 });
       const code = decodeURIComponent(/chart\/([^?]*)/.exec(u)[1]);
       return Response.json(yahooChart(code, Date.now() - 60_000));
+    }
+    if (u.includes('data.alpaca.markets')) {
+      used.alpaca += 1;
+      // 夜盤成交比 Yahoo 那根晚 30 秒、價格高 8 —— 用來分辨最後採用的是哪一邊
+      const symbols = decodeURIComponent(/symbols=([^&]*)/.exec(u)[1]).split(',');
+      return Response.json(Object.fromEntries(symbols.map(code => [code, {
+        latestTrade: { p: US_PRICE[code] + 8, t: new Date(Date.now() - 30_000).toISOString(), x: 'B' },
+      }])));
     }
     if (u.includes('finnhub.io')) {
       used.finnhub += 1;
@@ -401,6 +412,65 @@ test('Yahoo 掛掉時退回 Finnhub，不能整排抓不到', async () => {
     assert.equal(used.finnhub, 3);
     assert.equal(body.failed, 0);
     assert.equal(body.results.find(r => r.symbol === 'VOO').price, US_PRICE.VOO);
+  } finally {
+    mock.timers.setTime(REGULAR);
+  }
+});
+
+// ---- 夜盤走 Alpaca ----
+//
+// 美東 20:00–04:00 Yahoo 停在盤後 19:59，夜盤成交只有 Alpaca 的 overnight feed 有。
+const OVERNIGHT = Date.parse('2026-10-02T03:00:00Z');   // 美東週四 23:00
+const FRIDAY_NIGHT = Date.parse('2026-10-03T01:00:00Z'); // 美東週五 21:00，沒有夜盤
+const ENV_ALPACA = { ...ENV_FINNHUB, ALPACA_API_KEY_ID: 'AK', ALPACA_API_SECRET_KEY: 'AS' };
+
+test('夜盤用 Alpaca 成交價蓋過 Yahoo，一輪只打一次批次，漲跌仍對正規收盤', async () => {
+  mock.timers.setTime(OVERNIGHT);
+  try {
+    const { body, used, written } = await refresh({ cache: cacheRows(28 * 60_000), env: ENV_ALPACA });
+    assert.equal(used.alpaca, 1, '三檔共用一次 snapshot');
+    const voo = body.results.find(r => r.symbol === 'VOO');
+    assert.equal(voo.price, US_PRICE.VOO + 8);
+    assert.equal(voo.session, 'overnight');
+    assert.equal(voo.change, 8, '基準是最近一次正規收盤，不是盤後價');
+    const row = written.find(r => r.id === voo.id);
+    assert.equal(row.amount_twd, Math.round((US_PRICE.VOO + 8) * 100 * FX));
+    assert.equal(row.quote_source, 'twelve_data', 'alpaca 不在 CHECK 允許值裡，要收斂');
+  } finally {
+    mock.timers.setTime(REGULAR);
+  }
+});
+
+test('夜盤的美股快車道也疊 Alpaca，且不寫資料庫', async () => {
+  mock.timers.setTime(OVERNIGHT);
+  try {
+    const { body, used, written } = await refresh({ cache: cacheRows(28 * 60_000), env: ENV_ALPACA, requestBody: { scope: 'us' } });
+    assert.equal(used.alpaca, 1);
+    assert.deepEqual(written, []);
+    assert.deepEqual([...new Set(body.results.map(r => r.session))], ['overnight']);
+  } finally {
+    mock.timers.setTime(REGULAR);
+  }
+});
+
+test('沒設 Alpaca 金鑰就維持盤後價，不打 Alpaca', async () => {
+  mock.timers.setTime(OVERNIGHT);
+  try {
+    const { body, used } = await refresh({ cache: cacheRows(28 * 60_000), env: ENV_FINNHUB });
+    assert.equal(used.alpaca, 0);
+    const voo = body.results.find(r => r.symbol === 'VOO');
+    assert.equal(voo.price, US_PRICE.VOO + 5);
+    assert.notEqual(voo.session, 'overnight');
+  } finally {
+    mock.timers.setTime(REGULAR);
+  }
+});
+
+test('週五晚上沒有夜盤，不去打 Alpaca', async () => {
+  mock.timers.setTime(FRIDAY_NIGHT);
+  try {
+    const { used } = await refresh({ cache: cacheRows(28 * 60_000), env: ENV_ALPACA });
+    assert.equal(used.alpaca, 0);
   } finally {
     mock.timers.setTime(REGULAR);
   }

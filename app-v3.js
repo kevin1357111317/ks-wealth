@@ -10,13 +10,13 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.44.1';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.44.1';
-import { calculateUsd } from './usd-core.js?v=V3.44.1';
-import { calculateGold } from './gold-core.js?v=V3.44.1';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.44.1';
-import { maintenanceRatio, parseCollateral } from './pledge-core.js?v=V3.44.1';
-import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.44.1';
+} from './financial-core.js?v=V3.45.0';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.45.0';
+import { calculateUsd } from './usd-core.js?v=V3.45.0';
+import { calculateGold } from './gold-core.js?v=V3.45.0';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.45.0';
+import { maintenanceRatio, parseCollateral } from './pledge-core.js?v=V3.45.0';
+import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.45.0';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -25,11 +25,11 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.44.1';
-import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.44.1';
-import { bodyCompositionModel, renderBodyComposition, bindBodyComposition } from './body-composition.js?v=V3.44.1';
-import { withClockSkewRetry } from './supabase-fetch.js?v=V3.44.1';
-import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.44.1';
+} from './health-core.js?v=V3.45.0';
+import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.45.0';
+import { bodyCompositionModel, renderBodyComposition, bindBodyComposition } from './body-composition.js?v=V3.45.0';
+import { withClockSkewRetry } from './supabase-fetch.js?v=V3.45.0';
+import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.45.0';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -2345,8 +2345,8 @@ function itemCard(item, total) {
     : `NT$ ${formatNumber(quote?.price)}`;
   const change = toFiniteNumber(quote?.changePercent);
   const tone = change > 0 ? 'up' : change < 0 ? 'down' : 'flat';
-  // 美股盤前盤後的價（Yahoo）要標出來，不然會以為是盤中成交。
-  const sessionTag = { pre: '盤前', post: '盤後' }[quote?.session] ?? '';
+  // 美股盤前盤後（Yahoo）與夜盤（Alpaca）的價要標出來，不然會以為是盤中成交。
+  const sessionTag = { pre: '盤前', post: '盤後', overnight: '夜盤' }[quote?.session] ?? '';
   const subtitle = item.symbol
     ? `${escapeHtml(item.symbol)}${sessionTag ? `<em class="quoteSession">${sessionTag}</em>` : ''}`
     : escapeHtml(item.native_currency || '');

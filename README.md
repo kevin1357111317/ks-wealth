@@ -922,6 +922,24 @@ Yahoo 失敗才退回 Finnhub。盤中維持 Finnhub —— Yahoo 不是正式 A
 - `quote_source` 有 CHECK 約束，`yahoo` 不在允許值裡，照 Finnhub 的做法收斂成 `twelve_data`；
   真正來源留在 `klfan_quotes.source`。
 
+### 夜盤（V3.45.0）
+
+美東 20:00–04:00（台灣白天）Yahoo 的一分鐘線停在盤後 19:59、Finnhub 停在收盤價，都沒有夜盤
+（2026-10-21 夜盤時段實測 Yahoo 最後一根就是 19:59）。夜盤只在 Blue Ocean ATS 交易，所以多接
+**Alpaca 的 `overnight` feed**：`GET data.alpaca.markets/v2/stocks/snapshots?symbols=…&feed=overnight`，
+**免費的 Basic 方案就有**（2026-10-30 實測 200；`feed=boats` 回 403「subscription does not permit」，那是付費方案的）。
+金鑰放在 Edge Function secrets：`ALPACA_API_KEY_ID`、`ALPACA_API_SECRET_KEY`，沒設就完全不打 Alpaca。
+
+- 時段判斷在 `refresh-tw-quotes/us-session.js`（純函式，node 測試直接 import）：夜盤是**週日到週四** 20:00 到隔天 04:00；
+  週五晚上、週六、週日 20:00 前是 closed，不去抓。
+- 一輪只打一次批次 snapshot，取每檔的 `latestTrade`。**疊在 Yahoo 那筆上面**（`mergeOvernight`）：價格換成夜盤成交，
+  漲跌基準仍是 Yahoo 給的最近一次正規收盤，跟盤前盤後同一個口徑。夜盤成交比 Yahoo 那筆舊就不用 —— 週日晚上剛開、
+  還沒人成交時，Alpaca 回的是上週五凌晨那筆，不能蓋掉週五盤後價。
+- 卡片標「夜盤」。`financial_items.amount_twd` 與 `klfan_quotes` 跟盤前盤後一樣寫這個價；**每日快照與績效不接夜盤**，
+  仍是正規收盤（`daily-wealth-snapshot` 不碰 Alpaca，`tests/us-overnight.test.mjs` 擋）。
+- Alpaca 失敗或沒金鑰就退回原本的盤後價，不會讓報價整個失敗。
+- 部署這支 Function 要連 `us-session.js` 一起上傳。
+
 匯率與黃金搬不到 Finnhub：2026-09-19 用正式環境的 key 實測，`forex/rates`、`OANDA:USD_TWD`、
 `OANDA:XAU_USD` 全部回 403（免費方案只開美股），所以這兩項維持 60 秒。
 

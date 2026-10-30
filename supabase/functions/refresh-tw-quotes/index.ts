@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.95.0";
+import { mergeOvernight, usSession } from "./us-session.js";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -27,22 +28,6 @@ const ALLOWED_QUOTE_SOURCES = ["manual", "fugle", "twelve_data"];
 const goldAmountTwd = (grams: number, xauUsd: number, usdTwd: number) =>
   Math.round((grams / TROY_OUNCE_GRAMS) * xauUsd * usdTwd);
 
-// 美東時間的交易時段：盤前 04:00、盤中 09:30、盤後 16:00、20:00 收工。夏令時間由
-// America/New_York 自己處理。國定假日不另外判斷 —— Yahoo 那天就沒有新的 K 棒，
-// 回的是上一個交易日最後一筆，結果一樣對。
-function usSession(date = new Date()) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York", weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
-  }).formatToParts(date);
-  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "";
-  const minutes = Number(part("hour")) * 60 + Number(part("minute"));
-  if (part("weekday") === "Sat" || part("weekday") === "Sun") return "closed";
-  if (minutes >= 570 && minutes < 960) return "regular";
-  if (minutes >= 240 && minutes < 570) return "pre";
-  if (minutes >= 960 && minutes < 1200) return "post";
-  return "closed";
-}
-
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
@@ -56,6 +41,8 @@ Deno.serve(async (req: Request) => {
   const fugleKey = Deno.env.get("FUGLE_MARKETDATA_API_KEY") ?? "";
   const finnhubKey = Deno.env.get("FINNHUB_API_KEY") ?? "";
   const twelveKey = Deno.env.get("TWELVE_DATA_API_KEY") ?? "";
+  const alpacaKeyId = Deno.env.get("ALPACA_API_KEY_ID") ?? "";
+  const alpacaSecret = Deno.env.get("ALPACA_API_SECRET_KEY") ?? "";
   if (!supabaseUrl || !publishableKey) return json({ error: "supabase_config_missing" }, 500);
   if (!fugleKey && !finnhubKey && !twelveKey) return json({ error: "market_keys_missing" }, 503);
 
@@ -182,8 +169,9 @@ Deno.serve(async (req: Request) => {
         price,
         change,
         changePercent: change / previousClose * 100,
-        // 這一筆成交落在哪個時段，前端據此標「盤前」「盤後」。
-        session: usSession(new Date(at * 1000)),
+        // 這一筆成交落在哪個時段，前端據此標「盤前」「盤後」。Yahoo 只有盤前、盤中、盤後，
+        // 不可能是夜盤 —— 夜盤標籤只留給 Alpaca 的成交（mergeOvernight），其餘時段一律算盤後。
+        session: ((bar) => bar === "pre" || bar === "regular" ? bar : "post")(usSession(new Date(at * 1000))),
         quotedAt: new Date(at * 1000).toISOString(),
         updatedAt: new Date().toISOString(),
         cached: false,
@@ -192,9 +180,40 @@ Deno.serve(async (req: Request) => {
       return null;   // 改走 Finnhub
     }
   };
-  const extendedHours = usSession() !== "regular";
+  const currentSession = usSession();
+  const extendedHours = currentSession !== "regular";
+
+  // 夜盤（美東 20:00–04:00）Yahoo、Finnhub 都沒有資料，改抓 Alpaca 的 overnight feed
+  // （免費方案就有，資料來自 Blue Ocean ATS）。一輪只打一次批次 snapshot，所有標的共用。
+  // 沒有金鑰或 Alpaca 掛掉就回空的，維持原本的盤後價。
+  let overnightBatch: Promise<Map<string, { price: number; at: string }>> | null = null;
+  const overnightPrices = () => {
+    if (overnightBatch) return overnightBatch;
+    overnightBatch = (async () => {
+      const prices = new Map<string, { price: number; at: string }>();
+      if (currentSession !== "overnight" || !alpacaKeyId || !alpacaSecret || !usSymbols.length) return prices;
+      try {
+        const response = await fetch(
+          `https://data.alpaca.markets/v2/stocks/snapshots?symbols=${encodeURIComponent(usSymbols.join(","))}&feed=overnight`,
+          { headers: { "APCA-API-KEY-ID": alpacaKeyId, "APCA-API-SECRET-KEY": alpacaSecret, "Accept": "application/json" } },
+        );
+        if (!response.ok) return prices;
+        const data = await response.json();
+        for (const [symbol, snapshot] of Object.entries(data ?? {})) {
+          const trade = (snapshot as { latestTrade?: { p?: number; t?: string } })?.latestTrade;
+          const price = Number(trade?.p);
+          if (price > 0 && trade?.t) prices.set(symbol.toUpperCase(), { price, at: trade.t });
+        }
+      } catch { /* 沿用盤後價 */ }
+      return prices;
+    })();
+    return overnightBatch;
+  };
+  const extendedQuote = async (symbol: string) =>
+    mergeOvernight(await yahooQuote(symbol), (await overnightPrices()).get(symbol));
+
   const liveUsQuote = async (symbol: string) => extendedHours
-    ? (await yahooQuote(symbol)) ?? (await finnhubQuote(symbol))
+    ? (await extendedQuote(symbol)) ?? (await finnhubQuote(symbol))
     : await finnhubQuote(symbol);
 
   // 台股走獨立快車道：前端每 5 秒呼叫，只回價格、不寫資料庫。
@@ -224,7 +243,7 @@ Deno.serve(async (req: Request) => {
     const bySymbol = new Map(entries);
     return json({
       scope: "us",
-      source: extendedHours ? "yahoo" : "finnhub",
+      source: currentSession === "overnight" ? "yahoo+alpaca" : extendedHours ? "yahoo" : "finnhub",
       requestedAt: new Date().toISOString(),
       results: marketItems.filter((item) => item.market === "US").map((item) => {
         const quote = bySymbol.get(String(item.symbol).toUpperCase());
@@ -340,12 +359,13 @@ Deno.serve(async (req: Request) => {
   const fetchUs = async (symbol: string) => {
     const fresh = cachedUsFresh.get(symbol);
     // 快取裡沒存時段；盤前盤後寫進去的也是那個時段的價，照現在的時段標（收工後沿用盤後）。
-    if (fresh) return [`US:${symbol}`, { currency: "USD", ...fresh, cached: true, session: extendedHours ? (usSession() === "pre" ? "pre" : "post") : "regular" }] as const;
+    // 夜盤時段只有 Alpaca 寫進去的那筆才標夜盤，Yahoo 的盤後價照舊標盤後。
+    if (fresh) return [`US:${symbol}`, { currency: "USD", ...fresh, cached: true, session: currentSession === "pre" ? "pre" : currentSession === "overnight" && fresh.provider === "alpaca" ? "overnight" : extendedHours ? "post" : "regular" }] as const;
     // Finnhub 為主、Twelve Data 為備援：Finnhub 的免費額度高很多，撐得起 14 秒的快取。
     // 沒有 Finnhub key 時不要 await —— 多一個 microtask 會讓 Twelve Data 的請求晚一拍發出，
     // 額度用完時被餓死的就從黃金變成美股，那是既有行為，不該被這次重構改掉。
     if (extendedHours) {
-      const extended = await yahooQuote(symbol);
+      const extended = await extendedQuote(symbol);
       if (extended) return [`US:${symbol}`, extended] as const;
     }
     if (finnhubKey) {
