@@ -159,6 +159,13 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     await page.click('[data-open-portfolio]');
     await page.waitForSelector('[data-portfolio-stock]');
     await page.waitForSelector('.portfolioPerformanceChart');
+    // 持股分布圓餅放在摘要下面、績效趨勢上面，只算目前還持有的標的
+    const order = await page.$$eval('.portfolioView > *', nodes => nodes.map(node => node.className));
+    const allocationAt = order.findIndex(name => /portfolioAllocation/.test(name));
+    assert.ok(allocationAt > order.findIndex(name => /portfolioSummary/.test(name)), '圓餅在摘要卡下面');
+    assert.ok(allocationAt < order.findIndex(name => /portfolioPerformance/.test(name)), '圓餅在績效趨勢上面');
+    assert.match(await page.textContent('.portfolioAllocation'), /持股分布.*1 檔.*鴻海.*100\.0%/s);
+    assert.match(await page.getAttribute('.portfolioAllocation .donut', 'style'), /--segments:#8b94ff 0% 100%/);
     assert.match(await page.textContent('.portfolioPerformance'), /我的投資組合 vs 大盤/);
     assert.match(await page.textContent('.portfolioPerformance'), /TWR 績效趨勢/);
     assert.match(await page.textContent('.portfolioPerformanceStats'), /我的 TWR.*大盤 TWR.*超額報酬/s);
@@ -196,6 +203,7 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     assert.match(await page.textContent('.portfolioPerformanceLegend'), /0050/);
     await page.click('[data-portfolio-market="美股"]');
     assert.match(await page.textContent('.portfolioPerformanceLegend'), /VOO/);
+    assert.equal(await page.locator('.portfolioAllocation').count(), 0, '沒有美股持股就不放空的圓餅');
     await page.click('[data-portfolio-market="all"]');
     assert.equal(await page.locator('.portfolioStockDetail').count(), 0, '一開始是收合的');
     // 台股名字是中文、美股名字就是代號，標題不該再貼一組報價代號
