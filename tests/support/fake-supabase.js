@@ -18,6 +18,8 @@ export const db = {
   loan_accounts: [],
   loan_schedule: [],
   loan_events: [],
+  properties: [],
+  property_expenses: [],
 };
 export const calls = [];
 let txSeq = 1000;
@@ -246,7 +248,7 @@ export function makeClient() {
           const list = Array.isArray(payload) ? payload : [payload];
           list.forEach(row => {
             // Postgres 會給 id，沒給的話點卡片時 items.find(id) 會找不到那一列
-            if (table === 'klfan_transactions' || table === 'usd_transactions') row = { id: txSeq++, ...row };
+            if (['klfan_transactions', 'usd_transactions', 'property_expenses'].includes(table)) row = { id: txSeq++, ...row };
             else if (table === 'financial_items' && row.id === undefined) row = { id: `fi-new-${txSeq++}`, ...row };
             rows.push(row);
             calls.push({ op: 'insert', table, row });
