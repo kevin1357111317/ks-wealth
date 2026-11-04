@@ -474,8 +474,8 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
         height: entry.getBoundingClientRect().height,
       };
     });
-    assert.deepEqual(compactEntry.labels, ['股票', '貸款', '黃金', '美金', '保險']);
-    assert.equal(compactEntry.rows, 1, '五個入口要整合成同一列');
+    assert.deepEqual(compactEntry.labels, ['股票', '貸款', '黃金', '美金', '保險', '房子']);
+    assert.equal(compactEntry.rows, 1, '六個入口要整合成同一列');
     assert.ok(compactEntry.height <= 64, `入口列不應超過 64px，實際 ${compactEntry.height}px`);
 
     // 卡片講的是整體投資，不屬於資產或負債任何一邊，切到負債也要留著
@@ -490,7 +490,7 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     assert.match(await page.textContent('[data-open-usd]'), /^\s*美金/);
     // 入口只留按鈕，數字都收進分析頁裡
     const entry = (await page.textContent('.analysisEntry')).replace(/[\s›]+/g, '');
-    assert.equal(entry, '股票貸款黃金美金保險');
+    assert.equal(entry, '股票貸款黃金美金保險房子');
 
     await page.click('[data-open-usd]');
     await page.waitForSelector('.portfolioSummary');

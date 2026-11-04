@@ -10,13 +10,13 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.46.0';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.46.0';
-import { calculateUsd } from './usd-core.js?v=V3.46.0';
-import { calculateGold } from './gold-core.js?v=V3.46.0';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.46.0';
-import { maintenanceRatio, parseCollateral } from './pledge-core.js?v=V3.46.0';
-import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.46.0';
+} from './financial-core.js?v=V3.47.0';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.47.0';
+import { calculateUsd } from './usd-core.js?v=V3.47.0';
+import { calculateGold } from './gold-core.js?v=V3.47.0';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.47.0';
+import { maintenanceRatio, parseCollateral } from './pledge-core.js?v=V3.47.0';
+import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.47.0';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -25,11 +25,12 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.46.0';
-import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.46.0';
-import { bodyCompositionModel, renderBodyComposition, bindBodyComposition } from './body-composition.js?v=V3.46.0';
-import { withClockSkewRetry } from './supabase-fetch.js?v=V3.46.0';
-import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.46.0';
+} from './health-core.js?v=V3.47.0';
+import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.47.0';
+import { calculatePropertyLedger, latestInCategory, propertyFacts } from './property-core.js?v=V3.47.0';
+import { bodyCompositionModel, renderBodyComposition, bindBodyComposition } from './body-composition.js?v=V3.47.0';
+import { withClockSkewRetry } from './supabase-fetch.js?v=V3.47.0';
+import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.47.0';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -164,7 +165,14 @@ let expandedLoan = null;   // 就地展開的那一筆，一次只開一個
 let loanNextDue = {};
 let autopayCheckedOn = null;
 let loanTypeFilter = 'personal';   // 貸款分析預設先看信貸，可切換增貸／房貸／質押
-let analysisScreen = null;   // 'stocks'｜'usd'｜'gold'｜'loans'｜'insurance'｜'health'，null 就是一般的資產頁
+// 房子帳（取代「房子統計」試算表）是全家共用的，不分老公老婆；點進房子頁才載。
+let properties = [];
+let propertyExpenses = [];
+let propertyLoaded = false;
+let propertyFlight = null;
+let propertyView = null;   // 正在看哪一間房子的 id，'compare' 是各房屋比較
+const openPropertyGroups = new Set();
+let analysisScreen = null;   // 'stocks'｜'usd'｜'gold'｜'loans'｜'insurance'｜'property'｜'health'，null 就是一般的資產頁
 let analysisOwner = 'husband';   // 分析頁看的是誰的部位
 let expandedStock = null;   // 私帳清單裡就地展開的那一檔，一次只開一個
 // 分析頁是狀態切換不是換頁，返回手勢預設不會有反應。進去時推一筆歷史，
@@ -773,6 +781,12 @@ async function applySession(nextSession) {
   loanNextDue = {};
   autopayCheckedOn = null;
   loanTypeFilter = 'personal';
+  properties = [];
+  propertyExpenses = [];
+  propertyLoaded = false;
+  propertyFlight = null;
+  propertyView = null;
+  openPropertyGroups.clear();
   analysisScreen = null;
   analysisOwner = 'husband';
   usdTransactions = [];
@@ -809,6 +823,25 @@ async function fetchAllRows(build) {
     all.push(...(data ?? []));
     if ((data?.length ?? 0) < PAGE_ROWS) return { data: all, error: null };
   }
+}
+
+async function ensureProperties(force = false) {
+  if (propertyLoaded && !force) return true;
+  if (propertyFlight) return propertyFlight;
+  const householdId = member?.household_id;
+  if (!householdId) return false;
+  propertyFlight = (async () => {
+    const [propertyResult, expenseResult] = await Promise.all([
+      sb.from('properties').select('*').eq('household_id', householdId).order('sort_order'),
+      fetchAllRows(() => sb.from('property_expenses').select('*').eq('household_id', householdId).order('expense_date').order('id')),
+    ]);
+    if (propertyResult.error || expenseResult.error || member?.household_id !== householdId) return false;
+    properties = propertyResult.data ?? [];
+    propertyExpenses = expenseResult.data ?? [];
+    propertyLoaded = true;
+    return true;
+  })().catch(() => false).finally(() => { propertyFlight = null; });
+  return propertyFlight;
 }
 
 async function ensureLoanSchedule() {
@@ -1358,7 +1391,7 @@ function cashOrder(item) {
 
 // 資產頁上只放入口，數字留在分析頁裡面講。
 function analysisEntry() {
-  return `<nav class="analysisEntry" aria-label="功能捷徑"><button data-open-portfolio aria-label="股票分析">股票</button><button data-open-loans aria-label="貸款分析">貸款</button><button data-open-gold aria-label="黃金分析">黃金</button><button data-open-usd aria-label="美金分析">美金</button><button data-open-insurance aria-label="保險分析">保險</button></nav>`;
+  return `<nav class="analysisEntry" aria-label="功能捷徑"><button data-open-portfolio aria-label="股票分析">股票</button><button data-open-loans aria-label="貸款分析">貸款</button><button data-open-gold aria-label="黃金分析">黃金</button><button data-open-usd aria-label="美金分析">美金</button><button data-open-insurance aria-label="保險分析">保險</button><button data-open-property aria-label="房子">房子</button></nav>`;
 }
 
 // 分析頁只看單一個人的部位。兩個人合起來的那份也還是要留著 ——
@@ -1950,6 +1983,7 @@ function analysisPage() {
   if (analysisScreen === 'usd') return usdPage();
   if (analysisScreen === 'gold') return goldPage();
   if (analysisScreen === 'loans') return loanPage();
+  if (analysisScreen === 'property') return propertyPage();
   // 點進來才去載私帳，載好會再 render 一次。
   if (!ledgerLoaded) {
     return shell('<div class="portfolioView"><div class="portfolioEmpty">載入交易紀錄…</div></div>',
@@ -2211,6 +2245,172 @@ function usdPage() {
   }; });
 }
 
+// 房子 ------------------------------------------------------------------------
+// 「房子統計」試算表搬進來的那兩本帳（竹科潤隆、森林之星）加上「詳細」那張各房屋的坪數與單價。
+// 全家共用一份，不分老公老婆。計算在 property-core.js。
+
+const wanFormat = value => masked
+  ? '••••'
+  : new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 2 }).format(toFiniteNumber(value));
+const pingFormat = value => new Intl.NumberFormat('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(toFiniteNumber(value));
+const unitFormat = value => value === null ? '—' : masked ? '••••' : value.toFixed(2);
+// 帳上負數是付出去的錢；摘要講「花了多少」所以翻成正數。
+const spentFormat = value => `NT$ ${formatNumber(Math.abs(value) < 0.5 ? 0 : -value)}`;
+const propertyAmount = amount => amount < 0
+  ? `<b class="negative">−NT$ ${formatNumber(-amount)}</b>`
+  : amount > 0 ? `<b class="positive">+NT$ ${formatNumber(amount)}</b>` : '<b>NT$ 0</b>';
+
+function propertyFactsCard(property) {
+  const facts = propertyFacts(property);
+  const subtitle = [property.label, property.acquired_on ? `${property.acquired_on} 購入` : ''].filter(Boolean).join(' · ');
+  const original = toFiniteNumber(property.original_price_twd) > 0 && facts.totalPrice !== null
+    ? `<div class="propertyNote">原始房價 NT$ ${formatNumber(property.original_price_twd)}，轉手價差 NT$ ${formatNumber(facts.totalPrice * 10_000 - toFiniteNumber(property.original_price_twd))}</div>`
+    : '';
+  return `<section class="propertyFacts"><div class="propertyFactsHead"><b>${escapeHtml(property.name)}</b>${subtitle ? `<span>${escapeHtml(subtitle)}</span>` : ''}</div><div class="propertyFactGrid"><div><span>總價（含車位）</span><b>${facts.totalPrice === null ? '—' : `${wanFormat(facts.totalPrice)} 萬`}</b><small>${facts.parkingPrice ? `車位 ${wanFormat(facts.parkingPrice)} 萬` : '無車位'}</small></div><div><span>總面積</span><b>${pingFormat(facts.totalArea)} 坪</b><small>建物 ${pingFormat(facts.buildingArea)} 坪</small></div><div><span>單價（含車位）</span><b>${unitFormat(facts.unitPrice)} 萬/坪</b><small>總價 ÷ 總面積</small></div><div><span>單價（不含車位）</span><b>${unitFormat(facts.unitPriceExParking)} 萬/坪</b><small>扣車位價與車位坪數</small></div></div><div class="propertyAreas"><span>室內 ${pingFormat(facts.indoor)}</span><span>雨遮 ${pingFormat(facts.awning)}</span><span>陽台 ${pingFormat(facts.balcony)}</span><span>公設 ${pingFormat(facts.common)}</span><span>車位 ${pingFormat(facts.parking)}</span></div>${original}</section>`;
+}
+
+function propertyExpenseRow(row) {
+  const meta = [row.date, row.detail, row.payer].filter(Boolean).map(escapeHtml).join(' · ');
+  return `<button type="button" class="portfolioTx propertyTx" data-property-expense="${row.id}"><div class="portfolioTxWhen"><b>${escapeHtml(row.item)}</b><small>${meta}</small></div><div class="portfolioTxAmount">${propertyAmount(row.amount)}</div></button>`;
+}
+
+function propertyLedgerView(property) {
+  const model = calculatePropertyLedger(propertyExpenses.filter(row => row.property_id === property.id), taipeiDate());
+  const payers = model.payers.length > 1
+    ? `<div class="sectionHead"><span>付款分攤</span><b>「KL/CH」算各半</b></div><div class="propertyPayers">${model.payers.map(payer => `<div><span>${escapeHtml(payer.name)}</span><b>${spentFormat(payer.amount)}</b></div>`).join('')}</div>`
+    : '';
+  const groups = model.categories.map(group => {
+    const key = `${property.id}|${group.category}`;
+    const open = openPropertyGroups.has(key);
+    return `<section class="categoryGroup ${open ? 'open' : ''}"><button class="categoryHead" data-property-group="${escapeHtml(key)}"><div><span>${escapeHtml(group.category)}</span><small>${group.rows.length} 筆${group.lastDate ? ` · 最近 ${escapeHtml(group.lastDate)}` : ''}</small></div><div class="categoryTotal"><b>${group.total > 0 ? `+NT$ ${formatNumber(group.total)}` : spentFormat(group.total)}</b><i>⌄</i></div></button>${open ? `<div class="categoryItems propertyItems">${group.rows.map(propertyExpenseRow).join('')}</div>` : ''}</section>`;
+  }).join('');
+  return `<div class="portfolioSummary"><div class="portfolioMetric"><span>累計支出</span><b>${spentFormat(model.net)}</b><small>${model.count} 筆${model.firstDate ? ` · 自 ${escapeHtml(model.firstDate)}` : ''}</small></div><div class="portfolioMetric"><span>購屋</span><b>${spentFormat(model.buckets.purchase)}</b><small>房價、代書、驗屋</small></div><div class="portfolioMetric"><span>裝潢家具家電</span><b>${spentFormat(model.buckets.furnish)}</b><small>裝潢、傢俱、冷氣、家電</small></div><div class="portfolioMetric"><span>近 12 個月持有成本</span><b>${spentFormat(model.recentHolding)}</b><small>月均 ${spentFormat(model.recentHoldingMonthly)}</small></div></div>${propertyFactsCard(property)}${payers}<div class="sectionHead"><span>款項明細</span><b>${model.categories.length} 類 · ${model.count} 筆</b></div><div class="categoryList propertyGroups">${groups || '<div class="portfolioEmpty">還沒有款項，按右下角 ＋ 記第一筆。</div>'}</div>`;
+}
+
+function propertyPage() {
+  const title = '房子';
+  if (!propertyLoaded) {
+    return shell('<div class="portfolioView"><div class="portfolioEmpty">載入房子帳…</div></div>', title);
+  }
+  const homes = properties.filter(property => property.has_ledger);
+  if (propertyView !== 'compare' && !homes.some(property => property.id === propertyView)) {
+    propertyView = homes[0]?.id ?? 'compare';
+  }
+  const current = homes.find(property => property.id === propertyView) ?? null;
+  const seg = `<div class="seg propertySeg">${homes.map(property => `<button data-property-view="${property.id}" class="${propertyView === property.id ? 'on' : ''}">${escapeHtml(property.name)}</button>`).join('')}<button data-property-view="compare" class="${propertyView === 'compare' ? 'on' : ''}">比較</button></div>`;
+  const body = current
+    ? propertyLedgerView(current)
+    : `<div class="sectionHead"><span>各房屋坪數與單價</span><b>${properties.length} 間</b></div>${properties.map(propertyFactsCard).join('') || '<div class="portfolioEmpty">還沒有房屋資料。</div>'}`;
+  shell(`<div class="portfolioView propertyView">${seg}${body}</div>`, title, Boolean(current));
+
+  root.querySelector('.propertySeg').onclick = event => {
+    const button = event.target.closest('[data-property-view]');
+    if (!button) return;
+    const next = button.dataset.propertyView === 'compare' ? 'compare' : Number(button.dataset.propertyView);
+    if (next === propertyView) return;
+    propertyView = next;
+    render();
+  };
+  if (!current) return;
+  root.querySelector('#add').onclick = () => editPropertyExpense(null, current);
+  root.querySelector('.propertyGroups').onclick = event => {
+    const group = event.target.closest('[data-property-group]');
+    if (group) {
+      const key = group.dataset.propertyGroup;
+      openPropertyGroups.has(key) ? openPropertyGroups.delete(key) : openPropertyGroups.add(key);
+      renderKeepingAnchor('data-property-group', key);
+      return;
+    }
+    const row = event.target.closest('[data-property-expense]');
+    if (row) {
+      const selected = propertyExpenses.find(expense => String(expense.id) === row.dataset.propertyExpense);
+      if (selected) editPropertyExpense(selected, current);
+    }
+  };
+}
+
+// 新增與修改共用一張表單。金額一律填正數，用「支出／收入」決定正負號，存回去跟試算表同一個慣例。
+function editPropertyExpense(expense, property) {
+  if (blockedByCachedHome()) return;
+  const rows = propertyExpenses.filter(row => row.property_id === property.id);
+  const model = calculatePropertyLedger(rows, taipeiDate());
+  const payerChoices = [...new Set(propertyExpenses.map(row => row.payer).filter(Boolean))];
+  const amount = toFiniteNumber(expense?.amount_twd);
+  let saving = false;
+  const backdrop = document.createElement('div');
+  backdrop.className = 'backdrop';
+  backdrop.innerHTML = `<section class="sheet"><div class="handle"></div><div class="sheetHead"><div><h2>${expense ? '編輯' : '新增'}款項 · ${escapeHtml(property.name)}</h2></div>${expense ? '<button id="propertyDelete" class="trash" type="button">刪除</button>' : ''}</div><form id="propertyForm" class="form" novalidate><label>分類<input id="propertyCategory" list="propertyCategoryList" value="${escapeHtml(expense?.category ?? '')}" placeholder="水費、管理費…"><datalist id="propertyCategoryList">${model.categories.map(group => `<option value="${escapeHtml(group.category)}"></option>`).join('')}</datalist></label><div class="two"><label>項目<input id="propertyItem" value="${escapeHtml(expense?.item ?? '')}"></label><label>日期<input id="propertyDate" type="date" value="${escapeHtml(expense?.expense_date ?? taipeiDate())}"></label></div><div class="two"><label>類型<select id="propertyKind"><option value="out">支出</option><option value="in">收入／退款</option></select></label><label>金額（TWD）<input id="propertyAmount" inputmode="decimal" value="${expense ? Math.abs(amount) : ''}"></label></div><div class="two"><label>說明（選填）<input id="propertyDetail" value="${escapeHtml(expense?.detail ?? '')}" placeholder="期別、品牌型號"></label><label>付款人<input id="propertyPayer" list="propertyPayerList" value="${escapeHtml(expense?.payer ?? '')}"><datalist id="propertyPayerList">${payerChoices.map(payer => `<option value="${escapeHtml(payer)}"></option>`).join('')}</datalist></label></div><div id="propertyMsg"></div><button id="propertySave" class="primary">儲存</button></form></section>`;
+  document.body.append(backdrop);
+
+  const $ = selector => backdrop.querySelector(selector);
+  const message = $('#propertyMsg');
+  const fail = text => { saving = false; message.className = 'message error'; message.textContent = text; };
+  $('#propertyKind').value = amount > 0 ? 'in' : 'out';
+  const close = () => backdrop.remove();
+  backdrop.onclick = event => { if (event.target === backdrop && !saving) close(); };
+
+  // 新增時選了既有分類，就照那一類最近一筆把項目、說明、付款人填好 —— 水電管理費每期都長一樣，
+  // 只剩金額跟日期要改。使用者自己填過的欄位不蓋掉。
+  if (!expense) {
+    $('#propertyCategory').onchange = () => {
+      const latest = latestInCategory(rows, $('#propertyCategory').value);
+      if (!latest) return;
+      if (!$('#propertyItem').value) $('#propertyItem').value = latest.item ?? '';
+      if (!$('#propertyPayer').value) $('#propertyPayer').value = latest.payer ?? '';
+      $('#propertyKind').value = toFiniteNumber(latest.amount_twd) > 0 ? 'in' : 'out';
+    };
+  }
+
+  const reload = async () => {
+    await ensureProperties(true);
+    close();
+    render();
+  };
+
+  $('#propertyForm').onsubmit = async event => {
+    event.preventDefault();
+    if (saving) return;
+    const category = $('#propertyCategory').value.trim();
+    const item = $('#propertyItem').value.trim();
+    const date = $('#propertyDate').value;
+    const value = Math.abs(toFiniteNumber($('#propertyAmount').value));
+    if (!category || !item || !date || !String($('#propertyAmount').value).trim() || !Number.isFinite(Number($('#propertyAmount').value))) {
+      return fail('分類、項目、日期與金額都要填。');
+    }
+    saving = true;
+    const payload = {
+      category,
+      item,
+      expense_date: date,
+      amount_twd: $('#propertyKind').value === 'in' ? value : -value,
+      detail: $('#propertyDetail').value.trim() || null,
+      payer: $('#propertyPayer').value.trim() || null,
+    };
+    const { error } = expense
+      ? await sb.from('property_expenses').update({ ...payload, updated_at: new Date().toISOString() })
+        .eq('id', expense.id).eq('household_id', member.household_id)
+      : await sb.from('property_expenses').insert({
+        ...payload,
+        household_id: member.household_id,
+        property_id: property.id,
+        // 新開的分類排在試算表原有分類的後面
+        sort_order: rows.reduce((max, row) => Math.max(max, toFiniteNumber(row.sort_order)), 0) + 1,
+      });
+    if (error) return fail(error.message);
+    await reload();
+  };
+
+  const remove = $('#propertyDelete');
+  if (remove) remove.onclick = async () => {
+    if (saving || !confirm('確定刪除這筆款項？')) return;
+    saving = true;
+    const { error } = await sb.from('property_expenses').delete()
+      .eq('id', expense.id).eq('household_id', member.household_id);
+    if (error) return fail(error.message);
+    await reload();
+  };
+}
+
 function usdTransactionRow(row) {
   const buying = row.usd >= 0;
   return `<div class="portfolioTx"><div class="portfolioTxWhen"><b>${buying ? '買進' : '賣出'}</b><small>${escapeHtml(row.date)} · 匯率 ${rateFormat(row.rate)}</small></div><div class="portfolioTxAmount"><b class="${buying ? 'negative' : 'positive'}">${buying ? '\u2212' : '+'}NT$ ${formatNumber(Math.abs(row.twd))}</b><small>${buying ? '+' : '\u2212'}US$ ${usdFormat(Math.abs(row.usd))}</small></div><button class="portfolioTxDelete" type="button" data-delete-usd-tx="${row.id}">刪除</button></div>`;
@@ -2308,6 +2508,8 @@ function personPage(ownerScope) {
   if (loanButton) loanButton.onclick = () => openAnalysis('loans', ownerScope);
   const insuranceButton = root.querySelector('[data-open-insurance]');
   if (insuranceButton) insuranceButton.onclick = () => openAnalysis('insurance', ownerScope);
+  const propertyButton = root.querySelector('[data-open-property]');
+  if (propertyButton) propertyButton.onclick = () => openAnalysis('property', ownerScope);
   root.querySelector('.categoryList').onclick = event => {
     const group = event.target.closest('[data-group]');
     if (group) {
@@ -2451,6 +2653,12 @@ function openAnalysis(screen, ownerScope) {
   if (screen === 'stocks' && !['ok', 'benchmark_partial'].includes(portfolioPerformance.get(ownerScope)?.status)) {
     void ensurePortfolioPerformance(ownerScope).then(() => {
       if (analysisScreen === 'stocks' && analysisOwner === ownerScope) render();
+    });
+  }
+  // 房子帳是兩個人一起記的：已經載過也在背景重抓一次，另一半剛記的那筆才看得到。
+  if (screen === 'property') {
+    void ensureProperties(propertyLoaded).then(ok => {
+      if (ok && analysisScreen === 'property') render();
     });
   }
   if (needsLoanSchedule) {
