@@ -146,6 +146,12 @@ db.property_expenses.push(
   await page.goto(`${base}/index.html`);
   await page.waitForSelector('[data-tab]', { timeout: 20_000 });
   await page.click('[data-tab="husband"]');
+  await page.waitForSelector('.analysisEntry');
+  assert.equal(await page.locator('[data-open-property]').count(), 0, '房子不放在老公／老婆的分析入口');
+  await page.click('[data-tab="dashboard"]');
+  // 家庭頁最下面那一塊
+  const last = await page.$eval('main.content', main => [...main.children].filter(node => !node.matches('.appVersionFooter')).at(-1)?.matches('.familyEntry'));
+  assert.ok(last, '房子入口在家庭頁最下面');
   await page.click('[data-open-property]');
   await page.waitForSelector('.propertySeg');
 
