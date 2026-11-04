@@ -10,13 +10,13 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.47.0';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.47.0';
-import { calculateUsd } from './usd-core.js?v=V3.47.0';
-import { calculateGold } from './gold-core.js?v=V3.47.0';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.47.0';
-import { maintenanceRatio, parseCollateral } from './pledge-core.js?v=V3.47.0';
-import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.47.0';
+} from './financial-core.js?v=V3.47.1';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.47.1';
+import { calculateUsd } from './usd-core.js?v=V3.47.1';
+import { calculateGold } from './gold-core.js?v=V3.47.1';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.47.1';
+import { maintenanceRatio, parseCollateral } from './pledge-core.js?v=V3.47.1';
+import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.47.1';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -25,12 +25,12 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.47.0';
-import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.47.0';
-import { calculatePropertyLedger, latestInCategory, propertyFacts } from './property-core.js?v=V3.47.0';
-import { bodyCompositionModel, renderBodyComposition, bindBodyComposition } from './body-composition.js?v=V3.47.0';
-import { withClockSkewRetry } from './supabase-fetch.js?v=V3.47.0';
-import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.47.0';
+} from './health-core.js?v=V3.47.1';
+import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.47.1';
+import { calculatePropertyLedger, latestInCategory, propertyFacts } from './property-core.js?v=V3.47.1';
+import { bodyCompositionModel, renderBodyComposition, bindBodyComposition } from './body-composition.js?v=V3.47.1';
+import { withClockSkewRetry } from './supabase-fetch.js?v=V3.47.1';
+import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.47.1';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -1337,7 +1337,9 @@ function dashboard() {
   const distributionTotal = distributionKind === 'asset' ? family.totalAssets : family.totalLiabilities;
   const distributionTitle = distributionKind === 'asset' ? '家庭資產分布' : '家庭負債分布';
 
-  shell(`<section class="portfolioHero"><div class="heroLabel"><span>家庭淨資產</span><span>老公＋老婆</span></div><div class="bigMoney${quoteValuePulseUntil > Date.now() ? ' quoteChanged' : ''}">${formatMoney(family.netWorth)}</div><div class="miniStats"><div><span>家庭總資產</span><b>NT$ ${formatNumber(family.totalAssets)}</b></div><div><span>家庭總負債</span><b>NT$ ${formatNumber(family.totalLiabilities)}</b></div></div></section>${trendChart(familyTrendRows(family.netWorth))}${distributionPanel(distributionRows, distributionTotal, distributionTitle, distributionKind)}${ownerDistribution}`, '家庭');
+  shell(`<section class="portfolioHero"><div class="heroLabel"><span>家庭淨資產</span><span>老公＋老婆</span></div><div class="bigMoney${quoteValuePulseUntil > Date.now() ? ' quoteChanged' : ''}">${formatMoney(family.netWorth)}</div><div class="miniStats"><div><span>家庭總資產</span><b>NT$ ${formatNumber(family.totalAssets)}</b></div><div><span>家庭總負債</span><b>NT$ ${formatNumber(family.totalLiabilities)}</b></div></div></section>${trendChart(familyTrendRows(family.netWorth))}${distributionPanel(distributionRows, distributionTotal, distributionTitle, distributionKind)}${ownerDistribution}<nav class="analysisEntry familyEntry" aria-label="家庭功能"><button data-open-property aria-label="房子">房子</button></nav>`, '家庭');
+  // 房子帳是全家共用的，入口放在家庭頁最下面，不放在老公／老婆的分析入口裡（屋主 2026-11-04 指定）。
+  root.querySelector('[data-open-property]').onclick = () => openAnalysis('property', 'husband');
 }
 
 function distributionPanel(rows, total, title, kind) {
@@ -1391,7 +1393,7 @@ function cashOrder(item) {
 
 // 資產頁上只放入口，數字留在分析頁裡面講。
 function analysisEntry() {
-  return `<nav class="analysisEntry" aria-label="功能捷徑"><button data-open-portfolio aria-label="股票分析">股票</button><button data-open-loans aria-label="貸款分析">貸款</button><button data-open-gold aria-label="黃金分析">黃金</button><button data-open-usd aria-label="美金分析">美金</button><button data-open-insurance aria-label="保險分析">保險</button><button data-open-property aria-label="房子">房子</button></nav>`;
+  return `<nav class="analysisEntry" aria-label="功能捷徑"><button data-open-portfolio aria-label="股票分析">股票</button><button data-open-loans aria-label="貸款分析">貸款</button><button data-open-gold aria-label="黃金分析">黃金</button><button data-open-usd aria-label="美金分析">美金</button><button data-open-insurance aria-label="保險分析">保險</button></nav>`;
 }
 
 // 分析頁只看單一個人的部位。兩個人合起來的那份也還是要留著 ——
@@ -2508,8 +2510,6 @@ function personPage(ownerScope) {
   if (loanButton) loanButton.onclick = () => openAnalysis('loans', ownerScope);
   const insuranceButton = root.querySelector('[data-open-insurance]');
   if (insuranceButton) insuranceButton.onclick = () => openAnalysis('insurance', ownerScope);
-  const propertyButton = root.querySelector('[data-open-property]');
-  if (propertyButton) propertyButton.onclick = () => openAnalysis('property', ownerScope);
   root.querySelector('.categoryList').onclick = event => {
     const group = event.target.closest('[data-group]');
     if (group) {

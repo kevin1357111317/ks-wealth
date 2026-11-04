@@ -24,7 +24,7 @@ test('loan analysis remains available among per-owner analysis destinations', ()
   assert.match(app, /\.sort\(\(a, b\) => a\.currentBalance - b\.currentBalance/);
   assert.match(app, /openAnalysis\('loans', ownerScope\)/);
   assert.match(app, /analysisScreen === 'loans'/);
-  assert.match(css, /grid-template-columns:repeat\(6,minmax\(0,1fr\)\)/);
+  assert.match(css, /grid-template-columns:repeat\(5,minmax\(0,1fr\)\)/);
   assert.match(css, /\.analysisEntry\{[^}]*gap:0/);
   assert.doesNotMatch(css, /\.loanSummary \.portfolioMetric:first-child\{grid-column:1\/-1\}/);
 });
