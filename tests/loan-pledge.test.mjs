@@ -157,3 +157,51 @@ db.financial_items.push({ id: 'fi-2330', household_id: 'H1', kind: 'asset', cate
   assert.match(card, /擔保維持率250%/);
   assert.match(card, /追繳線 140%股價 1,400，再跌 44%/);
 });
+
+// 質押照借的先後排，不照金額（屋主 2026-11-05 指定）。故意讓最早那筆金額最小，
+// 照舊的「金額由大到小」或「本金由少到多」排都會排錯。
+test('質押卡片照質押日期排：首頁與貸款分析都一樣', { skip }, async t => {
+  const pledge = (n, amount, start) => `
+db.financial_items.push({ id: 'fi-p${n}', household_id: 'H1', kind: 'liability', category: '質押',
+  name: '元大股票質押（第${n}筆）', owner_scope: 'husband', amount_twd: ${amount}, monthly_payment_twd: null,
+  interest_rate: 3.98, sort_order: ${10 - n} });
+db.loan_accounts.push({ id: 'P${n}', household_id: 'H1', owner_scope: 'husband', financial_item_id: 'fi-p${n}',
+  source_key: 'p${n}', lender: '元大證金', name: '元大股票質押（第${n}筆）', loan_type: 'pledge',
+  original_principal_twd: ${amount}, nominal_annual_rate: 3.98, contractual_monthly_payment_twd: null,
+  start_date: '${start}', maturity_date: '2099-01-01', projected_total_repayment_twd: ${amount},
+  status: 'active', autopay: false, last_payment_applied_on: null, grace_until: null });`;
+  const stub = `${await readFile(new URL('./support/fake-supabase.js', import.meta.url), 'utf8')}
+${pledge(2, 300000, '2026-10-16')}
+${pledge(3, 1000000, '2026-11-04')}
+${pledge(1, 200000, '2026-10-02')}`;
+
+  const types = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html', '.png': 'image/png' };
+  const server = http.createServer((req, res) => {
+    const file = join(REPO, req.url.split('?')[0].replace(/^\/+/, '') || 'index.html');
+    if (!file.startsWith(REPO) || !existsSync(file)) { res.writeHead(404); return res.end(); }
+    res.writeHead(200, { 'Content-Type': types[extname(file)] ?? 'text/plain' });
+    createReadStream(file).pipe(res);
+  });
+  await new Promise(resolve => server.listen(0, resolve));
+  const browser = await chromium.launch({ executablePath: BROWSER });
+  t.after(async () => { await browser.close(); server.close(); });
+
+  const page = await browser.newPage({ viewport: { width: 390, height: 900 }, locale: 'zh-TW' });
+  await page.route('**/cdn.jsdelivr.net/**', route =>
+    route.fulfill({ status: 200, contentType: 'text/javascript', body: stub }));
+  await page.route('**fonts.g**', route => route.abort());
+  await page.goto(`http://127.0.0.1:${server.address().port}/index.html`);
+  await page.waitForSelector('[data-tab]', { timeout: 20_000 });
+  await page.click('[data-tab="husband"]');
+  await page.click('#personSeg [data-kind="liability"]');
+  await page.waitForSelector('.categoryHead');
+  if (!(await page.isVisible('.itemCard[data-id="fi-p1"]'))) await page.click('.categoryHead');
+  await page.waitForSelector('.itemCard[data-id="fi-p1"]');
+  assert.deepEqual(await page.$$eval('.itemCard', cards => cards.map(card => card.dataset.id)),
+    ['fi-p1', 'fi-p2', 'fi-p3']);
+
+  await page.click('[data-open-loans]');
+  await page.waitForSelector('.loanCard');
+  assert.deepEqual(await page.$$eval('.loanCard', cards => cards.map(card => card.dataset.loanCard)),
+    ['P1', 'P2', 'P3']);
+});
