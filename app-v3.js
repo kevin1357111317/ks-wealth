@@ -10,13 +10,13 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.47.1';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.47.1';
-import { calculateUsd } from './usd-core.js?v=V3.47.1';
-import { calculateGold } from './gold-core.js?v=V3.47.1';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.47.1';
-import { maintenanceRatio, parseCollateral } from './pledge-core.js?v=V3.47.1';
-import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.47.1';
+} from './financial-core.js?v=V3.47.2';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.47.2';
+import { calculateUsd } from './usd-core.js?v=V3.47.2';
+import { calculateGold } from './gold-core.js?v=V3.47.2';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.47.2';
+import { maintenanceRatio, parseCollateral } from './pledge-core.js?v=V3.47.2';
+import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.47.2';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -25,12 +25,12 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.47.1';
-import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.47.1';
-import { calculatePropertyLedger, latestInCategory, propertyFacts } from './property-core.js?v=V3.47.1';
-import { bodyCompositionModel, renderBodyComposition, bindBodyComposition } from './body-composition.js?v=V3.47.1';
-import { withClockSkewRetry } from './supabase-fetch.js?v=V3.47.1';
-import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.47.1';
+} from './health-core.js?v=V3.47.2';
+import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.47.2';
+import { calculatePropertyLedger, latestInCategory, propertyFacts } from './property-core.js?v=V3.47.2';
+import { bodyCompositionModel, renderBodyComposition, bindBodyComposition } from './body-composition.js?v=V3.47.2';
+import { withClockSkewRetry } from './supabase-fetch.js?v=V3.47.2';
+import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.47.2';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -1374,12 +1374,21 @@ function groupedCards(list, ownerScope, kind) {
     // 展開後最小的那筆常常排在最上面。現金及存款例外，見 cashOrder()。
     rows.sort(category === '現金及存款'
       ? (a, b) => cashOrder(a) - cashOrder(b) || b.amount_twd - a.amount_twd || a.name.localeCompare(b.name, 'zh-Hant')
-      : (a, b) => b.amount_twd - a.amount_twd || a.name.localeCompare(b.name, 'zh-Hant'));
+      : category === '質押'
+        ? (a, b) => pledgeStart(a).localeCompare(pledgeStart(b)) || a.name.localeCompare(b.name, 'zh-Hant')
+        : (a, b) => b.amount_twd - a.amount_twd || a.name.localeCompare(b.name, 'zh-Hant'));
     const key = encodeURIComponent(`${ownerScope}|${kind}|${category}`);
     const groupTotal = rows.reduce((sum, item) => sum + item.amount_twd, 0);
     const open = openGroups.has(key);
     return `<section class="categoryGroup ${open ? 'open' : ''}"><button class="categoryHead" data-group="${key}"><div><span>${escapeHtml(category)}</span><small>${rows.length} 筆</small></div><div class="categoryTotal"><b>NT$ ${formatNumber(groupTotal)}</b><i>⌄</i></div></button>${open ? `<div class="categoryItems">${rows.map(item => itemCard(item, total)).join('')}</div>` : ''}</section>`;
   }).join('');
+}
+
+// 質押照借的先後排（屋主 2026-11-05 指定）：每一筆都是加借一張台積電，看的是第幾筆、哪天借的，
+// 照金額排的話兩筆 50 萬的順序是亂的。日期取貸款分析那筆的 start_date，沒連到就用建立時間。
+function pledgeStart(item) {
+  const account = loanAccounts.find(row => row.financial_item_id === item.id);
+  return String(account?.start_date ?? item.created_at ?? '');
 }
 
 // 現金及存款照「隨時能動用」排：活存在前、定存在後；同一類再照幣別台幣 → 美金 → 日圓 → 歐元。
@@ -2133,8 +2142,11 @@ function loanPage() {
     .filter(account => normalizedLoanType(account) === loanTypeFilter);
   const active = rows
     .filter(account => account.status === 'active')
-    .sort((a, b) => a.currentBalance - b.currentBalance
-      || String(a.name).localeCompare(String(b.name), 'zh-Hant'));
+    .sort(loanTypeFilter === 'pledge'
+      ? (a, b) => String(a.start_date ?? '').localeCompare(String(b.start_date ?? ''))
+        || String(a.name).localeCompare(String(b.name), 'zh-Hant')
+      : (a, b) => a.currentBalance - b.currentBalance
+        || String(a.name).localeCompare(String(b.name), 'zh-Hant'));
   const closed = rows.filter(account => account.status === 'closed');
   const totalBalance = active.reduce((sum, account) => sum + account.currentBalance, 0);
   const totalMonthly = active.reduce((sum, account) => sum + account.monthlyPayment, 0);

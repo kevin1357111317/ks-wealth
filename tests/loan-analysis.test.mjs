@@ -21,7 +21,9 @@ test('loan analysis remains available among per-owner analysis destinations', ()
   assert.match(app, /data-loan-type="topup"/);
   assert.match(app, /data-loan-type="mortgage"/);
   assert.match(app, /normalizedLoanType\(account\) === loanTypeFilter/);
-  assert.match(app, /\.sort\(\(a, b\) => a\.currentBalance - b\.currentBalance/);
+  // 其他貸款照本金由少到多；質押照質押日期（見 loan-pledge.test.mjs）
+  assert.match(app, /: \(a, b\) => a\.currentBalance - b\.currentBalance/);
+  assert.match(app, /loanTypeFilter === 'pledge'\s*\? \(a, b\) => String\(a\.start_date/);
   assert.match(app, /openAnalysis\('loans', ownerScope\)/);
   assert.match(app, /analysisScreen === 'loans'/);
   assert.match(css, /grid-template-columns:repeat\(5,minmax\(0,1fr\)\)/);
