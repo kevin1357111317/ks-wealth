@@ -70,6 +70,12 @@ db.net_worth_history = ${JSON.stringify(history)};`;
   await page.waitForSelector('[data-trend-chart]', { timeout: 20_000 });
   await page.waitForTimeout(600);
 
+  // 趨勢線：虛線畫在圖裡、R² 寫在漲跌那一行（屋主 2026-11-06）
+  assert.equal(await page.locator('[data-trend-fit]').count(), 1);
+  assert.match(await page.textContent('[data-trend-r2]'), /^R² = (0\.\d\d|1\.00)$/);
+  const fitY = await page.$eval('[data-trend-fit]', line => [Number(line.getAttribute('y1')), Number(line.getAttribute('y2'))]);
+  assert.ok(fitY.every(value => value >= 22 && value <= 186), `趨勢線要落在圖內：${fitY}`);
+
   const cdp = await page.context().newCDPSession(page);
   const touch = (type, x, y) => cdp.send('Input.dispatchTouchEvent', {
     type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: 1 }],
