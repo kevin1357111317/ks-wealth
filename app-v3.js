@@ -10,13 +10,13 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.47.2';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.47.2';
-import { calculateUsd } from './usd-core.js?v=V3.47.2';
-import { calculateGold } from './gold-core.js?v=V3.47.2';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.47.2';
-import { maintenanceRatio, parseCollateral } from './pledge-core.js?v=V3.47.2';
-import { buildPersonalTrendRows, filterTrendRowsFrom } from './trend-core.js?v=V3.47.2';
+} from './financial-core.js?v=V3.48.0';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.48.0';
+import { calculateUsd } from './usd-core.js?v=V3.48.0';
+import { calculateGold } from './gold-core.js?v=V3.48.0';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.48.0';
+import { maintenanceRatio, parseCollateral } from './pledge-core.js?v=V3.48.0';
+import { buildPersonalTrendRows, filterTrendRowsFrom, linearTrend } from './trend-core.js?v=V3.48.0';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -25,12 +25,12 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.47.2';
-import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.47.2';
-import { calculatePropertyLedger, latestInCategory, propertyFacts } from './property-core.js?v=V3.47.2';
-import { bodyCompositionModel, renderBodyComposition, bindBodyComposition } from './body-composition.js?v=V3.47.2';
-import { withClockSkewRetry } from './supabase-fetch.js?v=V3.47.2';
-import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.47.2';
+} from './health-core.js?v=V3.48.0';
+import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.48.0';
+import { calculatePropertyLedger, latestInCategory, propertyFacts } from './property-core.js?v=V3.48.0';
+import { bodyCompositionModel, renderBodyComposition, bindBodyComposition } from './body-composition.js?v=V3.48.0';
+import { withClockSkewRetry } from './supabase-fetch.js?v=V3.48.0';
+import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.48.0';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -305,8 +305,11 @@ function trendChart(rows) {
       : toFiniteNumber(row.total_twd),
   }));
   const values = series.map(row => row.plotValue);
-  const rawLow = Math.min(...values);
-  const rawHigh = Math.max(...values);
+  const fit = linearTrend(values);
+  const fitEnds = fit ? [fit.at(0), fit.at(values.length - 1)] : [];
+  // 趨勢線兩端也要落在圖裡，所以上下界把它算進去
+  const rawLow = Math.min(...values, ...fitEnds);
+  const rawHigh = Math.max(...values, ...fitEnds);
   const padding = Math.max((rawHigh - rawLow) * 0.08, trendMode === 'percent' ? 0.2 : 100_000);
   const low = rawLow - padding;
   const high = rawHigh + padding;
@@ -318,6 +321,10 @@ function trendChart(rows) {
     chartY: y(row.plotValue),
   }));
   const points = series.map((row, index) => `${index ? 'L' : 'M'}${x(index)},${y(row.plotValue)}`).join(' ');
+  const trendLine = fit
+    ? `<line class="trendFit" data-trend-fit x1="${x(0)}" y1="${y(fitEnds[0])}" x2="${x(values.length - 1)}" y2="${y(fitEnds[1])}" stroke="#8c95a5" stroke-width="2.5" stroke-dasharray="8 7" stroke-linecap="round"/>`
+    : '';
+  const r2Label = fit ? `<em class="trendR2" data-trend-r2>R² = ${fit.r2.toFixed(2)}</em>` : '';
   const axis = [0, 0.25, 0.5, 0.75, 1].map(step => {
     const value = high - (high - low) * step;
     const axisY = 22 + 164 * step;
@@ -331,7 +338,7 @@ function trendChart(rows) {
     return `<line x1="${tickX}" y1="22" x2="${tickX}" y2="190" stroke="#252c39" stroke-width="1" stroke-dasharray="5 7"/><text x="${tickX}" y="222" text-anchor="middle" fill="#8d96a6" font-size="18">${chartDate(series[index].recorded_on)}</text>`;
   }).join('');
 
-  return `<section class="panel trend scopeTrend"><div class="trendHead"><h2>淨資產趨勢</h2><button class="trendToggle" data-trend-toggle>${trendMode === 'value' ? '%' : 'NT$'}</button></div><div class="trendChange ${tone}"><b>${delta > 0 ? '+' : ''}${formatNumber(delta)}</b><span>${delta > 0 ? '+' : ''}${percent.toFixed(2)}%</span></div><div class="trendPlot"><svg class="trendChart" data-trend-chart viewBox="0 0 680 236" aria-label="淨資產趨勢，點選折線可查看日期與金額">${axis}${dateTicks}<path d="${points}" fill="none" stroke="${color}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><rect class="trendChartHit" x="106" y="8" width="558" height="190" fill="transparent"/><g class="trendSelection" data-trend-selection hidden><line class="trendGuide" data-trend-guide y1="12" y2="190"/><circle class="trendDotHalo" data-trend-dot-halo r="12"/><circle class="trendDot" data-trend-dot r="6"/><g class="trendTooltip" data-trend-tooltip><rect class="trendTooltipBox" x="-105" y="0" width="210" height="56" rx="13"/><text class="trendTooltipDate" data-trend-tooltip-date x="0" y="20" text-anchor="middle"></text><text class="trendTooltipValue" data-trend-tooltip-value x="0" y="43" text-anchor="middle"></text></g></g></svg></div></section>`;
+  return `<section class="panel trend scopeTrend"><div class="trendHead"><h2>淨資產趨勢</h2><button class="trendToggle" data-trend-toggle>${trendMode === 'value' ? '%' : 'NT$'}</button></div><div class="trendChange ${tone}"><b>${delta > 0 ? '+' : ''}${formatNumber(delta)}</b><span>${delta > 0 ? '+' : ''}${percent.toFixed(2)}%</span>${r2Label}</div><div class="trendPlot"><svg class="trendChart" data-trend-chart viewBox="0 0 680 236" aria-label="淨資產趨勢，點選折線可查看日期與金額">${axis}${dateTicks}${trendLine}<path d="${points}" fill="none" stroke="${color}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><rect class="trendChartHit" x="106" y="8" width="558" height="190" fill="transparent"/><g class="trendSelection" data-trend-selection hidden><line class="trendGuide" data-trend-guide y1="12" y2="190"/><circle class="trendDotHalo" data-trend-dot-halo r="12"/><circle class="trendDot" data-trend-dot r="6"/><g class="trendTooltip" data-trend-tooltip><rect class="trendTooltipBox" x="-105" y="0" width="210" height="56" rx="13"/><text class="trendTooltipDate" data-trend-tooltip-date x="0" y="20" text-anchor="middle"></text><text class="trendTooltipValue" data-trend-tooltip-value x="0" y="43" text-anchor="middle"></text></g></g></svg></div></section>`;
 }
 
 function clearTrendPoint() {
