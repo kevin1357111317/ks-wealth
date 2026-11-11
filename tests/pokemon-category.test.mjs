@@ -62,9 +62,9 @@ ${item('pika', '寶可夢卡牌', 'Pikachu', 3500, { average_cost: 9500, native_
   const legend = await page.$$eval('.legendRow span', nodes => nodes.map(node => node.textContent.trim()));
   assert.ok(legend.includes('寶可夢卡牌'), '資產分布圓餅也要列出來');
 
-  // 損益：有成本的兩張，成本 18,000、現值 18,500 → +500；分開看一賺一賠
+  // 分類標題只寫筆數，不顯示合計損益（屋主 2026-11-11：外面不用顯示）；損益只在每張卡上
   const head = await page.textContent('.categoryHead:has-text("寶可夢卡牌") small');
-  assert.match(head, /3 筆 · \+NT\$ 500（\+2\.78%）/, head);
+  assert.equal(head.trim(), '3 筆');
   await page.click('.categoryHead:has-text("寶可夢卡牌")');
   await page.waitForSelector('.itemCard[data-id="ray"]');
   const ray = await page.textContent('.itemCard[data-id="ray"] .compactMeta');
