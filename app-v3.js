@@ -7,18 +7,17 @@ import {
   calculateSummary,
   calculateTwdAmount,
   collectibleProfit,
-  collectibleProfitSummary,
   isValidSymbol,
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.50.0';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.50.0';
-import { calculateUsd } from './usd-core.js?v=V3.50.0';
-import { calculateGold } from './gold-core.js?v=V3.50.0';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.50.0';
-import { maintenanceRatio, parseCollateral } from './pledge-core.js?v=V3.50.0';
-import { buildPersonalTrendRows, filterTrendRowsFrom, linearTrend } from './trend-core.js?v=V3.50.0';
+} from './financial-core.js?v=V3.50.1';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.50.1';
+import { calculateUsd } from './usd-core.js?v=V3.50.1';
+import { calculateGold } from './gold-core.js?v=V3.50.1';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.50.1';
+import { maintenanceRatio, parseCollateral } from './pledge-core.js?v=V3.50.1';
+import { buildPersonalTrendRows, filterTrendRowsFrom, linearTrend } from './trend-core.js?v=V3.50.1';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -27,12 +26,12 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.50.0';
-import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.50.0';
-import { calculatePropertyLedger, latestInCategory, propertyFacts } from './property-core.js?v=V3.50.0';
-import { bodyCompositionModel, renderBodyComposition, bindBodyComposition } from './body-composition.js?v=V3.50.0';
-import { withClockSkewRetry } from './supabase-fetch.js?v=V3.50.0';
-import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.50.0';
+} from './health-core.js?v=V3.50.1';
+import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.50.1';
+import { calculatePropertyLedger, latestInCategory, propertyFacts } from './property-core.js?v=V3.50.1';
+import { bodyCompositionModel, renderBodyComposition, bindBodyComposition } from './body-composition.js?v=V3.50.1';
+import { withClockSkewRetry } from './supabase-fetch.js?v=V3.50.1';
+import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.50.1';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -1389,10 +1388,7 @@ function groupedCards(list, ownerScope, kind) {
     const key = encodeURIComponent(`${ownerScope}|${kind}|${category}`);
     const groupTotal = rows.reduce((sum, item) => sum + item.amount_twd, 0);
     const open = openGroups.has(key);
-    // 寶可夢卡牌：有填成本的卡加總起來的損益，跟著寫在筆數後面
-    const cards = kind === 'asset' ? collectibleProfitSummary(rows) : null;
-    const cardsLine = cards ? ` · <em class="cardProfit ${profitTone(cards.profit)}">${profitText(cards.profit, cards.rate)}</em>` : '';
-    return `<section class="categoryGroup ${open ? 'open' : ''}"><button class="categoryHead" data-group="${key}"><div><span>${escapeHtml(category)}</span><small>${rows.length} 筆${cardsLine}</small></div><div class="categoryTotal"><b>NT$ ${formatNumber(groupTotal)}</b><i>⌄</i></div></button>${open ? `<div class="categoryItems">${rows.map(item => itemCard(item, total)).join('')}</div>` : ''}</section>`;
+    return `<section class="categoryGroup ${open ? 'open' : ''}"><button class="categoryHead" data-group="${key}"><div><span>${escapeHtml(category)}</span><small>${rows.length} 筆</small></div><div class="categoryTotal"><b>NT$ ${formatNumber(groupTotal)}</b><i>⌄</i></div></button>${open ? `<div class="categoryItems">${rows.map(item => itemCard(item, total)).join('')}</div>` : ''}</section>`;
   }).join('');
 }
 
@@ -1405,8 +1401,8 @@ function pledgeStart(item) {
 
 // 損益的顏色跟股票一樣：賺是紅（up）、賠是綠（down）
 const profitTone = value => value > 0 ? 'up' : value < 0 ? 'down' : 'flat';
-// 卡片那一行在 390px 寬擠不下 NT$，卡片上省略幣別（同一行的成本已經是台幣），分類標題才寫 NT$
-const profitText = (profit, rate, currency = true) => `${profit > 0 ? '+' : profit < 0 ? '\u2212' : ''}${currency ? 'NT$ ' : ''}${formatNumber(Math.abs(profit))}（${formatPercent(rate)}）`;
+// 卡片那一行在 390px 寬擠不下 NT$，省略幣別（同一行的成本已經是台幣）
+const profitText = (profit, rate) => `${profit > 0 ? '+' : profit < 0 ? '\u2212' : ''}${formatNumber(Math.abs(profit))}（${formatPercent(rate)}）`;
 
 // 現金及存款照「隨時能動用」排：活存在前、定存在後；同一類再照幣別台幣 → 美金 → 日圓 → 歐元。
 // 屋主 2026-10-26 指定。照金額排的話美金定存永遠在最上面，台幣活存反而被擠到中間。
@@ -2621,7 +2617,7 @@ function itemCard(item, total) {
   const insurancePolicies = decodeInsuranceNote(item.notes)?.policies ?? [];
   const card = item.kind === 'asset' ? collectibleProfit(item) : null;
   const meta = item.kind === 'asset'
-    ? card ? `<span class="cardCost">成本 ${formatNumber(card.cost)}</span><span class="cardProfit ${profitTone(card.profit)}">${profitText(card.profit, card.rate, false)}</span>` : (insurancePolicies.length ? `<span>${insurancePolicies.length} 張有效主約</span><span>查看保障分析</span>` : item.market === 'GOLD' ? `<span>重量 ${quantity} g</span>${quoteLine}` : item.symbol ? `<span>持有 ${quantity} 股</span>${quoteLine}` : '')
+    ? card ? `<span class="cardCost">成本 ${formatNumber(card.cost)}</span><span class="cardProfit ${profitTone(card.profit)}">${profitText(card.profit, card.rate)}</span>` : (insurancePolicies.length ? `<span>${insurancePolicies.length} 張有效主約</span><span>查看保障分析</span>` : item.market === 'GOLD' ? `<span>重量 ${quantity} g</span>${quoteLine}` : item.symbol ? `<span>持有 ${quantity} 股</span>${quoteLine}` : '')
     : `${pledgeLine || `<span>利率 ${item.interest_rate !== null ? item.interest_rate.toFixed(2) + '%' : '待設定'}</span>`}${dueLine || `<span>月付 ${item.monthly_payment_twd !== null ? 'NT$ ' + formatNumber(item.monthly_payment_twd) : '待設定'}</span>`}`;
   const original = isNativeUsd
     ? `<span>US$ ${masked ? '••••••' : new Intl.NumberFormat('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(item.native_amount)}</span>`
