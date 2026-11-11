@@ -10,13 +10,13 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.48.0';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.48.0';
-import { calculateUsd } from './usd-core.js?v=V3.48.0';
-import { calculateGold } from './gold-core.js?v=V3.48.0';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.48.0';
-import { maintenanceRatio, parseCollateral } from './pledge-core.js?v=V3.48.0';
-import { buildPersonalTrendRows, filterTrendRowsFrom, linearTrend } from './trend-core.js?v=V3.48.0';
+} from './financial-core.js?v=V3.49.0';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.49.0';
+import { calculateUsd } from './usd-core.js?v=V3.49.0';
+import { calculateGold } from './gold-core.js?v=V3.49.0';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.49.0';
+import { maintenanceRatio, parseCollateral } from './pledge-core.js?v=V3.49.0';
+import { buildPersonalTrendRows, filterTrendRowsFrom, linearTrend } from './trend-core.js?v=V3.49.0';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -25,12 +25,12 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.48.0';
-import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.48.0';
-import { calculatePropertyLedger, latestInCategory, propertyFacts } from './property-core.js?v=V3.48.0';
-import { bodyCompositionModel, renderBodyComposition, bindBodyComposition } from './body-composition.js?v=V3.48.0';
-import { withClockSkewRetry } from './supabase-fetch.js?v=V3.48.0';
-import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.48.0';
+} from './health-core.js?v=V3.49.0';
+import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.49.0';
+import { calculatePropertyLedger, latestInCategory, propertyFacts } from './property-core.js?v=V3.49.0';
+import { bodyCompositionModel, renderBodyComposition, bindBodyComposition } from './body-composition.js?v=V3.49.0';
+import { withClockSkewRetry } from './supabase-fetch.js?v=V3.49.0';
+import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.49.0';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -67,12 +67,12 @@ const tabs = [
 // 改成讀那一欄，其他呼叫端都不用動。
 const memberOwnerScope = () => member?.role === 'member' ? 'wife' : 'husband';
 const categories = {
-  asset: ['現金及存款', '台股', '美股', '不動產', '黃金', '保險', '其他'],
+  asset: ['現金及存款', '台股', '美股', '不動產', '黃金', '保險', '寶可夢卡牌', '其他'],
   liability: ['房貸', '增貸', '信貸', '質押', '信用卡', '其他負債'],
 };
 const colors = {
   台股: '#72d7a7', 美股: '#8b94ff', 現金及存款: '#67c8db', 不動產: '#f0b467',
-  保險: '#bb8cff', 黃金: '#e5ae4f', 其他: '#ee8f73', 房貸: '#ff7f91', 增貸: '#f0a76b', 信貸: '#df788a', 質押: '#c98bd0',
+  保險: '#bb8cff', 黃金: '#e5ae4f', 寶可夢卡牌: '#f2c94c', 其他: '#ee8f73', 房貸: '#ff7f91', 增貸: '#f0a76b', 信貸: '#df788a', 質押: '#c98bd0',
 };
 const automaticCategoryByMode = {
   'stock-tw': '台股',
@@ -2852,7 +2852,8 @@ function modeForItem(item, kind) {
 
 // 這幾類沒有行情可抓，金額是手打的，但可能是美金計價 —— 給它們一個幣別選單，
 // 選 USD 就跟現金那條一樣走 manual-usd（存原幣金額與當下匯率，之後跟著匯率重算）。
-const CURRENCY_CHOICE_ATTRIBUTES = new Set(['insurance', 'other']);
+// 寶可夢卡牌是屋主 2026-11-11 要求從「其他」獨立出來的分類；卡價多半是美金報價，所以跟保險、其他一樣可以選幣別。
+const CURRENCY_CHOICE_ATTRIBUTES = new Set(['insurance', 'pokemon', 'other']);
 
 const assetAttributes = [
   { value: 'cash-twd', label: '台幣', category: '現金及存款', mode: 'manual-twd' },
@@ -2864,6 +2865,7 @@ const assetAttributes = [
   { value: 'real-estate', label: '不動產', category: '不動產', mode: 'manual-twd' },
   { value: 'gold', label: '黃金', category: '黃金', mode: 'gold' },
   { value: 'insurance', label: '保險', category: '保險', mode: 'manual-twd' },
+  { value: 'pokemon', label: '寶可夢卡牌', category: '寶可夢卡牌', mode: 'manual-twd' },
   { value: 'other', label: '其他', category: '其他', mode: 'manual-twd' },
 ];
 
@@ -2874,6 +2876,7 @@ function assetAttributeForItem(item) {
   if (item?.category === '不動產') return 'real-estate';
   if (item?.category === '黃金') return 'gold';
   if (item?.category === '保險') return 'insurance';
+  if (item?.category === '寶可夢卡牌') return 'pokemon';
   if (item?.category === '其他') return 'other';
   return 'cash-twd';
 }
@@ -2892,7 +2895,7 @@ async function editItem(item, defaultOwner, defaultKind) {
   let kind = item?.kind || defaultKind || 'asset';
   let mode = modeForItem(item, kind);
   let assetAttribute = assetAttributeForItem(item);
-  let manualCurrency = ['保險', '其他'].includes(item?.category)
+  let manualCurrency = ['保險', '寶可夢卡牌', '其他'].includes(item?.category)
     && (item?.native_currency ?? item?.original_currency) === 'USD' ? 'USD' : 'TWD';
   let saving = false;
   const initialNativeAmount = item?.native_amount ?? item?.original_amount ?? item?.amount_twd ?? '';
