@@ -6,17 +6,19 @@ import {
   calculateAllocation,
   calculateSummary,
   calculateTwdAmount,
+  collectibleProfit,
+  collectibleProfitSummary,
   isValidSymbol,
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.49.0';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.49.0';
-import { calculateUsd } from './usd-core.js?v=V3.49.0';
-import { calculateGold } from './gold-core.js?v=V3.49.0';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.49.0';
-import { maintenanceRatio, parseCollateral } from './pledge-core.js?v=V3.49.0';
-import { buildPersonalTrendRows, filterTrendRowsFrom, linearTrend } from './trend-core.js?v=V3.49.0';
+} from './financial-core.js?v=V3.50.0';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.50.0';
+import { calculateUsd } from './usd-core.js?v=V3.50.0';
+import { calculateGold } from './gold-core.js?v=V3.50.0';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.50.0';
+import { maintenanceRatio, parseCollateral } from './pledge-core.js?v=V3.50.0';
+import { buildPersonalTrendRows, filterTrendRowsFrom, linearTrend } from './trend-core.js?v=V3.50.0';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -25,12 +27,12 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.49.0';
-import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.49.0';
-import { calculatePropertyLedger, latestInCategory, propertyFacts } from './property-core.js?v=V3.49.0';
-import { bodyCompositionModel, renderBodyComposition, bindBodyComposition } from './body-composition.js?v=V3.49.0';
-import { withClockSkewRetry } from './supabase-fetch.js?v=V3.49.0';
-import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.49.0';
+} from './health-core.js?v=V3.50.0';
+import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.50.0';
+import { calculatePropertyLedger, latestInCategory, propertyFacts } from './property-core.js?v=V3.50.0';
+import { bodyCompositionModel, renderBodyComposition, bindBodyComposition } from './body-composition.js?v=V3.50.0';
+import { withClockSkewRetry } from './supabase-fetch.js?v=V3.50.0';
+import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.50.0';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -1387,7 +1389,10 @@ function groupedCards(list, ownerScope, kind) {
     const key = encodeURIComponent(`${ownerScope}|${kind}|${category}`);
     const groupTotal = rows.reduce((sum, item) => sum + item.amount_twd, 0);
     const open = openGroups.has(key);
-    return `<section class="categoryGroup ${open ? 'open' : ''}"><button class="categoryHead" data-group="${key}"><div><span>${escapeHtml(category)}</span><small>${rows.length} 筆</small></div><div class="categoryTotal"><b>NT$ ${formatNumber(groupTotal)}</b><i>⌄</i></div></button>${open ? `<div class="categoryItems">${rows.map(item => itemCard(item, total)).join('')}</div>` : ''}</section>`;
+    // 寶可夢卡牌：有填成本的卡加總起來的損益，跟著寫在筆數後面
+    const cards = kind === 'asset' ? collectibleProfitSummary(rows) : null;
+    const cardsLine = cards ? ` · <em class="cardProfit ${profitTone(cards.profit)}">${profitText(cards.profit, cards.rate)}</em>` : '';
+    return `<section class="categoryGroup ${open ? 'open' : ''}"><button class="categoryHead" data-group="${key}"><div><span>${escapeHtml(category)}</span><small>${rows.length} 筆${cardsLine}</small></div><div class="categoryTotal"><b>NT$ ${formatNumber(groupTotal)}</b><i>⌄</i></div></button>${open ? `<div class="categoryItems">${rows.map(item => itemCard(item, total)).join('')}</div>` : ''}</section>`;
   }).join('');
 }
 
@@ -1397,6 +1402,11 @@ function pledgeStart(item) {
   const account = loanAccounts.find(row => row.financial_item_id === item.id);
   return String(account?.start_date ?? item.created_at ?? '');
 }
+
+// 損益的顏色跟股票一樣：賺是紅（up）、賠是綠（down）
+const profitTone = value => value > 0 ? 'up' : value < 0 ? 'down' : 'flat';
+// 卡片那一行在 390px 寬擠不下 NT$，卡片上省略幣別（同一行的成本已經是台幣），分類標題才寫 NT$
+const profitText = (profit, rate, currency = true) => `${profit > 0 ? '+' : profit < 0 ? '\u2212' : ''}${currency ? 'NT$ ' : ''}${formatNumber(Math.abs(profit))}（${formatPercent(rate)}）`;
 
 // 現金及存款照「隨時能動用」排：活存在前、定存在後；同一類再照幣別台幣 → 美金 → 日圓 → 歐元。
 // 屋主 2026-10-26 指定。照金額排的話美金定存永遠在最上面，台幣活存反而被擠到中間。
@@ -2609,8 +2619,9 @@ function itemCard(item, total) {
     ? `<span class="pledgeRatio ${pledge.level}">維持率 ${Math.round(pledge.ratio * 100)}%</span>`
     : '';
   const insurancePolicies = decodeInsuranceNote(item.notes)?.policies ?? [];
+  const card = item.kind === 'asset' ? collectibleProfit(item) : null;
   const meta = item.kind === 'asset'
-    ? (insurancePolicies.length ? `<span>${insurancePolicies.length} 張有效主約</span><span>查看保障分析</span>` : item.market === 'GOLD' ? `<span>重量 ${quantity} g</span>${quoteLine}` : item.symbol ? `<span>持有 ${quantity} 股</span>${quoteLine}` : '')
+    ? card ? `<span class="cardCost">成本 ${formatNumber(card.cost)}</span><span class="cardProfit ${profitTone(card.profit)}">${profitText(card.profit, card.rate, false)}</span>` : (insurancePolicies.length ? `<span>${insurancePolicies.length} 張有效主約</span><span>查看保障分析</span>` : item.market === 'GOLD' ? `<span>重量 ${quantity} g</span>${quoteLine}` : item.symbol ? `<span>持有 ${quantity} 股</span>${quoteLine}` : '')
     : `${pledgeLine || `<span>利率 ${item.interest_rate !== null ? item.interest_rate.toFixed(2) + '%' : '待設定'}</span>`}${dueLine || `<span>月付 ${item.monthly_payment_twd !== null ? 'NT$ ' + formatNumber(item.monthly_payment_twd) : '待設定'}</span>`}`;
   const original = isNativeUsd
     ? `<span>US$ ${masked ? '••••••' : new Intl.NumberFormat('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(item.native_amount)}</span>`
@@ -2901,7 +2912,7 @@ async function editItem(item, defaultOwner, defaultKind) {
   const initialNativeAmount = item?.native_amount ?? item?.original_amount ?? item?.amount_twd ?? '';
   const backdrop = document.createElement('div');
   backdrop.className = 'backdrop';
-  backdrop.innerHTML = `<section class="sheet"><div class="handle"></div><div class="sheetHead"><div><h2>${item ? '編輯' : '新增'}財務項目</h2></div>${item ? '<button id="del" class="trash">刪除</button>' : ''}</div><form id="editform" class="form" novalidate><label>歸屬<select id="owner"><option value="husband">老公</option><option value="wife">老婆</option></select></label><div class="seg"><button type="button" data-kind="asset">資產</button><button type="button" data-kind="liability">負債</button></div><label><span id="categoryLabel">資產屬性</span><select id="cat"></select></label><label id="nameBox">名稱<input id="nm" required value="${escapeHtml(item?.name || '')}"></label><label id="currencyBox" class="hide">幣別<select id="manualCurrency"><option value="TWD">台幣（TWD）</option><option value="USD">美金（USD）</option></select></label><label id="modeBox">資料型態<select id="mode"><option value="manual-twd">手動台幣資產</option><option value="manual-usd">手動美元資產</option><option value="manual-jpy">手動日圓資產</option><option value="stock-tw">台股</option><option value="stock-us">美股</option><option value="gold">黃金（自動行情）</option></select><small id="modeHint" class="quoteHint"></small></label><div id="manualFields"><label id="amountLabel">台幣金額<input id="amt" inputmode="decimal" value="${initialNativeAmount}"></label><div id="usdFields" class="two hide"><label><span id="fxLabel">USD/TWD 匯率</span><input id="fx" inputmode="decimal" readonly></label><label>自動換算台幣<input id="converted" readonly></label></div></div><div id="stockFields" class="hide"><div class="two"><label>代號或名稱<input id="symbol" value="${escapeHtml(ledgerStock ? ledgerStock.display : item?.symbol || '')}" placeholder="2330 或 台積電" autocapitalize="characters"></label><label id="qtyBox">持有股數<input id="qty" inputmode="decimal" value="${item?.quantity ?? ''}"></label><label id="txActionBox" class="hide">類型<select id="txAction"><option value="buy">買進</option><option value="sell">賣出</option><option value="dividend">股息</option></select></label></div><div class="quoteHint hide" id="stockHint"></div><div id="ledgerFields" class="hide"><div class="two"><label id="txAmountBox">總金額<input id="txAmount" inputmode="decimal"></label><label id="txSharesBox">股數<input id="txShares" inputmode="decimal"></label></div><div class="two"><label>日期<input id="txDate" type="date" value="${taipeiDate()}"></label><label>銀行／券商<input id="txBank"></label></div><div id="txHistoryBox" class="hide"><div class="sectionHead"><b>交易紀錄</b><span id="txCount"></span></div><div class="portfolioTxList" id="txHistory"></div></div></div></div><div id="goldFields" class="hide"><div class="two"><label>持有重量<input id="goldWeight" inputmode="decimal" value="${item?.market === 'GOLD' ? item.quantity ?? '' : ''}"></label><label>單位<select disabled><option>g 公克</option></select></label></div></div><div id="loanFields" class="hide"><label>剩餘本金（TWD）<input id="principal" inputmode="decimal" value="${item?.amount_twd ?? ''}"></label><div class="two"><label>年利率 %<input id="rate" inputmode="decimal" value="${item?.interest_rate ?? ''}"></label><label>每月還款（TWD）<input id="pay" inputmode="decimal" value="${item?.monthly_payment_twd ?? ''}"></label></div></div><label>備註（選填）<input id="note" value="${escapeHtml(item?.notes || '')}"></label><div id="emsg"></div><button id="save" class="primary">儲存並同步</button></form></section>`;
+  backdrop.innerHTML = `<section class="sheet"><div class="handle"></div><div class="sheetHead"><div><h2>${item ? '編輯' : '新增'}財務項目</h2></div>${item ? '<button id="del" class="trash">刪除</button>' : ''}</div><form id="editform" class="form" novalidate><label>歸屬<select id="owner"><option value="husband">老公</option><option value="wife">老婆</option></select></label><div class="seg"><button type="button" data-kind="asset">資產</button><button type="button" data-kind="liability">負債</button></div><label><span id="categoryLabel">資產屬性</span><select id="cat"></select></label><label id="nameBox">名稱<input id="nm" required value="${escapeHtml(item?.name || '')}"></label><label id="currencyBox" class="hide">幣別<select id="manualCurrency"><option value="TWD">台幣（TWD）</option><option value="USD">美金（USD）</option></select></label><label id="modeBox">資料型態<select id="mode"><option value="manual-twd">手動台幣資產</option><option value="manual-usd">手動美元資產</option><option value="manual-jpy">手動日圓資產</option><option value="stock-tw">台股</option><option value="stock-us">美股</option><option value="gold">黃金（自動行情）</option></select><small id="modeHint" class="quoteHint"></small></label><div id="manualFields"><label id="amountLabel">台幣金額<input id="amt" inputmode="decimal" value="${initialNativeAmount}"></label><div id="usdFields" class="two hide"><label><span id="fxLabel">USD/TWD 匯率</span><input id="fx" inputmode="decimal" readonly></label><label>自動換算台幣<input id="converted" readonly></label></div><label id="costBox" class="hide">成本（台幣，含運費與手續費，選填）<input id="cost" inputmode="decimal" value="${item?.average_cost ?? ''}" placeholder="填了就會顯示這張卡的損益"></label></div><div id="stockFields" class="hide"><div class="two"><label>代號或名稱<input id="symbol" value="${escapeHtml(ledgerStock ? ledgerStock.display : item?.symbol || '')}" placeholder="2330 或 台積電" autocapitalize="characters"></label><label id="qtyBox">持有股數<input id="qty" inputmode="decimal" value="${item?.quantity ?? ''}"></label><label id="txActionBox" class="hide">類型<select id="txAction"><option value="buy">買進</option><option value="sell">賣出</option><option value="dividend">股息</option></select></label></div><div class="quoteHint hide" id="stockHint"></div><div id="ledgerFields" class="hide"><div class="two"><label id="txAmountBox">總金額<input id="txAmount" inputmode="decimal"></label><label id="txSharesBox">股數<input id="txShares" inputmode="decimal"></label></div><div class="two"><label>日期<input id="txDate" type="date" value="${taipeiDate()}"></label><label>銀行／券商<input id="txBank"></label></div><div id="txHistoryBox" class="hide"><div class="sectionHead"><b>交易紀錄</b><span id="txCount"></span></div><div class="portfolioTxList" id="txHistory"></div></div></div></div><div id="goldFields" class="hide"><div class="two"><label>持有重量<input id="goldWeight" inputmode="decimal" value="${item?.market === 'GOLD' ? item.quantity ?? '' : ''}"></label><label>單位<select disabled><option>g 公克</option></select></label></div></div><div id="loanFields" class="hide"><label>剩餘本金（TWD）<input id="principal" inputmode="decimal" value="${item?.amount_twd ?? ''}"></label><div class="two"><label>年利率 %<input id="rate" inputmode="decimal" value="${item?.interest_rate ?? ''}"></label><label>每月還款（TWD）<input id="pay" inputmode="decimal" value="${item?.monthly_payment_twd ?? ''}"></label></div></div><label>備註（選填）<input id="note" value="${escapeHtml(item?.notes || '')}"></label><div id="emsg"></div><button id="save" class="primary">儲存並同步</button></form></section>`;
   document.body.append(backdrop);
 
   const form = backdrop.querySelector('#editform');
@@ -2946,6 +2957,8 @@ async function editItem(item, defaultOwner, defaultKind) {
   const rateInput = backdrop.querySelector('#rate');
   const paymentInput = backdrop.querySelector('#pay');
   const noteInput = backdrop.querySelector('#note');
+  const costBox = backdrop.querySelector('#costBox');
+  const costInput = backdrop.querySelector('#cost');
   const message = backdrop.querySelector('#emsg');
   const saveButton = backdrop.querySelector('#save');
   ownerInput.value = owner;
@@ -3071,6 +3084,7 @@ async function editItem(item, defaultOwner, defaultKind) {
     modeHint.textContent = '';
     modeBox.classList.add('hide');
     currencyBox.classList.toggle('hide', kind !== 'asset' || !CURRENCY_CHOICE_ATTRIBUTES.has(assetAttribute));
+    costBox.classList.toggle('hide', kind !== 'asset' || assetAttribute !== 'pokemon');
     manualFields.classList.toggle('hide', !manual);
     stockFields.classList.toggle('hide', !stock);
     ledgerFields.classList.toggle('hide', !ledger);
@@ -3280,7 +3294,11 @@ async function editItem(item, defaultOwner, defaultKind) {
         symbol,
         market,
         quantity,
-        average_cost: item?.average_cost ?? null,
+        // 寶可夢卡牌的 average_cost 是那張卡的台幣總成本（見 financial-core.js 的 collectibleProfit）；
+        // 其他分類照舊原樣保留。
+        average_cost: kind === 'asset' && assetAttribute === 'pokemon'
+          ? parseNonNegative(costInput.value, '成本', { required: false })
+          : item?.average_cost ?? null,
         quote_currency: quoteCurrency,
         fx_rate_twd: exchangeRate,
         quote_source: quoteSource,

@@ -33,7 +33,9 @@ test('寶可夢卡牌是獨立分類，排在保險和其他之間，表單可�
   const stub = `${await readFile(new URL('./support/fake-supabase.js', import.meta.url), 'utf8')}
 ${item('ins', '保險', '保單', 500)}
 ${item('other', '其他', '雜物', 100)}
-${item('cards', '寶可夢卡牌', '寶可夢卡牌', 41000, { native_currency: 'USD', native_amount: 1246.68, quote_currency: 'USD', fx_rate_twd: 32.9 })}`;
+${item('cards', '寶可夢卡牌', '寶可夢卡牌', 41000, { native_currency: 'USD', native_amount: 1246.68, quote_currency: 'USD', fx_rate_twd: 32.9 })}
+${item('ray', '寶可夢卡牌', 'Rayquaza', 15000, { average_cost: 8500, native_currency: 'USD', native_amount: 456, quote_currency: 'USD', fx_rate_twd: 32.9 })}
+${item('pika', '寶可夢卡牌', 'Pikachu', 3500, { average_cost: 9500, native_currency: 'USD', native_amount: 106, quote_currency: 'USD', fx_rate_twd: 32.9 })}`;
 
   const types = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html', '.png': 'image/png' };
   const server = http.createServer((req, res) => {
@@ -60,7 +62,30 @@ ${item('cards', '寶可夢卡牌', '寶可夢卡牌', 41000, { native_currency: 
   const legend = await page.$$eval('.legendRow span', nodes => nodes.map(node => node.textContent.trim()));
   assert.ok(legend.includes('寶可夢卡牌'), '資產分布圓餅也要列出來');
 
+  // 損益：有成本的兩張，成本 18,000、現值 18,500 → +500；分開看一賺一賠
+  const head = await page.textContent('.categoryHead:has-text("寶可夢卡牌") small');
+  assert.match(head, /3 筆 · \+NT\$ 500（\+2\.78%）/, head);
   await page.click('.categoryHead:has-text("寶可夢卡牌")');
+  await page.waitForSelector('.itemCard[data-id="ray"]');
+  const ray = await page.textContent('.itemCard[data-id="ray"] .compactMeta');
+  assert.match(ray, /成本 8,500/);
+  assert.match(ray, /\+6,500（\+76\.47%）/);
+  assert.equal(await page.$eval('.itemCard[data-id="ray"] .cardProfit', node => node.classList.contains('up')), true, '賺是紅色');
+  const pika = await page.textContent('.itemCard[data-id="pika"] .compactMeta');
+  assert.match(pika, /\u22126,000（-63\.16%）/);
+  assert.equal(await page.$eval('.itemCard[data-id="pika"] .cardProfit', node => node.classList.contains('down')), true, '賠是綠色');
+  assert.equal(await page.locator('.itemCard[data-id="cards"] .cardProfit').count(), 0, '沒填成本就不顯示損益，不當成 0');
+
+  // 表單填成本，存回 average_cost
+  await page.click('.itemCard[data-id="cards"]');
+  await page.waitForSelector('#editform');
+  assert.equal(await page.isVisible('#costBox'), true, '寶可夢卡牌才有成本欄');
+  await page.fill('#cost', '40,000');
+  await page.click('#save');
+  await page.waitForSelector('#editform', { state: 'detached' });
+  assert.equal(await page.evaluate(() => globalThis.__fake.db.financial_items.find(row => row.id === 'cards').average_cost), 40000);
+  await page.waitForSelector('.itemCard[data-id="cards"] .cardProfit');
+
   await page.click('.itemCard[data-id="cards"]');
   await page.waitForSelector('#editform');
   assert.equal(await page.inputValue('#cat'), 'pokemon');
@@ -68,4 +93,7 @@ ${item('cards', '寶可夢卡牌', '寶可夢卡牌', 41000, { native_currency: 
   assert.equal(await page.inputValue('#manualCurrency'), 'USD');
   const options = await page.$$eval('#cat option', nodes => nodes.map(node => node.textContent.trim()));
   assert.ok(options.indexOf('寶可夢卡牌') === options.indexOf('其他') - 1, `選單順序：${options}`);
+  // 換成別的分類就沒有成本欄
+  await page.selectOption('#cat', 'other');
+  assert.equal(await page.isVisible('#costBox'), false);
 });

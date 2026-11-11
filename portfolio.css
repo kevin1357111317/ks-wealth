@@ -54,3 +54,4 @@
 .propertyNote{color:#70817d;font-size:.78rem}
 .propertyPayers{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}.propertyPayers div{display:grid;gap:2px;background:#fff;border:1px solid #e3ece9;border-radius:14px;padding:10px 12px}.propertyPayers span{color:#70817d;font-size:.75rem}.propertyPayers b{font-size:.9rem}
 .analysisEntry.familyEntry{grid-template-columns:minmax(0,1fr);margin:0}
+.cardProfit{font-style:normal;font-weight:700;white-space:nowrap}.compactMeta .cardCost{white-space:nowrap}.compactMeta:has(.cardCost){flex-wrap:wrap;row-gap:4px;min-width:0}
