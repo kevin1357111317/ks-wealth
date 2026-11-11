@@ -104,3 +104,24 @@ export function calculateAllocation(assets, totalAssets) {
 export function isValidSymbol(value) {
   return /^[0-9A-Z.-]{1,16}$/.test(String(value ?? '').trim().toUpperCase());
 }
+
+// 寶可夢卡牌的損益（屋主 2026-11-11）。成本存在 financial_items.average_cost，單位是**台幣總成本**
+// （一張卡一筆、數量都是 1，所以總成本就是那張卡的成本；含運費與服務費）。這一欄原本只是 stock 時代
+// 留下的欄位，App 只負責原樣保留，沒有其他地方讀它。沒有成本就回 null，不把成本當 0 算出一個假獲利。
+export const COLLECTIBLE_CATEGORY = '寶可夢卡牌';
+export function collectibleProfit(item) {
+  if (item?.category !== COLLECTIBLE_CATEGORY) return null;
+  const cost = toOptionalNumber(item.average_cost);
+  if (cost === null || !(cost > 0)) return null;
+  const value = toFiniteNumber(item.amount_twd);
+  const profit = value - cost;
+  return { cost, value, profit, rate: profit / cost };
+}
+
+export function collectibleProfitSummary(items = []) {
+  const rows = items.map(collectibleProfit).filter(Boolean);
+  if (!rows.length) return null;
+  const cost = rows.reduce((sum, row) => sum + row.cost, 0);
+  const value = rows.reduce((sum, row) => sum + row.value, 0);
+  return { count: rows.length, cost, value, profit: value - cost, rate: (value - cost) / cost };
+}

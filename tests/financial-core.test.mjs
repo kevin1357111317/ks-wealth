@@ -89,3 +89,16 @@ test('手動建立的 0 元項目不受影響', () => {
   const items = [{ id: 1, owner_scope: 'wife', kind: 'asset', amount_twd: 0, category: '現金及存款' }];
   assert.equal(calculateSummary(items, 'wife').assets.length, 1);
 });
+
+test('寶可夢卡牌損益：有成本才算，沒成本不當 0', async () => {
+  const { collectibleProfit, collectibleProfitSummary } = await import('../financial-core.js');
+  const card = { category: '寶可夢卡牌', amount_twd: 15115, average_cost: 8499 };
+  assert.deepEqual(collectibleProfit(card), { cost: 8499, value: 15115, profit: 6616, rate: 6616 / 8499 });
+  assert.equal(collectibleProfit({ category: '寶可夢卡牌', amount_twd: 17414, average_cost: null }), null);
+  assert.equal(collectibleProfit({ category: '台股', amount_twd: 100, average_cost: 50 }), null, '別的分類不算');
+  const summary = collectibleProfitSummary([card, { category: '寶可夢卡牌', amount_twd: 3588, average_cost: 9532 },
+    { category: '寶可夢卡牌', amount_twd: 17414 }]);
+  assert.equal(summary.count, 2);
+  assert.equal(summary.cost, 18031);
+  assert.equal(summary.profit, 672);
+});
