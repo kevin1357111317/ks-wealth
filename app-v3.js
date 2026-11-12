@@ -11,13 +11,13 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.51.0';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.51.0';
-import { calculateUsd } from './usd-core.js?v=V3.51.0';
-import { calculateGold } from './gold-core.js?v=V3.51.0';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.51.0';
-import { maintenanceRatio, parseCollateral } from './pledge-core.js?v=V3.51.0';
-import { buildPersonalTrendRows, filterTrendRowsFrom, linearTrend } from './trend-core.js?v=V3.51.0';
+} from './financial-core.js?v=V3.51.1';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.51.1';
+import { calculateUsd } from './usd-core.js?v=V3.51.1';
+import { calculateGold } from './gold-core.js?v=V3.51.1';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.51.1';
+import { maintenanceRatio, parseCollateral } from './pledge-core.js?v=V3.51.1';
+import { buildPersonalTrendRows, filterTrendRowsFrom, linearTrend } from './trend-core.js?v=V3.51.1';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -26,12 +26,12 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.51.0';
-import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.51.0';
-import { calculatePropertyLedger, latestInCategory, propertyFacts } from './property-core.js?v=V3.51.0';
-import { bodyCompositionModel, renderBodyComposition, bindBodyComposition } from './body-composition.js?v=V3.51.0';
-import { withClockSkewRetry } from './supabase-fetch.js?v=V3.51.0';
-import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.51.0';
+} from './health-core.js?v=V3.51.1';
+import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.51.1';
+import { calculatePropertyLedger, latestInCategory, propertyFacts } from './property-core.js?v=V3.51.1';
+import { bodyCompositionModel, renderBodyComposition, bindBodyComposition } from './body-composition.js?v=V3.51.1';
+import { withClockSkewRetry } from './supabase-fetch.js?v=V3.51.1';
+import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.51.1';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -1934,7 +1934,9 @@ function portfolioListPage() {
   const rows = sortPortfolioPositions(visibleRows, {
     criterion: sortCriterion,
     direction: sortDirection,
-    currency: portfolioMarket === '美股' ? 'USD' : 'TWD',
+    // 全部分頁照卡片上顯示的幣別排（美股看 USD、台股看 TWD），見 sortPortfolioPositions
+    currency: portfolioMarket === '美股' ? 'USD' : portfolioMarket === '台股' ? 'TWD' : 'DISPLAY',
+    fxRate,
   });
   const bucket = portfolioMarket === '台股' ? model.tw : portfolioMarket === '美股' ? model.us : model.all;
   // 排序拆成「依據」與「方向」兩個控制項：下拉只留三個依據，方向用雙向箭頭按鈕切換。

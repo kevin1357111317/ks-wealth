@@ -212,3 +212,20 @@ test('股票可依市值、損益與年化排序，空值永遠排最後', () =>
   assert.deepEqual(sortPortfolioPositions(rows, { criterion: 'profit', direction: 'asc', currency: 'USD' }).map(x => x.display), ['C', 'A', 'B']);
   assert.deepEqual(sortPortfolioPositions(rows, { criterion: 'xirr', direction: 'desc', currency: 'USD' }).map(x => x.display), ['C', 'A', 'B']);
 });
+
+test('全部分頁照卡片顯示的數字排：美股看 USD 損益（乘匯率比大小），台股看 TWD', () => {
+  // AVGO 賺 10,480 美元，但台幣口徑因匯率是 −8,770；以前全部分頁照台幣排，AVGO 會夾在虧損的美股中間
+  const rows = [
+    { display: 'USD', currency: 'USD', currentValueTwd: 0, profitNative: -2011, profitTwd: -65749, nativeXirr: null, xirr: null },
+    { display: 'AVGO', currency: 'USD', currentValueTwd: 0, profitNative: 10480, profitTwd: -8770, nativeXirr: 0.3087, xirr: -0.01 },
+    { display: 'PLTR', currency: 'USD', currentValueTwd: 0, profitNative: -643, profitTwd: -18910, nativeXirr: null, xirr: null },
+    { display: '金益鼎', currency: 'TWD', currentValueTwd: 0, profitNative: -4291, profitTwd: -4291, nativeXirr: -0.9941, xirr: -0.9941 },
+  ];
+  const order = options => sortPortfolioPositions(rows, options).map(x => x.display);
+  assert.deepEqual(order({ criterion: 'profit', direction: 'desc', currency: 'DISPLAY', fxRate: 32.9 }), ['AVGO', '金益鼎', 'PLTR', 'USD']);
+  assert.deepEqual(order({ criterion: 'profit', direction: 'asc', currency: 'DISPLAY', fxRate: 32.9 }), ['USD', 'PLTR', '金益鼎', 'AVGO']);
+  // 舊口徑還在：台幣分頁照台幣損益
+  assert.deepEqual(order({ criterion: 'profit', direction: 'asc', currency: 'TWD' }), ['USD', 'PLTR', 'AVGO', '金益鼎']);
+  // XIRR 也照卡片顯示的：美股用原幣 XIRR
+  assert.deepEqual(order({ criterion: 'xirr', direction: 'desc', currency: 'DISPLAY' }).slice(0, 2), ['AVGO', '金益鼎']);
+});
