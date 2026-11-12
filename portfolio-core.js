@@ -228,10 +228,20 @@ export function calculatePortfolio(stocks, fxRate, today = localIsoDate()) {
   };
 }
 
-export function sortPortfolioPositions(rows, { criterion = 'marketValue', direction = 'desc', currency = 'TWD' } = {}) {
+// currency='DISPLAY'（全部分頁）：照卡片上實際顯示的數字排 —— 美股卡片顯示 USD 損益與原幣 XIRR，
+// 台股卡片顯示 TWD。損益跨幣別要比大小，所以美股的 USD 損益乘上目前匯率 fxRate 再比。
+// 以前全部分頁一律用台幣損益（含匯率影響）排，AVGO 賺 10,480 美元，但 2025 年台幣大升值，
+// 換算台幣反而是 −8,770，於是排在一排虧損的美股中間，畫面看起來亂排（2026-11-12）。
+export function sortPortfolioPositions(rows, { criterion = 'marketValue', direction = 'desc', currency = 'TWD', fxRate = 1 } = {}) {
+  const usd = stock => currency === 'USD' || (currency === 'DISPLAY' && stock.currency === 'USD');
   const valueOf = stock => {
-    if (criterion === 'profit') return currency === 'USD' ? stock.profitNative : stock.profitTwd;
-    if (criterion === 'xirr') return currency === 'USD' ? stock.nativeXirr : stock.xirr;
+    if (criterion === 'profit') {
+      if (!usd(stock)) return stock.profitTwd;
+      if (currency !== 'DISPLAY') return stock.profitNative;
+      const native = Number(stock.profitNative);
+      return Number.isFinite(native) ? native * (Number(fxRate) > 0 ? Number(fxRate) : 1) : null;
+    }
+    if (criterion === 'xirr') return usd(stock) ? stock.nativeXirr : stock.xirr;
     return stock.currentValueTwd;
   };
   const sign = direction === 'asc' ? 1 : -1;
