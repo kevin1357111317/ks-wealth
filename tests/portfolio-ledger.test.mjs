@@ -166,6 +166,7 @@ test('新增財務項目選台股就能記交易，而且不會重複記帳', { 
     assert.ok(allocationAt < order.findIndex(name => /portfolioPerformance/.test(name)), '圓餅在績效趨勢上面');
     assert.match(await page.textContent('.portfolioAllocation'), /持股分布.*1 檔.*鴻海.*100\.0%/s);
     assert.match(await page.getAttribute('.portfolioAllocation .donut', 'style'), /--segments:#8b94ff 0% 100%/);
+    assert.equal(await page.locator('[data-holding-toggle]').count(), 0, '只有台股時不給台美切換鈕');
     assert.match(await page.textContent('.portfolioPerformance'), /我的投資組合 vs 大盤/);
     assert.match(await page.textContent('.portfolioPerformance'), /TWR 績效趨勢/);
     assert.match(await page.textContent('.portfolioPerformanceStats'), /我的 TWR.*大盤 TWR.*超額報酬/s);
