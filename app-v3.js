@@ -11,13 +11,13 @@ import {
   normalizeFinancialItem,
   parseNonNegative,
   toFiniteNumber,
-} from './financial-core.js?v=V3.51.1';
-import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.51.1';
-import { calculateUsd } from './usd-core.js?v=V3.51.1';
-import { calculateGold } from './gold-core.js?v=V3.51.1';
-import { calculateLoanCashflow } from './loan-core.js?v=V3.51.1';
-import { maintenanceRatio, parseCollateral } from './pledge-core.js?v=V3.51.1';
-import { buildPersonalTrendRows, filterTrendRowsFrom, linearTrend } from './trend-core.js?v=V3.51.1';
+} from './financial-core.js?v=V3.51.2';
+import { calculatePortfolio, decodePortfolioBootstrap, sortPortfolioPositions } from './portfolio-core.js?v=V3.51.2';
+import { calculateUsd } from './usd-core.js?v=V3.51.2';
+import { calculateGold } from './gold-core.js?v=V3.51.2';
+import { calculateLoanCashflow } from './loan-core.js?v=V3.51.2';
+import { maintenanceRatio, parseCollateral } from './pledge-core.js?v=V3.51.2';
+import { buildPersonalTrendRows, filterTrendRowsFrom, linearTrend } from './trend-core.js?v=V3.51.2';
 import {
   buildHealthComparison,
   buildHealthDomains,
@@ -26,12 +26,12 @@ import {
   healthReferenceBoundaries,
   healthReferenceMarkers,
   selectCoupleHealthTrendGroups,
-} from './health-core.js?v=V3.51.1';
-import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.51.1';
-import { calculatePropertyLedger, latestInCategory, propertyFacts } from './property-core.js?v=V3.51.1';
-import { bodyCompositionModel, renderBodyComposition, bindBodyComposition } from './body-composition.js?v=V3.51.1';
-import { withClockSkewRetry } from './supabase-fetch.js?v=V3.51.1';
-import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.51.1';
+} from './health-core.js?v=V3.51.2';
+import { calculateInsuranceSummary, decodeInsuranceNote } from './insurance-core.js?v=V3.51.2';
+import { calculatePropertyLedger, latestInCategory, propertyFacts } from './property-core.js?v=V3.51.2';
+import { bodyCompositionModel, renderBodyComposition, bindBodyComposition } from './body-composition.js?v=V3.51.2';
+import { withClockSkewRetry } from './supabase-fetch.js?v=V3.51.2';
+import { HOME_CACHE_PREFIX, decodeHomeCache, encodeHomeCache, homeCacheKey, readStoredUser } from './home-cache-core.js?v=V3.51.2';
 
 // App / Supabase -------------------------------------------------------------
 
@@ -1736,16 +1736,19 @@ function ownerGoldModel(ownerScope) {
 const portfolioTone = value => !Number.isFinite(Number(value)) || Math.abs(Number(value)) < 0.000001 ? 'flat' : Number(value) > 0 ? 'up' : 'down';
 
 function portfolioSummaryCards(bucket, market) {
-  const profitTone = portfolioTone(bucket.profitTwd);
-  const xirrTone = portfolioTone(bucket.xirr);
   if (market === '美股') {
     const nativeProfitTone = portfolioTone(bucket.profitNative);
     const nativeXirrTone = portfolioTone(bucket.nativeXirr);
     return `<div class="portfolioSummary"><div class="portfolioMetric"><span>目前市值</span><b>NT$ ${formatNumber(bucket.currentValueTwd)}</b><small>以目前匯率換算 · ${bucket.holdings} 檔</small></div><div class="portfolioMetric"><span>累計淨投入</span><b>US$ ${formatNumber(bucket.netInvestedNative)}</b><small>買進－賣出－股息</small></div><div class="portfolioMetric"><span>累計損益</span><b class="${nativeProfitTone}">${signedUsd(bucket.profitNative)}</b><small>${formatPercent(bucket.nativeReturnRate)}</small></div><div class="portfolioMetric"><span>XIRR 年化報酬</span><b class="${nativeXirrTone}">${formatPercent(bucket.nativeXirr)}</b><small>考慮實際投入金額與時間 · USD</small></div></div>`;
   }
+  // 全部／台股都用本幣口徑：美股是美金損益 × 今日匯率，匯差另見美金分析（屋主 2026-11-19）。
+  // 台股兩種口徑相同；全部分頁以前用含匯差的 profitTwd，跟美金分析重複算了匯率。
+  const profit = bucket.profitLocalTwd;
+  const localProfitTone = portfolioTone(profit);
+  const localXirrTone = portfolioTone(bucket.xirrLocal);
   const profitLabel = market === 'all' ? '台幣綜合損益' : '累計損益';
-  const profitHint = market === 'all' ? `${formatPercent(bucket.returnRate)} · 美股含匯率` : formatPercent(bucket.returnRate);
-  return `<div class="portfolioSummary"><div class="portfolioMetric"><span>目前市值</span><b>NT$ ${formatNumber(bucket.currentValueTwd)}</b><small>${bucket.holdings} 檔持有中</small></div><div class="portfolioMetric"><span>累計淨投入</span><b>NT$ ${formatNumber(bucket.netInvestedTwd)}</b><small>買進－賣出－股息</small></div><div class="portfolioMetric"><span>${profitLabel}</span><b class="${profitTone}">NT$ ${formatNumber(bucket.profitTwd)}</b><small>${profitHint}</small></div><div class="portfolioMetric"><span>XIRR 年化報酬</span><b class="${xirrTone}">${formatPercent(bucket.xirr)}</b><small>考慮實際投入金額與時間${market === 'all' ? ' · 美股含匯率' : ''}</small></div></div>`;
+  const fxNote = market === 'all' ? ' · 美股以今日匯率換算' : '';
+  return `<div class="portfolioSummary"><div class="portfolioMetric"><span>目前市值</span><b>NT$ ${formatNumber(bucket.currentValueTwd)}</b><small>${bucket.holdings} 檔持有中</small></div><div class="portfolioMetric"><span>累計淨投入</span><b>NT$ ${formatNumber(bucket.netInvestedLocalTwd)}</b><small>買進－賣出－股息${fxNote}</small></div><div class="portfolioMetric"><span>${profitLabel}</span><b class="${localProfitTone}">NT$ ${formatNumber(profit)}</b><small>${formatPercent(bucket.returnRateLocal)}${market === 'all' ? ' · 匯差見美金分析' : ''}</small></div><div class="portfolioMetric"><span>XIRR 年化報酬</span><b class="${localXirrTone}">${formatPercent(bucket.xirrLocal)}</b><small>考慮實際投入金額與時間${fxNote}</small></div></div>`;
 }
 
 function portfolioPerformanceCard() {

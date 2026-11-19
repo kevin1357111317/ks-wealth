@@ -229,3 +229,26 @@ test('全部分頁照卡片顯示的數字排：美股看 USD 損益（乘匯率
   // XIRR 也照卡片顯示的：美股用原幣 XIRR
   assert.deepEqual(order({ criterion: 'xirr', direction: 'desc', currency: 'DISPLAY' }).slice(0, 2), ['AVGO', '金益鼎']);
 });
+
+test('全部分頁本幣口徑：美股用美金損益乘今日匯率，匯差不攤進股票（2026-11-19）', () => {
+  // 美股：2025 匯率 30 買 100 美元，現在值 120 美元、今日匯率 33。
+  // 舊口徑（含匯差）：120×33 − 3,000 = 960；本幣口徑：(120 − 100) × 33 = 660，那 300 是匯差，歸美金分析。
+  const voo = {
+    key: 'VOO', display: 'VOO', market: '美股', currency: 'USD', quote: { price: 120 },
+    transactions: [{ id: 1, date: '2025-01-01', amount: -100, shares: 1, twd: -3000, kind: 'trade' }],
+  };
+  const tsmc = {
+    key: '2330', display: '台積電', market: '台股', currency: 'TWD', quote: { price: 1200 },
+    transactions: [{ id: 2, date: '2025-01-01', amount: -1000, shares: 1, twd: -1000, kind: 'trade' }],
+  };
+  const { all, tw } = calculatePortfolio([voo, tsmc], 33, '2026-01-01');
+  assert.equal(all.profitTwd, 960 + 200, '舊欄位保留：含匯差');
+  assert.equal(all.netInvestedLocalTwd, 100 * 33 + 1000);
+  assert.equal(all.profitLocalTwd, 660 + 200);
+  assert.ok(Math.abs(all.returnRateLocal - 860 / 4300) < 1e-12);
+  assert.ok(Math.abs(all.xirrLocal - 0.2) < 1e-3, `一年賺 20%：${all.xirrLocal}`);
+  assert.equal(all.profitLocalTwd, all.stockProfitTwd, '等於各檔股票本身損益的加總');
+  // 台股兩種口徑一樣
+  assert.equal(tw.profitLocalTwd, tw.profitTwd);
+  assert.equal(tw.xirrLocal, tw.xirr);
+});

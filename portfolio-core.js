@@ -210,7 +210,20 @@ export function calculatePortfolio(stocks, fxRate, today = localIsoDate()) {
       : null;
     if (totals.currentValueTwd > 0) cashflows.push({ date: today, amount: totals.currentValueTwd });
     if (nativeCurrency && currentValueNative > 0) nativeCashflows.push({ date: today, amount: currentValueNative });
+    // 「本幣口徑」（屋主 2026-11-19）：美股用美金算損益，再整筆乘「今天」的匯率換成台幣；
+    // 匯率的賺賠只在美金分析算一次，不再攤進每一筆美股交易。台股本來就是台幣，兩種口徑一樣。
+    // 舊的 profitTwd／xirr（每筆照交易當天匯率換算、含匯差）保留不動，給其他地方沿用。
+    const scaleOf = row => row.currency === 'USD' ? number(fxRate) : 1;
+    const netInvestedLocalTwd = rows.reduce((sum, row) => sum + row.netInvestedNative * scaleOf(row), 0);
+    const purchaseCostLocalTwd = rows.reduce((sum, row) => sum + row.purchaseCostNative * scaleOf(row), 0);
+    const profitLocalTwd = totals.currentValueTwd - netInvestedLocalTwd;
+    const returnBaseLocal = netInvestedLocalTwd > EPSILON ? netInvestedLocalTwd : purchaseCostLocalTwd;
+    const localCashflows = rows.flatMap(row => row.transactions.map(tx => ({ date: tx.date, amount: number(tx.amount) * scaleOf(row) })));
+    if (totals.currentValueTwd > 0) localCashflows.push({ date: today, amount: totals.currentValueTwd });
     return {
+      netInvestedLocalTwd, profitLocalTwd,
+      returnRateLocal: returnBaseLocal > EPSILON ? profitLocalTwd / returnBaseLocal : null,
+      xirrLocal: xirr(localCashflows),
       ...totals, nativeCurrency, currentValueNative, netInvestedNative, dividendsNative, profitNative,
       profitTwd: totals.currentValueTwd - totals.netInvestedTwd,
       nativeReturnRate: nativeCurrency && returnBaseNative > EPSILON ? profitNative / returnBaseNative : null,
